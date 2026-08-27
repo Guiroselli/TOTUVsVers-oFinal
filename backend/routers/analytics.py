@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import APIRouter, Query, HTTPException
 
 from repositories import MeetingRepository
-from analytics_service import AnalyticsService, get_quarter_dates
+from analytics_service import AnalyticsService, get_quarter_dates, get_period_dates
 from schemas import AnalyticsQuarterResponse, DrilldownMeetingsResponse
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
@@ -16,16 +16,27 @@ def get_quarter_analytics(
     client_code: Optional[str] = Query(None, description="Código do cliente ou segmento"),
     format: Optional[str] = Query(None, description="Formato da reunião (ex: VIDEO, PRESENCIAL)"),
     status: Optional[str] = Query(None, description="Status da reunião (ex: COMPLETED)"),
-    year: Optional[int] = Query(None, description="Ano do trimestre (ex: 2026)"),
-    quarter: Optional[int] = Query(None, description="Trimestre (1, 2, 3 ou 4)")
+    year: Optional[int] = Query(None, description="Ano de referência (ex: 2026)"),
+    quarter: Optional[int] = Query(None, description="Trimestre (1, 2, 3 ou 4)"),
+    period_type: Optional[str] = Query(None, description="Tipo de período: 'year' (anual), 'semester' (semestral), 'quarter' (trimestral)"),
+    period_num: Optional[int] = Query(None, description="Número do semestre (1 ou 2) ou trimestre (1 a 4)")
 ):
     """
-    Retorna métricas agregadas executivas para um trimestre ou período customizado.
+    Retorna métricas agregadas executivas para um ano, semestre, trimestre ou período customizado.
     """
     period_label = "Período Personalizado"
     
-    # Se ano e trimestre foram informados
-    if year and quarter:
+    # Suporte a tipo de período (anual, semestral, trimestral)
+    if year and period_type:
+        p_num = period_num if period_num is not None else (quarter or 1)
+        s_date, e_date, label = get_period_dates(year, period_type, p_num)
+        if not start_date:
+            start_date = s_date
+        if not end_date:
+            end_date = e_date
+        period_label = label
+    # Se ano e trimestre clássicos foram informados
+    elif year and quarter:
         s_date, e_date, label = get_quarter_dates(year, quarter)
         if not start_date:
             start_date = s_date

@@ -46,7 +46,7 @@ export default function Sidebar({ currentView, onSelectView, onOpenConfig }) {
             <line x1="12" y1="20" x2="12" y2="4"></line>
             <line x1="6" y1="20" x2="6" y2="14"></line>
           </svg>
-          Visão Trimestral (Analytics)
+          Visão Anual
         </button>
 
         <button

@@ -497,7 +497,7 @@ export default function MeetingApp() {
                 style={{ background: 'var(--panel-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}
                 onClick={() => setCurrentView('analytics')}
               >
-                📊 Visão Trimestral
+                📊 Visão Anual
               </button>
               <button className="btn-primary" onClick={() => setCurrentView('meeting')}>
                 + Iniciar Reunião Ao Vivo
@@ -505,99 +505,100 @@ export default function MeetingApp() {
             </div>
           </header>
 
-          {/* Quick Filters */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            marginBottom: '1.5rem',
-            background: 'var(--panel-bg)',
-            padding: '0.8rem 1rem',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            flexWrap: 'wrap'
-          }}>
-            <div style={{ flex: 1, minWidth: '220px' }}>
-              <input
-                type="text"
-                placeholder="🔍 Buscar por transcrição, tema ou facilitador..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 12px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  outline: 'none',
-                  fontSize: '13px'
-                }}
-              />
-            </div>
+          <div style={{ padding: '2rem 3rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Quick Filters */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '1rem',
+              background: 'var(--panel-bg)',
+              padding: '0.8rem 1rem',
+              borderRadius: '8px',
+              border: '1px solid var(--border-color)',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ flex: 1, minWidth: '220px' }}>
+                <input
+                  type="text"
+                  placeholder="🔍 Buscar por transcrição, tema ou facilitador..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '7px 12px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-main)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    outline: 'none',
+                    fontSize: '13px'
+                  }}
+                />
+              </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cliente:</span>
-              <input
-                type="text"
-                placeholder="Ex: T27261"
-                value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cliente:</span>
+                <input
+                  type="text"
+                  placeholder="Ex: T27261"
+                  value={clientFilter}
+                  onChange={(e) => setClientFilter(e.target.value)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    background: 'var(--bg-main)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    outline: 'none',
+                    fontSize: '12px',
+                    width: '120px'
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={() => loadMeetings(1, pagination.page_size)}
                 style={{
-                  padding: '6px 10px',
+                  padding: '6px 14px',
                   borderRadius: '6px',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  outline: 'none',
+                  background: 'var(--primary-color)',
+                  color: '#000',
+                  border: 'none',
+                  fontWeight: 600,
                   fontSize: '12px',
-                  width: '120px'
+                  cursor: 'pointer'
                 }}
-              />
+              >
+                Filtrar
+              </button>
             </div>
 
-            <button
-              onClick={() => loadMeetings(1, pagination.page_size)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '6px',
-                background: 'var(--primary-color)',
-                color: '#000',
-                border: 'none',
-                fontWeight: 600,
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-            >
-              Filtrar
-            </button>
+            {/* Table */}
+            <MeetingHistoryTable
+              meetings={meetings}
+              loading={loadingMeetings}
+              expandedMeetingId={expandedMeetingId}
+              onToggleExpand={(id) => setExpandedMeetingId(expandedMeetingId === id ? null : id)}
+              onResponsibleChange={handleResponsibleChange}
+              onUrgencyChange={handleUrgencyChange}
+              onSynthesize={(item) => generatePDF(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
+              onGenerateDocx={(item) => generateDocx(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
+              sistemasTotvs={sistemasTotvs}
+              enviosPorReuniao={enviosPorReuniao}
+              onConfirmSuggestion={handleConfirmSuggestion}
+              onTaskStatusChange={handleTaskStatusChange}
+              onEnviarIntegracao={handleEnviarIntegracao}
+              onOpenConfig={() => setShowConfigModal(true)}
+              pagination={pagination}
+              onPageChange={(p) => loadMeetings(p, pagination.page_size)}
+              onPageSizeChange={(sz) => loadMeetings(1, sz)}
+            />
           </div>
-
-          {/* Table */}
-          <MeetingHistoryTable
-            meetings={meetings}
-            loading={loadingMeetings}
-            expandedMeetingId={expandedMeetingId}
-            onToggleExpand={(id) => setExpandedMeetingId(expandedMeetingId === id ? null : id)}
-            onResponsibleChange={handleResponsibleChange}
-            onUrgencyChange={handleUrgencyChange}
-            onSynthesize={(item) => generatePDF(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
-            onGenerateDocx={(item) => generateDocx(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
-            sistemasTotvs={sistemasTotvs}
-            enviosPorReuniao={enviosPorReuniao}
-            onConfirmSuggestion={handleConfirmSuggestion}
-            onTaskStatusChange={handleTaskStatusChange}
-            onEnviarIntegracao={handleEnviarIntegracao}
-            onOpenConfig={() => setShowConfigModal(true)}
-            pagination={pagination}
-            onPageChange={(p) => loadMeetings(p, pagination.page_size)}
-            onPageSizeChange={(sz) => loadMeetings(1, sz)}
-          />
         </main>
       )}
 
       {currentView === 'analytics' && (
-        <main className="dashboard-main" style={{ overflowY: 'auto' }}>
+        <main className="dashboard-main">
           <QuarterlyAnalyticsPage
             onOpenMeeting={(meetingId) => {
               setExpandedMeetingId(meetingId);

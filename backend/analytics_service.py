@@ -38,6 +38,20 @@ def get_quarter_dates(year: int, quarter: int) -> Tuple[str, str, str]:
         return f"{year}-01-01", f"{year}-12-31", f"Ano {year}"
 
 
+def get_period_dates(year: int, period_type: str = "quarter", period_num: int = 1) -> Tuple[str, str, str]:
+    """Retorna (start_date, end_date, label) para ano inteiro, semestre ou trimestre."""
+    period_type = str(period_type).lower().strip()
+    if period_type == "year" or period_type == "anual":
+        return f"{year}-01-01", f"{year}-12-31", f"Ano de {year} (Completo)"
+    elif period_type == "semester" or period_type == "semestral":
+        if period_num == 2:
+            return f"{year}-07-01", f"{year}-12-31", f"2º Semestre de {year} (Jul-Dez)"
+        return f"{year}-01-01", f"{year}-06-30", f"1º Semestre de {year} (Jan-Jun)"
+    else:
+        # Default trimestre
+        return get_quarter_dates(year, period_num)
+
+
 def is_task_overdue(task: Dict[str, Any], meeting_date_str: Optional[str] = None) -> bool:
     """Verifica se uma tarefa está vencida com base em prazo ISO ou termos de atraso."""
     status = str(task.get("status", "")).strip()

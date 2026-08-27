@@ -24,11 +24,11 @@ const URGENCY_COLORS = {
 };
 
 export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
-  const [mode, setMode] = useState('quarter'); // 'quarter' | 'custom'
+  const [mode, setMode] = useState('preset'); // 'preset' | 'custom'
   const [selectedYear, setSelectedYear] = useState(2026);
-  const [selectedQuarter, setSelectedQuarter] = useState(1);
+  const [selectedPeriod, setSelectedPeriod] = useState('year'); // 'year' | 'sem1' | 'sem2' | 'q1' | 'q2' | 'q3' | 'q4'
   const [customStartDate, setCustomStartDate] = useState('2026-01-01');
-  const [customEndDate, setCustomEndDate] = useState('2026-03-31');
+  const [customEndDate, setCustomEndDate] = useState('2026-12-31');
 
   const [clientFilter, setClientFilter] = useState('');
   const [formatFilter, setFormatFilter] = useState('');
@@ -52,9 +52,25 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
         status: statusFilter,
       };
 
-      if (mode === 'quarter') {
+      if (mode === 'preset') {
         params.year = selectedYear;
-        params.quarter = selectedQuarter;
+        if (selectedPeriod === 'year') {
+          params.period_type = 'year';
+        } else if (selectedPeriod === 'sem1') {
+          params.period_type = 'semester';
+          params.period_num = 1;
+        } else if (selectedPeriod === 'sem2') {
+          params.period_type = 'semester';
+          params.period_num = 2;
+        } else if (selectedPeriod === 'q1') {
+          params.quarter = 1;
+        } else if (selectedPeriod === 'q2') {
+          params.quarter = 2;
+        } else if (selectedPeriod === 'q3') {
+          params.quarter = 3;
+        } else if (selectedPeriod === 'q4') {
+          params.quarter = 4;
+        }
       } else {
         params.start_date = customStartDate;
         params.end_date = customEndDate;
@@ -68,7 +84,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
     } finally {
       setLoading(false);
     }
-  }, [mode, selectedYear, selectedQuarter, customStartDate, customEndDate, clientFilter, formatFilter, statusFilter]);
+  }, [mode, selectedYear, selectedPeriod, customStartDate, customEndDate, clientFilter, formatFilter, statusFilter]);
 
   useEffect(() => {
     loadAnalytics();
@@ -82,15 +98,9 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
         client_code: clientFilter,
         format: formatFilter,
         status: statusFilter,
+        start_date: analyticsData?.period?.start_date || (mode === 'custom' ? customStartDate : undefined),
+        end_date: analyticsData?.period?.end_date || (mode === 'custom' ? customEndDate : undefined),
       };
-
-      if (mode === 'quarter') {
-        params.start_date = analyticsData?.period?.start_date;
-        params.end_date = analyticsData?.period?.end_date;
-      } else {
-        params.start_date = customStartDate;
-        params.end_date = customEndDate;
-      }
 
       const res = await api.getQuarterDrilldown(params);
       setDrilldownData(res);
@@ -115,10 +125,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h2 style={{ fontSize: '1.8rem', color: 'var(--text-main)', margin: '0 0 4px 0' }}>
-            Visão Trimestral & Inteligência Gerencial
+            Visão Anual & Inteligência Gerencial
           </h2>
           <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '14px' }}>
-            Panorama executivo de reuniões, dores recorrentes, tarefas e concentração de demandas por cliente.
+            Panorama executivo anual, semestral e trimestral de reuniões, dores, tarefas e clientes.
           </p>
         </div>
 
@@ -150,19 +160,19 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
           {/* Mode Switch */}
           <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-main)', padding: '4px', borderRadius: '8px' }}>
             <button
-              onClick={() => setMode('quarter')}
+              onClick={() => setMode('preset')}
               style={{
                 padding: '6px 14px',
                 borderRadius: '6px',
                 border: 'none',
-                background: mode === 'quarter' ? 'var(--primary-color)' : 'transparent',
-                color: mode === 'quarter' ? '#000' : 'var(--text-muted)',
+                background: mode === 'preset' ? 'var(--primary-color)' : 'transparent',
+                color: mode === 'preset' ? '#000' : 'var(--text-muted)',
                 fontWeight: 600,
                 fontSize: '12px',
                 cursor: 'pointer'
               }}
             >
-              Trimestres Prontos
+              Períodos Pré-definidos
             </button>
             <button
               onClick={() => setMode('custom')}
@@ -181,8 +191,8 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             </button>
           </div>
 
-          {/* Quarter Selectors */}
-          {mode === 'quarter' ? (
+          {/* Preset Selectors: Anual, Semestral, Trimestral */}
+          {mode === 'preset' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <select
                 value={selectedYear}
@@ -195,7 +205,8 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                   border: '1px solid var(--border-color)',
                   fontSize: '13px',
                   outline: 'none',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  fontWeight: 600
                 }}
               >
                 <option value={2026}>2026</option>
@@ -203,24 +214,67 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                 <option value={2024}>2024</option>
               </select>
 
+              {/* Botão Anual */}
+              <button
+                onClick={() => setSelectedPeriod('year')}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: selectedPeriod === 'year' ? 600 : 400,
+                  background: selectedPeriod === 'year' ? 'rgba(0, 210, 255, 0.2)' : 'var(--bg-main)',
+                  border: `1px solid ${selectedPeriod === 'year' ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                  color: selectedPeriod === 'year' ? 'var(--primary-color)' : 'var(--text-main)',
+                  cursor: 'pointer'
+                }}
+              >
+                📅 Ano Inteiro
+              </button>
+
+              {/* Botões Semestrais */}
               <div style={{ display: 'flex', gap: '4px' }}>
                 {[
-                  { q: 1, label: '1º Tri (Jan-Mar)' },
-                  { q: 2, label: '2º Tri (Abr-Jun)' },
-                  { q: 3, label: '3º Tri (Jul-Set)' },
-                  { q: 4, label: '4º Tri (Out-Dez)' },
+                  { p: 'sem1', label: '1º Sem (Jan-Jun)' },
+                  { p: 'sem2', label: '2º Sem (Jul-Dez)' },
                 ].map((item) => (
                   <button
-                    key={item.q}
-                    onClick={() => setSelectedQuarter(item.q)}
+                    key={item.p}
+                    onClick={() => setSelectedPeriod(item.p)}
                     style={{
-                      padding: '6px 12px',
+                      padding: '6px 11px',
                       borderRadius: '6px',
                       fontSize: '12px',
-                      fontWeight: selectedQuarter === item.q ? 600 : 400,
-                      background: selectedQuarter === item.q ? 'rgba(0, 210, 255, 0.15)' : 'var(--bg-main)',
-                      border: `1px solid ${selectedQuarter === item.q ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                      color: selectedQuarter === item.q ? 'var(--primary-color)' : 'var(--text-main)',
+                      fontWeight: selectedPeriod === item.p ? 600 : 400,
+                      background: selectedPeriod === item.p ? 'rgba(0, 210, 255, 0.15)' : 'var(--bg-main)',
+                      border: `1px solid ${selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                      color: selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--text-main)',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Botões Trimestrais */}
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {[
+                  { p: 'q1', label: '1T' },
+                  { p: 'q2', label: '2T' },
+                  { p: 'q3', label: '3T' },
+                  { p: 'q4', label: '4T' },
+                ].map((item) => (
+                  <button
+                    key={item.p}
+                    onClick={() => setSelectedPeriod(item.p)}
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      fontSize: '12px',
+                      fontWeight: selectedPeriod === item.p ? 600 : 400,
+                      background: selectedPeriod === item.p ? 'rgba(0, 210, 255, 0.15)' : 'var(--bg-main)',
+                      border: `1px solid ${selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                      color: selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--text-main)',
                       cursor: 'pointer'
                     }}
                   >

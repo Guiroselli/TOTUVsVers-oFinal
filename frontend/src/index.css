@@ -359,7 +359,10 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; }
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100vh;
+  position: relative;
 }
 
 .dashboard-header {
@@ -369,12 +372,12 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; }
   justify-content: space-between;
   border-bottom: 1px solid var(--border-color);
   background: rgba(24, 24, 27, 0.5);
+  flex-shrink: 0;
 }
 
 .table-container {
-  flex: 1;
-  padding: 2rem 3rem;
-  overflow-y: auto;
+  overflow-x: auto;
+  padding: 0;
 }
 
 .totvs-table {
