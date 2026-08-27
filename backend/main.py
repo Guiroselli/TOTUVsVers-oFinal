@@ -1,7 +1,13 @@
 import os
+import sys
 import tempfile
 from typing import Optional
 from datetime import datetime
+
+# Garante que o diretório backend esteja no sys.path
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+if _current_dir not in sys.path:
+    sys.path.insert(0, _current_dir)
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -41,6 +47,10 @@ app.mount("/pdfs", StaticFiles(directory="pdfs"), name="pdfs")
 app.include_router(analytics.router)
 app.include_router(meetings.router)
 app.include_router(integrations.router)
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "app": "Proton Flow", "version": "2.0.0"}
 
 meeting_repo = MeetingRepository()
 profile_repo = ProfileRepository()
