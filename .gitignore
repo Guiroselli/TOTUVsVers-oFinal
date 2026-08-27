@@ -26,6 +26,7 @@ backend/pdfs/
 pdfs/*.pdf
 *.tmp*
 backend/*.tmp*
+backend/audit_events.json
 
 # OS
 .DS_Store
