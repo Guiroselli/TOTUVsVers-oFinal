@@ -1,0 +1,32 @@
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+backend/__pycache__/
+backend/tests/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.venv/
+venv/
+ENV/
+
+# PDFs & Temp Files
+backend/pdfs/
+pdfs/*.pdf
+*.tmp*
+backend/*.tmp*
+
+# OS
+.DS_Store
+Thumbs.db
