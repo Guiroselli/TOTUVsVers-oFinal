@@ -1,0 +1,57 @@
+[
+  {
+    "sistema": "fluig",
+    "sistema_nome": "TOTVS Fluig",
+    "meeting_id": "1033502",
+    "tarefas": [
+      {
+        "responsável": "Alex",
+        "tarefa": "Coordenar informações como NRP, banco e backup",
+        "prazo": "Não mencionado"
+      },
+      {
+        "responsável": "Equipe",
+        "tarefa": "Criar um documento interno para registrar links externos importantes.",
+        "prazo": "Não mencionado"
+      }
+    ],
+    "data_envio": "2026-07-24T12:27:58.092727",
+    "status": "simulado_local",
+    "aviso": "Sem webhook configurado. Pegue as credenciais em https://developers.totvs.com/ e configure em /api/integracoes/config."
+  },
+  {
+    "sistema": "fluig",
+    "sistema_nome": "TOTVS Fluig",
+    "meeting_id": "1033502",
+    "tarefas": [
+      {
+        "responsável": "Alex",
+        "tarefa": "Coordenar informações como NRP, banco e backup",
+        "prazo": "Não mencionado"
+      },
+      {
+        "responsável": "Equipe",
+        "tarefa": "Criar um documento interno para registrar links externos importantes.",
+        "prazo": "Não mencionado"
+      }
+    ],
+    "data_envio": "2026-07-24T12:27:56.832391",
+    "status": "simulado_local",
+    "aviso": "Sem webhook configurado. Pegue as credenciais em https://developers.totvs.com/ e configure em /api/integracoes/config."
+  },
+  {
+    "sistema": "fluig",
+    "sistema_nome": "TOTVS Fluig",
+    "meeting_id": "test-meeting-id",
+    "tarefas": [
+      {
+        "responsavel": "João",
+        "tarefa": "Revisar docs",
+        "prazo": "amanhã"
+      }
+    ],
+    "data_envio": "2026-07-24T11:40:06.475542",
+    "status": "simulado_local",
+    "aviso": "Sem webhook configurado. Pegue as credenciais em https://developers.totvs.com/ e configure em /api/integracoes/config."
+  }
+]

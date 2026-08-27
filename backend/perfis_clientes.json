@@ -1,0 +1,178 @@
+{
+  "T27261": {
+    "codigo": "T27261",
+    "reunioes": [
+      {
+        "meeting_id": "1247082",
+        "data": "2026-07-24",
+        "tema": "Resolução de Problemas com Aprovação Pendente"
+      },
+      {
+        "meeting_id": "1247082",
+        "data": "2026-07-24",
+        "tema": "Problemas com Aprovação Pendente"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovacao_pendente": 2,
+      "gargalo_operacional": 2
+    }
+  },
+  "Ao Vivo": {
+    "codigo": "Ao Vivo",
+    "reunioes": [
+      {
+        "meeting_id": "85e2f617-b495-47bb-a1fa-cc82360f370f",
+        "data": "2026-07-24",
+        "tema": "Problemas na Entrega do Projeto"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovacao_pendente": 1,
+      "atraso_prazo": 1,
+      "insatisfacao_cliente": 1
+    }
+  },
+  "TFDRE6": {
+    "codigo": "TFDRE6",
+    "reunioes": [
+      {
+        "meeting_id": "974451",
+        "data": "2026-07-24",
+        "tema": "Encerramento do Projeto e Planos Futuros"
+      },
+      {
+        "meeting_id": "1057714",
+        "data": "2026-07-24",
+        "tema": "Encerramento de Projeto de Sistema e Discussão Futura"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovação_pendente": 1,
+      "gargalo_operacional": 2,
+      "insatisfação_cliente": 1,
+      "aprovacao_pendente": 1
+    }
+  },
+  "TEZJKQ": {
+    "codigo": "TEZJKQ",
+    "reunioes": [
+      {
+        "meeting_id": "1273662",
+        "data": "2026-07-24",
+        "tema": "Apresentação da Ferramenta de CRM"
+      },
+      {
+        "meeting_id": "1273660",
+        "data": "2026-07-24",
+        "tema": "Apresentação da Ferramenta de CRM"
+      },
+      {
+        "meeting_id": "1273657",
+        "data": "2026-07-24",
+        "tema": "Apresentação da Ferramenta de CRM"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovação_pendente": 3,
+      "gargalo_operacional": 3
+    }
+  },
+  "TFEOSX": {
+    "codigo": "TFEOSX",
+    "reunioes": [
+      {
+        "meeting_id": "998337",
+        "data": "2026-07-24",
+        "tema": "Alinhamento e apresentação de contratos e documentos"
+      },
+      {
+        "meeting_id": "1367155",
+        "data": "2026-07-24",
+        "tema": "Transição de área comercial para área de serviços"
+      },
+      {
+        "meeting_id": "1033502",
+        "data": "2026-07-24",
+        "tema": "Discussão sobre contrato e documentação"
+      }
+    ],
+    "dores_recorrentes": {
+      "documentacao_faltando": 2,
+      "outro": 2,
+      "document_faltando": 1
+    }
+  },
+  "TFDUTX": {
+    "codigo": "TFDUTX",
+    "reunioes": [
+      {
+        "meeting_id": "1030536",
+        "data": "2026-07-24",
+        "tema": "Apresentação da Nova Gestora de Contas e Planejamento dos Projetos"
+      },
+      {
+        "meeting_id": "1077853",
+        "data": "2026-07-24",
+        "tema": "Estruturação e Planejamento do Treinamento e Avaliação de Desempenho"
+      },
+      {
+        "meeting_id": "1116304",
+        "data": "2026-07-24",
+        "tema": "Estruturação e Planejamento do Treinamento"
+      },
+      {
+        "meeting_id": "1030493",
+        "data": "2026-07-24",
+        "tema": "Estruturação e Planejamento dos Projetos"
+      }
+    ],
+    "dores_recorrentes": {
+      "insatisfacao_cliente": 3,
+      "aprovação_pendente": 1,
+      "aprovacao_pendente": 2
+    }
+  },
+  "TFBER2": {
+    "codigo": "TFBER2",
+    "reunioes": [
+      {
+        "meeting_id": "907223",
+        "data": "2026-07-24",
+        "tema": "Levantamento de demandas contábeis e fiscais"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovacao_pendente": 1,
+      "garagalo_operacional": 1
+    }
+  },
+  "268267": {
+    "codigo": "268267",
+    "reunioes": [
+      {
+        "meeting_id": "1334046",
+        "data": "2026-07-24",
+        "tema": "Reunião de Prospecção com Cliente"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovação_pendente": 1,
+      "gargalo_operacional": 1,
+      "falta_metricas": 1
+    }
+  },
+  "TDC50S": {
+    "codigo": "TDC50S",
+    "reunioes": [
+      {
+        "meeting_id": "715850",
+        "data": "2026-07-24",
+        "tema": "Devolutivas Financeiras e Solicitação de Prorrogação"
+      }
+    ],
+    "dores_recorrentes": {
+      "aprovação_pendente": 1
+    }
+  }
+}
