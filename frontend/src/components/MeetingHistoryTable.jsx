@@ -304,25 +304,28 @@ export default function MeetingHistoryTable({
               Próxima
             </button>
 
-            <select
-              value={pagination.page_size}
-              onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              style={{
-                marginLeft: '8px',
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value={10}>10 por pág.</option>
-              <option value={20}>20 por pág.</option>
-              <option value={50}>50 por pág.</option>
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '12px' }}>
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '2px' }}>Por pág:</span>
+              {[10, 20, 50].map((sz) => (
+                <button
+                  key={sz}
+                  onClick={() => onPageSizeChange(sz)}
+                  style={{
+                    padding: '4px 9px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: pagination.page_size === sz ? 600 : 400,
+                    background: pagination.page_size === sz ? 'rgba(0, 210, 255, 0.2)' : 'var(--bg-main)',
+                    border: `1px solid ${pagination.page_size === sz ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                    color: pagination.page_size === sz ? 'var(--primary-color)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {sz}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
