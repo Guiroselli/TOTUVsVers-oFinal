@@ -1,0 +1,331 @@
+import React from 'react';
+import MeetingDetail from './MeetingDetail';
+
+export default function MeetingHistoryTable({
+  meetings,
+  loading,
+  expandedMeetingId,
+  onToggleExpand,
+  onResponsibleChange,
+  onUrgencyChange,
+  onSynthesize,
+  onGenerateDocx,
+  sistemasTotvs,
+  enviosPorReuniao,
+  onConfirmSuggestion,
+  onTaskStatusChange,
+  onEnviarIntegracao,
+  onOpenConfig,
+  pagination,
+  onPageChange,
+  onPageSizeChange
+}) {
+  return (
+    <div>
+      <div className="table-container">
+        {loading ? (
+          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              border: '3px solid var(--border-color)',
+              borderTopColor: 'var(--primary-color)',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite',
+              margin: '0 auto 1rem auto'
+            }}></div>
+            Carregando reuniões da base de dados...
+          </div>
+        ) : (
+          <table className="totvs-table">
+            <thead>
+              <tr>
+                <th style={{ width: '130px' }}>ID Reunião</th>
+                <th>Data</th>
+                <th>Segmento Cliente</th>
+                <th>NPS</th>
+                <th>Duração</th>
+                <th>Responsável</th>
+                <th>Urgência</th>
+                <th style={{ minWidth: '220px' }}>Ações (IA / Exportação)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {meetings && meetings.length > 0 ? (
+                meetings.map((item) => {
+                  const isExpanded = expandedMeetingId === item.ID_MEETING;
+                  const hasAnalysis = Boolean(item.RESUMO_IA);
+
+                  return (
+                    <React.Fragment key={item.ID_MEETING}>
+                      <tr>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <button
+                              onClick={() => onToggleExpand(item.ID_MEETING)}
+                              style={{
+                                background: isExpanded ? 'rgba(0, 210, 255, 0.15)' : 'transparent',
+                                color: 'var(--primary-color)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: '4px',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}
+                              title={isExpanded ? 'Ocultar Detalhes' : 'Ver Detalhes'}
+                            >
+                              {isExpanded ? (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="18 15 12 9 6 15"></polyline>
+                                </svg>
+                              ) : (
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                              )}
+                            </button>
+                            <span style={{ fontWeight: 600, fontSize: '13px' }}>
+                              {item.ID_MEETING ? (item.ID_MEETING.length > 12 ? `${item.ID_MEETING.substring(0, 8)}...` : item.ID_MEETING) : 'N/A'}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td>
+                          <span style={{ fontSize: '13px' }}>
+                            {item.DT_MEETING || 'Data não informada'}
+                          </span>
+                        </td>
+
+                        <td>
+                          <span className="badge" style={{ fontSize: '12px' }}>
+                            {item.NOME_SEGMENTO || 'Geral'}
+                          </span>
+                        </td>
+
+                        <td>
+                          {item.NOTA_NPS !== undefined && item.NOTA_NPS !== null && item.NOTA_NPS !== '' ? (
+                            <span style={{
+                              color: parseInt(item.NOTA_NPS, 10) >= 8 ? 'var(--success)' : parseInt(item.NOTA_NPS, 10) >= 7 ? 'var(--warning)' : 'var(--danger)',
+                              fontWeight: 'bold',
+                              fontSize: '13px'
+                            }}>
+                              {item.NOTA_NPS}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)' }}>-</span>
+                          )}
+                        </td>
+
+                        <td>
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                            {item.DURACAO_MEETING || '-'}
+                          </span>
+                        </td>
+
+                        <td>
+                          <input
+                            type="text"
+                            defaultValue={item.RESPONSAVEL_REUNIAO || ''}
+                            onBlur={(e) => onResponsibleChange(item.ID_MEETING, e.target.value)}
+                            placeholder="Nome..."
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: '4px',
+                              background: 'var(--panel-bg)',
+                              color: 'var(--text-main)',
+                              border: '1px solid var(--border-color)',
+                              outline: 'none',
+                              width: '130px',
+                              fontSize: '12px'
+                            }}
+                          />
+                        </td>
+
+                        <td>
+                          <select
+                            value={item.NIVEL_URGENCIA || 'Não Definido'}
+                            onChange={(e) => onUrgencyChange(item.ID_MEETING, e.target.value)}
+                            style={{
+                              padding: '5px 8px',
+                              borderRadius: '4px',
+                              background: 'var(--panel-bg)',
+                              color: item.NIVEL_URGENCIA === 'Crítica' || item.NIVEL_URGENCIA === 'Alta' ? 'var(--danger)' : item.NIVEL_URGENCIA === 'Média' ? 'var(--warning)' : 'var(--text-main)',
+                              border: '1px solid var(--border-color)',
+                              outline: 'none',
+                              cursor: 'pointer',
+                              fontSize: '12px',
+                              fontWeight: 500
+                            }}
+                          >
+                            <option value="Não Definido">Não Definido</option>
+                            <option value="Baixa">Baixa</option>
+                            <option value="Média">Média</option>
+                            <option value="Alta">Alta</option>
+                            <option value="Crítica">Crítica</option>
+                          </select>
+                        </td>
+
+                        <td>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {item.TEM_PDF ? (
+                              <button
+                                className="btn-synth"
+                                style={{ background: 'var(--success)', color: '#fff', border: 'none', flex: 1, padding: '5px 8px', fontSize: '12px' }}
+                                onClick={() => window.open(`http://localhost:8000/pdfs/${item.ID_MEETING}.pdf`, '_blank')}
+                                title="Abrir PDF salvo no servidor"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                  <polyline points="14 2 14 8 20 8"></polyline>
+                                </svg>
+                                Ver PDF
+                              </button>
+                            ) : (
+                              <button
+                                className="btn-synth"
+                                style={{ flex: 1, padding: '5px 8px', fontSize: '12px' }}
+                                onClick={() => onSynthesize(item)}
+                                title={hasAnalysis ? 'Exportar PDF com a análise existente' : 'Analisar com IA e Salvar PDF'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                </svg>
+                                Salvar PDF
+                              </button>
+                            )}
+
+                            <button
+                              className="btn-synth"
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid var(--primary-color)',
+                                color: 'var(--primary-color)',
+                                flex: 1,
+                                padding: '5px 8px',
+                                fontSize: '12px'
+                              }}
+                              onClick={() => onGenerateDocx(item)}
+                              title="Exportar Ata Formal em DOCX"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                              </svg>
+                              DOCX
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {isExpanded && (
+                        <tr style={{ background: 'var(--bg-main)' }}>
+                          <td colSpan="8" style={{ padding: '1rem' }}>
+                            <MeetingDetail
+                              meeting={item}
+                              sistemasTotvs={sistemasTotvs}
+                              enviosPorReuniao={enviosPorReuniao}
+                              onConfirmSuggestion={onConfirmSuggestion}
+                              onTaskStatusChange={onTaskStatusChange}
+                              onEnviarIntegracao={onEnviarIntegracao}
+                              onOpenConfig={onOpenConfig}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                    Nenhuma reunião encontrada com os filtros selecionados.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* Paginação */}
+      {pagination && pagination.total_pages > 1 && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: '1rem',
+          padding: '0.8rem 1rem',
+          background: 'var(--panel-bg)',
+          borderRadius: '8px',
+          border: '1px solid var(--border-color)',
+          flexWrap: 'wrap',
+          gap: '1rem'
+        }}>
+          <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+            Exibindo <strong>{meetings.length}</strong> de <strong>{pagination.total}</strong> reuniões (Página {pagination.page} de {pagination.total_pages})
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                color: pagination.page <= 1 ? 'var(--text-muted)' : 'var(--text-main)',
+                cursor: pagination.page <= 1 ? 'not-allowed' : 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              Anterior
+            </button>
+
+            <span style={{ fontSize: '13px', color: 'var(--primary-color)', fontWeight: 600, padding: '0 4px' }}>
+              {pagination.page} / {pagination.total_pages}
+            </span>
+
+            <button
+              onClick={() => onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.total_pages}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                background: 'var(--bg-main)',
+                border: '1px solid var(--border-color)',
+                color: pagination.page >= pagination.total_pages ? 'var(--text-muted)' : 'var(--text-main)',
+                cursor: pagination.page >= pagination.total_pages ? 'not-allowed' : 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              Próxima
+            </button>
+
+            <select
+              value={pagination.page_size}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              style={{
+                marginLeft: '8px',
+                padding: '5px 8px',
+                borderRadius: '6px',
+                background: 'var(--bg-main)',
+                color: 'var(--text-main)',
+                border: '1px solid var(--border-color)',
+                fontSize: '12px',
+                outline: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <option value={10}>10 por pág.</option>
+              <option value={20}>20 por pág.</option>
+              <option value={50}>50 por pág.</option>
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
