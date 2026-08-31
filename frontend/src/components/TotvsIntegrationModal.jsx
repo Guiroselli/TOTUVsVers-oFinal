@@ -4,7 +4,8 @@ export default function TotvsIntegrationModal({
   isOpen,
   onClose,
   sistemasTotvs = {},
-  onSaveWebhook
+  onSaveWebhook,
+  onDeleteWebhook
 }) {
   const [inputs, setInputs] = useState({});
 
@@ -21,8 +22,15 @@ export default function TotvsIntegrationModal({
   if (!isOpen) return null;
 
   const handleSave = async (sistema) => {
-    if (onSaveWebhook) {
-      await onSaveWebhook(sistema, inputs[sistema] || '');
+    if (onSaveWebhook && inputs[sistema]) {
+      await onSaveWebhook(sistema, inputs[sistema]);
+      setInputs(prev => ({ ...prev, [sistema]: '' }));
+    }
+  };
+
+  const handleDelete = async (sistema) => {
+    if (onDeleteWebhook) {
+      await onDeleteWebhook(sistema);
     }
   };
 
@@ -95,11 +103,16 @@ export default function TotvsIntegrationModal({
                 <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Modo Simulado</span>
               )}
             </div>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>{info.uso}</p>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>{info.uso}</p>
+            {info.configurado && info.webhook_url && (
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', background: 'rgba(0,0,0,0.2)', padding: '4px 8px', borderRadius: '4px' }}>
+                URL mascarada: <code style={{ color: 'var(--primary-color)' }}>{info.webhook_url}</code>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '6px' }}>
               <input
                 type="text"
-                placeholder="URL do webhook / endpoint da API"
+                placeholder={info.configurado ? "Substituir URL do webhook..." : "URL do webhook / endpoint..."}
                 value={inputs[chave] || ''}
                 onChange={(e) => setInputs(prev => ({ ...prev, [chave]: e.target.value }))}
                 style={{
@@ -116,7 +129,7 @@ export default function TotvsIntegrationModal({
               <button
                 onClick={() => handleSave(chave)}
                 style={{
-                  padding: '7px 14px',
+                  padding: '7px 12px',
                   borderRadius: '6px',
                   background: 'var(--primary-color)',
                   color: '#000',
@@ -128,6 +141,23 @@ export default function TotvsIntegrationModal({
               >
                 Salvar
               </button>
+              {info.configurado && (
+                <button
+                  onClick={() => handleDelete(chave)}
+                  style={{
+                    padding: '7px 10px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: 'var(--danger)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    cursor: 'pointer',
+                    fontSize: '12px'
+                  }}
+                  title="Remover configuração do webhook"
+                >
+                  Remover
+                </button>
+              )}
             </div>
           </div>
         ))}

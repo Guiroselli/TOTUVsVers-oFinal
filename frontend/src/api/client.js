@@ -75,7 +75,7 @@ export const api = {
     }),
 
   updateTaskStatus: (meetingId, taskIndex, status) =>
-    request('/api/task_status', {
+    request('/api/tasks/status', {
       method: 'POST',
       body: JSON.stringify({ meeting_id: String(meetingId), task_index: taskIndex, status }),
     }),
@@ -93,6 +93,16 @@ export const api = {
       body: JSON.stringify({ text, meeting_id: meetingId }),
     }),
 
+  analyzeExistingMeeting: (meetingId) =>
+    request(`/api/meetings/${meetingId}/analyze`, {
+      method: 'POST',
+    }),
+
+  resetAllAnalyses: () =>
+    request('/api/meetings/reset_analyses', {
+      method: 'POST',
+    }),
+
   getSuggestions: (meetingId) => request(`/api/meetings/${meetingId}/suggestions`),
 
   confirmSuggestion: (meetingId, fieldName, action, value = null) =>
@@ -101,9 +111,19 @@ export const api = {
       body: JSON.stringify({ action, value }),
     }),
 
+  getRecommendations: (meetingId) => request(`/api/meetings/${meetingId}/recommendations`),
+
+  confirmRecommendation: (meetingId, productKey, action) =>
+    request(`/api/meetings/${meetingId}/recommendations/${productKey}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    }),
+
+  getRecurringTasks: () => request('/api/tasks/recurring'),
+
   getPerfilCliente: (codigo) => request(`/api/perfil_cliente/${encodeURIComponent(codigo)}`),
 
-  // Analytics
+  // Analytics, Comparisons & Timelines
   getQuarterAnalytics: (params = {}) => {
     const searchParams = new URLSearchParams();
     Object.entries(params).forEach(([key, val]) => {
@@ -126,6 +146,32 @@ export const api = {
     return request(`/api/analytics/quarter/meetings${qs ? `?${qs}` : ''}`);
   },
 
+  comparePeriods: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        searchParams.append(key, val);
+      }
+    });
+    const qs = searchParams.toString();
+    return request(`/api/analytics/compare${qs ? `?${qs}` : ''}`);
+  },
+
+  getPainsLifecycle: () => request('/api/analytics/pains/lifecycle'),
+
+  getClientTimeline: (clientCode) => request(`/api/clients/${encodeURIComponent(clientCode)}/timeline`),
+
+  generateExecutiveSummary: (startDate, endDate, clientCode = null) =>
+    request('/api/analytics/executive-summary', {
+      method: 'POST',
+      body: JSON.stringify({ start_date: startDate, end_date: endDate, client_code: clientCode }),
+    }),
+
+  syncSqlite: () =>
+    request('/api/sqlite/sync', {
+      method: 'POST',
+    }),
+
   // TOTVS Integrations
   getSistemasTotvs: () => request('/api/integracoes/sistemas'),
 
@@ -135,10 +181,15 @@ export const api = {
       body: JSON.stringify({ sistema, webhook_url: webhookUrl }),
     }),
 
-  enviarIntegracao: (meetingId, sistema, tarefas) =>
+  deleteIntegracaoConfig: (sistema) =>
+    request(`/api/integracoes/config/${encodeURIComponent(sistema)}`, {
+      method: 'DELETE',
+    }),
+
+  enviarIntegracao: (meetingId, sistema, tarefas, modoSimulado = false, recommendationId = null) =>
     request('/api/integracoes/enviar', {
       method: 'POST',
-      body: JSON.stringify({ meeting_id: String(meetingId), sistema, tarefas }),
+      body: JSON.stringify({ meeting_id: String(meetingId), sistema, tarefas, modo_simulado: modoSimulado, recommendation_id: recommendationId }),
     }),
 
   getHistoricoIntegracoes: () => request('/api/integracoes/historico'),

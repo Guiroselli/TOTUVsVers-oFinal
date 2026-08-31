@@ -6,42 +6,58 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
-  PieChart,
-  Pie,
-  Cell,
   CartesianGrid
 } from 'recharts';
 import api from '../api/client';
 import EvidenceModal from './EvidenceModal';
 
-const URGENCY_COLORS = {
-  critica: '#ef4444',
-  alta: '#f97316',
-  media: '#f59e0b',
-  baixa: '#10b981',
-  nao_definido: '#6b7280',
-};
-
 export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
-  const [mode, setMode] = useState('preset'); // 'preset' | 'custom'
+  // Navigation Tabs
+  const [activeTab, setActiveTab] = useState('visao_geral'); // 'visao_geral' | 'comparacao' | 'ciclo_vida_dores'
+
+  // Filter States
+  const [mode] = useState('preset'); // 'preset' | 'custom'
   const [selectedYear, setSelectedYear] = useState(2026);
   const [selectedPeriod, setSelectedPeriod] = useState('year'); // 'year' | 'sem1' | 'sem2' | 'q1' | 'q2' | 'q3' | 'q4'
-  const [customStartDate, setCustomStartDate] = useState('2026-01-01');
-  const [customEndDate, setCustomEndDate] = useState('2026-12-31');
+  const [customStartDate] = useState('2026-01-01');
+  const [customEndDate] = useState('2026-12-31');
 
   const [clientFilter, setClientFilter] = useState('');
-  const [formatFilter, setFormatFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [formatFilter] = useState('');
+  const [statusFilter] = useState('');
 
   const [analyticsData, setAnalyticsData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [_loading, setLoading] = useState(false);
+  const [_error, setError] = useState(null);
+
+  // Alertas e Qualidade de Dados
+  const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const [isDataQualityModalOpen, setIsDataQualityModalOpen] = useState(false);
+
+  // Period Comparison State
+  const [compareData, setCompareData] = useState(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [baseQ, setBaseQ] = useState('2026-01-01:2026-03-31');
+  const [compQ, setCompQ] = useState('2025-10-01:2025-12-31');
+
+  // Pains Lifecycle State
+  const [lifecycleData, setLifecycleData] = useState(null);
+  const [lifecycleLoading, setLifecycleLoading] = useState(false);
+
+  // Client Timeline Modal
+  const [selectedClientTimeline, setSelectedClientTimeline] = useState(null);
+  const [_timelineLoading, setTimelineLoading] = useState(false);
+
+  // Executive Summary State
+  const [executiveSummary, setExecutiveSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
 
   // Drilldown Modal
   const [drilldownData, setDrilldownData] = useState(null);
   const [isDrilldownOpen, setIsDrilldownOpen] = useState(false);
 
+  // Load Main Analytics
   const loadAnalytics = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -90,6 +106,70 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
     loadAnalytics();
   }, [loadAnalytics]);
 
+  // Load Comparison Data
+  const loadComparison = async () => {
+    setCompareLoading(true);
+    try {
+      const [bStart, bEnd] = baseQ.split(':');
+      const [cStart, cEnd] = compQ.split(':');
+      const res = await api.comparePeriods({
+        base_start: bStart,
+        base_end: bEnd,
+        compare_start: cStart,
+        compare_end: cEnd,
+        base_label: 'Período Atual',
+        compare_label: 'Período Anterior'
+      });
+      setCompareData(res);
+    } catch (err) {
+      console.error('Erro ao comparar períodos:', err);
+    } finally {
+      setCompareLoading(false);
+    }
+  };
+
+  // Load Pains Lifecycle
+  const loadPainsLifecycle = async () => {
+    setLifecycleLoading(true);
+    try {
+      const res = await api.getPainsLifecycle();
+      setLifecycleData(res);
+    } catch (err) {
+      console.error('Erro ao carregar ciclo de vida:', err);
+    } finally {
+      setLifecycleLoading(false);
+    }
+  };
+
+  // Load Client Timeline
+  const handleOpenClientTimeline = async (clientCode) => {
+    setTimelineLoading(true);
+    try {
+      const res = await api.getClientTimeline(clientCode);
+      setSelectedClientTimeline(res);
+    } catch (err) {
+      console.error('Erro ao carregar timeline do cliente:', err);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
+  // Generate Executive Summary
+  const handleGenerateSummary = async () => {
+    setSummaryLoading(true);
+    setIsSummaryModalOpen(true);
+    try {
+      const start = analyticsData?.period?.start_date || '2026-01-01';
+      const end = analyticsData?.period?.end_date || '2026-12-31';
+      const res = await api.generateExecutiveSummary(start, end, clientFilter || null);
+      setExecutiveSummary(res);
+    } catch (err) {
+      console.error('Erro ao gerar resumo executivo:', err);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   const handleOpenDrilldown = async (metricType, metricKey) => {
     try {
       const params = {
@@ -98,9 +178,18 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
         client_code: clientFilter,
         format: formatFilter,
         status: statusFilter,
-        start_date: analyticsData?.period?.start_date || (mode === 'custom' ? customStartDate : undefined),
-        end_date: analyticsData?.period?.end_date || (mode === 'custom' ? customEndDate : undefined),
       };
+
+      if (mode === 'preset') {
+        params.year = selectedYear;
+        if (selectedPeriod === 'q1') params.quarter = 1;
+        else if (selectedPeriod === 'q2') params.quarter = 2;
+        else if (selectedPeriod === 'q3') params.quarter = 3;
+        else if (selectedPeriod === 'q4') params.quarter = 4;
+      } else {
+        params.start_date = customStartDate;
+        params.end_date = customEndDate;
+      }
 
       const res = await api.getQuarterDrilldown(params);
       setDrilldownData(res);
@@ -110,729 +199,1112 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
     }
   };
 
-  // Pie data for urgency
-  const urgencyPieData = analyticsData?.urgency_distribution ? [
-    { name: 'Crítica', value: analyticsData.urgency_distribution.critica || 0, color: URGENCY_COLORS.critica },
-    { name: 'Alta', value: analyticsData.urgency_distribution.alta || 0, color: URGENCY_COLORS.alta },
-    { name: 'Média', value: analyticsData.urgency_distribution.media || 0, color: URGENCY_COLORS.media },
-    { name: 'Baixa', value: analyticsData.urgency_distribution.baixa || 0, color: URGENCY_COLORS.baixa },
-    { name: 'Não Definido', value: analyticsData.urgency_distribution.nao_definido || 0, color: URGENCY_COLORS.nao_definido },
-  ].filter(d => d.value > 0) : [];
-
   return (
-    <div style={{ padding: '1.5rem 2rem', maxWidth: '1400px', margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+    <div style={{ padding: '1.5rem', maxWidth: '1400px', margin: '0 auto' }}>
+      {/* Header Principal com Resumo Executivo e Sincronização */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.8rem', color: 'var(--text-main)', margin: '0 0 4px 0' }}>
-            Visão Anual & Inteligência Gerencial
+          <h2 style={{ margin: '0 0 4px 0', color: 'var(--primary-color)', fontSize: '22px' }}>
+            Visão Executiva & Analytics
           </h2>
-          <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '14px' }}>
-            Panorama executivo anual, semestral e trimestral de reuniões, dores, tarefas e clientes.
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '13px' }}>
+            {analyticsData?.period?.label || 'Visão Anual e Trimestral'} — Inteligência Corporativa TOTVS
           </p>
         </div>
 
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            onClick={handleGenerateSummary}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '6px',
+              background: 'linear-gradient(135deg, var(--primary-color), #3b82f6)',
+              border: 'none',
+              color: '#000',
+              fontWeight: 600,
+              fontSize: '12px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>📊</span> Gerar Resumo Executivo
+          </button>
+        </div>
+      </div>
+
+      {/* Navegação entre Abas Principais */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
         <button
-          onClick={loadAnalytics}
-          disabled={loading}
-          className="btn-primary"
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', fontSize: '13px' }}
+          onClick={() => setActiveTab('visao_geral')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            background: activeTab === 'visao_geral' ? 'var(--primary-color)' : 'transparent',
+            color: activeTab === 'visao_geral' ? '#000' : 'var(--text-muted)',
+            fontWeight: 600,
+            border: 'none',
+            fontSize: '13px',
+            cursor: 'pointer'
+          }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
-          </svg>
-          {loading ? 'Atualizando...' : 'Atualizar Dados'}
+          📈 Visão Geral & Indicadores
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('comparacao');
+            if (!compareData) loadComparison();
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            background: activeTab === 'comparacao' ? 'var(--primary-color)' : 'transparent',
+            color: activeTab === 'comparacao' ? '#000' : 'var(--text-muted)',
+            fontWeight: 600,
+            border: 'none',
+            fontSize: '13px',
+            cursor: 'pointer'
+          }}
+        >
+          ⚖️ Comparação entre Períodos
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('ciclo_vida_dores');
+            if (!lifecycleData) loadPainsLifecycle();
+          }}
+          style={{
+            padding: '8px 16px',
+            borderRadius: '6px',
+            background: activeTab === 'ciclo_vida_dores' ? 'var(--primary-color)' : 'transparent',
+            color: activeTab === 'ciclo_vida_dores' ? '#000' : 'var(--text-muted)',
+            fontWeight: 600,
+            border: 'none',
+            fontSize: '13px',
+            cursor: 'pointer'
+          }}
+        >
+          🔄 Resolução e Ciclo de Vida das Dores
         </button>
       </div>
 
-      {/* Control Panel: Filters & Period Selection */}
-      <div style={{
-        background: 'var(--panel-bg)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '10px',
-        padding: '1.25rem',
-        marginBottom: '2rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-          {/* Mode Switch */}
-          <div style={{ display: 'flex', gap: '6px', background: 'var(--bg-main)', padding: '4px', borderRadius: '8px' }}>
-            <button
-              onClick={() => setMode('preset')}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '6px',
-                border: 'none',
-                background: mode === 'preset' ? 'var(--primary-color)' : 'transparent',
-                color: mode === 'preset' ? '#000' : 'var(--text-muted)',
-                fontWeight: 600,
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
+      {/* Barra de Filtros (Quando na Visão Geral) */}
+      {activeTab === 'visao_geral' && (
+        <div style={{
+          background: 'var(--panel-bg)',
+          border: '1px solid var(--border-color)',
+          borderRadius: '8px',
+          padding: '1rem',
+          marginBottom: '1.5rem',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '1rem',
+          alignItems: 'center',
+          fontSize: '13px'
+        }}>
+          <div>
+            <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '4px', fontSize: '11px' }}>
+              Ano
+            </label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
             >
-              Períodos Pré-definidos
-            </button>
-            <button
-              onClick={() => setMode('custom')}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '6px',
-                border: 'none',
-                background: mode === 'custom' ? 'var(--primary-color)' : 'transparent',
-                color: mode === 'custom' ? '#000' : 'var(--text-muted)',
-                fontWeight: 600,
-                fontSize: '12px',
-                cursor: 'pointer'
-              }}
-            >
-              Intervalo Personalizado
-            </button>
+              <option value={2026}>2026</option>
+              <option value={2025}>2025</option>
+              <option value={2024}>2024</option>
+            </select>
           </div>
 
-          {/* Preset Selectors: Anual, Semestral, Trimestral */}
-          {mode === 'preset' ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <select
-                value={selectedYear}
-                onChange={(e) => setSelectedYear(Number(e.target.value))}
-                style={{
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '13px',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                <option value={2026}>2026</option>
-                <option value={2025}>2025</option>
-                <option value={2024}>2024</option>
-              </select>
+          <div>
+            <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '4px', fontSize: '11px' }}>
+              Período
+            </label>
+            <select
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(e.target.value)}
+              style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
+            >
+              <option value="year">Ano Completo</option>
+              <option value="sem1">1º Semestre (Jan-Jun)</option>
+              <option value="sem2">2º Semestre (Jul-Dez)</option>
+              <option value="q1">1º Trimestre (Q1)</option>
+              <option value="q2">2º Trimestre (Q2)</option>
+              <option value="q3">3º Trimestre (Q3)</option>
+              <option value="q4">4º Trimestre (Q4)</option>
+            </select>
+          </div>
 
-              {/* Botão Anual */}
-              <button
-                onClick={() => setSelectedPeriod('year')}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  fontWeight: selectedPeriod === 'year' ? 600 : 400,
-                  background: selectedPeriod === 'year' ? 'rgba(0, 210, 255, 0.2)' : 'var(--bg-main)',
-                  border: `1px solid ${selectedPeriod === 'year' ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                  color: selectedPeriod === 'year' ? 'var(--primary-color)' : 'var(--text-main)',
-                  cursor: 'pointer'
-                }}
-              >
-                📅 Ano Inteiro
-              </button>
-
-              {/* Botões Semestrais */}
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {[
-                  { p: 'sem1', label: '1º Sem (Jan-Jun)' },
-                  { p: 'sem2', label: '2º Sem (Jul-Dez)' },
-                ].map((item) => (
-                  <button
-                    key={item.p}
-                    onClick={() => setSelectedPeriod(item.p)}
-                    style={{
-                      padding: '6px 11px',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      fontWeight: selectedPeriod === item.p ? 600 : 400,
-                      background: selectedPeriod === item.p ? 'rgba(0, 210, 255, 0.15)' : 'var(--bg-main)',
-                      border: `1px solid ${selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                      color: selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--text-main)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Botões Trimestrais */}
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {[
-                  { p: 'q1', label: '1T' },
-                  { p: 'q2', label: '2T' },
-                  { p: 'q3', label: '3T' },
-                  { p: 'q4', label: '4T' },
-                ].map((item) => (
-                  <button
-                    key={item.p}
-                    onClick={() => setSelectedPeriod(item.p)}
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '6px',
-                      fontSize: '12px',
-                      fontWeight: selectedPeriod === item.p ? 600 : 400,
-                      background: selectedPeriod === item.p ? 'rgba(0, 210, 255, 0.15)' : 'var(--bg-main)',
-                      border: `1px solid ${selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--border-color)'}`,
-                      color: selectedPeriod === item.p ? 'var(--primary-color)' : 'var(--text-main)',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>De:</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                style={{
-                  padding: '5px 8px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '12px',
-                  outline: 'none'
-                }}
-              />
-              <label style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Até:</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                style={{
-                  padding: '5px 8px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  fontSize: '12px',
-                  outline: 'none'
-                }}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Secondary Filters */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', paddingTop: '10px', borderTop: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cliente:</span>
+          <div>
+            <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '4px', fontSize: '11px' }}>
+              Cliente / Segmento
+            </label>
             <input
               type="text"
-              placeholder="Ex: T27261 ou Geral"
+              placeholder="Ex: T27261"
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
-              style={{
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px',
-                outline: 'none',
-                width: '130px'
-              }}
+              style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', width: '130px' }}
             />
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Formato:</span>
-            <select
-              value={formatFilter}
-              onChange={(e) => setFormatFilter(e.target.value)}
-              style={{
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="">Todos</option>
-              <option value="VIDEO">Vídeo</option>
-              <option value="PRESENCIAL">Presencial</option>
-              <option value="VOZ">Voz</option>
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={{
-                padding: '5px 8px',
-                borderRadius: '6px',
-                background: 'var(--bg-main)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-color)',
-                fontSize: '12px',
-                outline: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="">Todos</option>
-              <option value="COMPLETED">Concluída</option>
-              <option value="CANCELLED">Cancelada</option>
-            </select>
-          </div>
-
-          <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--primary-color)', fontWeight: 500 }}>
-            {analyticsData?.period?.label}
-          </div>
-        </div>
-      </div>
-
-      {error && (
-        <div style={{
-          padding: '1rem',
-          background: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid var(--danger)',
-          borderRadius: '8px',
-          color: 'var(--danger)',
-          marginBottom: '1.5rem',
-          fontSize: '14px'
-        }}>
-          ⚠️ {error}
+          <button
+            onClick={loadAnalytics}
+            style={{
+              marginTop: '18px',
+              padding: '6px 14px',
+              background: 'var(--primary-color)',
+              color: '#000',
+              fontWeight: 600,
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Filtrar
+          </button>
         </div>
       )}
 
-      {loading ? (
-        <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div style={{
-            width: '36px',
-            height: '36px',
-            border: '4px solid var(--border-color)',
-            borderTopColor: 'var(--primary-color)',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 1rem auto'
-          }}></div>
-          Calculando métricas trimestrais e agregações canônicas...
-        </div>
-      ) : analyticsData ? (
+      {/* ABA 1: VISÃO GERAL */}
+      {activeTab === 'visao_geral' && (
         <>
-          {/* KPI Cards */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '1rem',
-            marginBottom: '2rem'
-          }}>
-            <div style={{ background: 'var(--panel-bg)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Total de Reuniões</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{analyticsData.meetings.total}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>no período filtrado</div>
-            </div>
-
-            <div
-              style={{ background: 'var(--panel-bg)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
-              onClick={() => handleOpenDrilldown('unanalyzed', 'Sem Análise')}
-              title="Clique para ver reuniões sem análise"
-            >
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Reuniões Analisadas</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--primary-color)' }}>
-                {analyticsData.meetings.analyzed}
-                <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                  / {analyticsData.meetings.total}
-                </span>
-              </div>
-              <div style={{ fontSize: '11px', color: analyticsData.meetings.unanalyzed > 0 ? 'var(--warning)' : 'var(--success)', marginTop: '4px' }}>
-                {analyticsData.meetings.unanalyzed > 0 ? `⚠️ ${analyticsData.meetings.unanalyzed} sem análise de IA` : '✓ 100% analisadas'}
-              </div>
-            </div>
-
-            <div
-              style={{ background: 'var(--panel-bg)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
-              onClick={() => handleOpenDrilldown('open_actions', 'Ações Abertas')}
-            >
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Ações em Aberto</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: 'var(--warning)' }}>{analyticsData.open_actions}</div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>de {analyticsData.total_actions} tarefas mapeadas</div>
-            </div>
-
-            <div
-              style={{ background: 'var(--panel-bg)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)', cursor: 'pointer' }}
-              onClick={() => handleOpenDrilldown('overdue_actions', 'Ações Vencidas')}
-            >
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Ações Vencidas</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: analyticsData.overdue_actions > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                {analyticsData.overdue_actions}
-              </div>
-              <div style={{ fontSize: '11px', color: analyticsData.overdue_actions > 0 ? 'var(--danger)' : 'var(--text-muted)', marginTop: '4px' }}>
-                {analyticsData.overdue_actions > 0 ? '🚨 Exige atenção imediata' : 'Nenhuma tarefa atrasada'}
-              </div>
-            </div>
-
-            <div style={{ background: 'var(--panel-bg)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>NPS Médio</div>
-              <div style={{ fontSize: '2rem', fontWeight: 'bold', color: (analyticsData.nps_stats?.media || 0) >= 8 ? 'var(--success)' : 'var(--warning)' }}>
-                {analyticsData.nps_stats?.media ? analyticsData.nps_stats.media : '-'}
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                Zona: <strong>{analyticsData.nps_stats?.nps_zone || 'Geral'}</strong> ({analyticsData.nps_stats?.total_avaliacoes || 0} avaliações)
-              </div>
-            </div>
-          </div>
-
-          {/* Main Grid: Top Topics and Recurring Pains */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-            {/* Temas Mais Discutidos */}
-            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>Temas Mais Discutidos</h3>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Contagem única por reunião (% sobre o total)</span>
+          {/* Nível 2: Alertas Gerenciais Hierarquizados (Crítico > Atenção > Informativo) */}
+          {analyticsData?.managerial_alerts && analyticsData.managerial_alerts.length > 0 && (
+            <div style={{
+              background: 'var(--panel-bg)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '1.2rem',
+              marginBottom: '1.5rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h4 style={{ margin: 0, color: 'var(--warning)', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                    <span>⚠️</span> Alertas Gerenciais Corporativos ({analyticsData.managerial_alerts.length})
+                  </h4>
+                  <span style={{
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: 'var(--danger)',
+                    fontWeight: 600
+                  }}>
+                    {analyticsData.managerial_alerts.filter(a => a.severity === 'critical' || a.severity === 'danger').length} Críticos
+                  </span>
                 </div>
-                <span style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>Ranking Trimestral</span>
+                
+                {analyticsData.managerial_alerts.length > 4 && (
+                  <button
+                    onClick={() => setShowAllAlerts(!showAllAlerts)}
+                    style={{
+                      background: 'rgba(0, 210, 255, 0.1)',
+                      border: '1px solid var(--primary-color)',
+                      color: 'var(--primary-color)',
+                      padding: '4px 10px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      fontWeight: 600
+                    }}
+                  >
+                    {showAllAlerts ? '▲ Recolher Alertas' : `▼ Ver Todos os ${analyticsData.managerial_alerts.length} Alertas`}
+                  </button>
+                )}
               </div>
 
-              {analyticsData.top_topics && analyticsData.top_topics.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {analyticsData.top_topics.slice(0, 7).map((topic, idx) => (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px' }}>
+                {(showAllAlerts ? analyticsData.managerial_alerts : analyticsData.managerial_alerts.slice(0, 4)).map((al) => {
+                  const isCrit = al.severity === 'critical' || al.severity === 'danger';
+                  const isWarn = al.severity === 'warning';
+                  const borderColor = isCrit ? 'var(--danger)' : (isWarn ? 'var(--warning)' : '#3b82f6');
+                  const badgeBg = isCrit ? 'rgba(239, 68, 68, 0.15)' : (isWarn ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)');
+                  const badgeColor = isCrit ? 'var(--danger)' : (isWarn ? 'var(--warning)' : '#60a5fa');
+                  const icon = isCrit ? '🚨' : (isWarn ? '⚠️' : 'ℹ️');
+
+                  return (
                     <div
-                      key={topic.key}
+                      key={al.id}
                       style={{
-                        background: 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
+                        background: 'rgba(0,0,0,0.2)',
+                        borderLeft: `4px solid ${borderColor}`,
+                        borderTop: '1px solid var(--border-color)',
+                        borderRight: '1px solid var(--border-color)',
+                        borderBottom: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        padding: '10px 14px',
+                        fontSize: '12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between'
                       }}
-                      onClick={() => handleOpenDrilldown('topic', topic.key)}
-                      title="Clique para ver evidências e reuniões deste tema"
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(0, 210, 255, 0.2)', color: 'var(--primary-color)', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
-                            {idx + 1}
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}>
+                            {icon} {al.title}
                           </span>
-                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                            {topic.label}
+                          <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: badgeBg, color: badgeColor, fontWeight: 700 }}>
+                            {isCrit ? 'CRÍTICO' : (isWarn ? 'ATENÇÃO' : 'INFORMATIVO')}
                           </span>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: 'var(--primary-color)' }}>
-                            {topic.percentual_reunioes}%
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                            ({topic.reunioes_com_tema} reuniões)
-                          </span>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '11px', lineHeight: '1.4' }}>
+                          {al.description}
                         </div>
                       </div>
 
-                      <div style={{ height: '6px', background: 'var(--panel-bg)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${Math.min(100, topic.percentual_reunioes)}%`, background: 'var(--primary-color)', borderRadius: '3px' }}></div>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        <span>Ocorrências totais: {topic.ocorrencias}</span>
-                        <span style={{ color: 'var(--primary-color)' }}>Ver evidências →</span>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                        {al.metric_key && (
+                          <button
+                            onClick={() => handleOpenDrilldown('pain', al.metric_key)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary-color)',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              padding: 0,
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            🔍 Ver reuniões afetadas ({al.count})
+                          </button>
+                        )}
+                        {al.client_code && (
+                          <button
+                            onClick={() => handleOpenClientTimeline(al.client_code)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--primary-color)',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              padding: 0,
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            👤 Ver timeline do cliente
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', margin: '2rem 0' }}>Nenhum tema mapeado nas reuniões analisadas.</p>
-              )}
+                  );
+                })}
+              </div>
             </div>
+          )}
 
-            {/* Dores Recorrentes */}
-            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>Dores & Alertas Recorrentes</h3>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Gargalos mapeados pela IA por categoria canônica</span>
+          {/* Nível 1: Cards de Métricas Principais */}
+          {analyticsData && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Total de Reuniões</div>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
+                  {analyticsData.meetings?.total || 0}
                 </div>
-                <span style={{ fontSize: '11px', color: 'var(--danger)', fontWeight: 600 }}>Severidade & Volume</span>
+                <div style={{ fontSize: '10px', color: 'var(--success)', marginTop: '2px' }}>
+                  {analyticsData.meetings?.analyzed || 0} analisadas com IA
+                </div>
               </div>
 
-              {analyticsData.recurring_pains && analyticsData.recurring_pains.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {analyticsData.recurring_pains.slice(0, 7).map((pain) => (
-                    <div
-                      key={pain.categoria}
-                      style={{
-                        background: 'var(--bg-main)',
-                        border: `1px solid ${pain.cor}44`,
-                        borderLeft: `4px solid ${pain.cor}`,
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                      onClick={() => handleOpenDrilldown('pain', pain.categoria)}
-                      title="Clique para ver evidências e reuniões desta dor"
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                            {pain.label}
-                          </span>
-                          <span style={{
-                            fontSize: '10px',
-                            background: 'rgba(255,255,255,0.06)',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            color: 'var(--text-muted)',
-                            textTransform: 'uppercase'
-                          }}>
-                            {pain.sistema_totvs}
-                          </span>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: pain.cor }}>
-                            {pain.percentual_reunioes}%
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>
-                            ({pain.reunioes_afetadas} reuniões)
-                          </span>
-                        </div>
-                      </div>
-
-                      <div style={{ height: '6px', background: 'var(--panel-bg)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${Math.min(100, pain.percentual_reunioes)}%`, background: pain.cor, borderRadius: '3px' }}></div>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                        <span>Total de ocorrências: {pain.total_ocorrencias}</span>
-                        <span style={{ color: pain.cor }}>Ver evidências →</span>
-                      </div>
-                    </div>
-                  ))}
+              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ações em Aberto</div>
+                <div
+                  onClick={() => handleOpenDrilldown('open_actions', 'open')}
+                  style={{ fontSize: '24px', fontWeight: 700, color: 'var(--primary-color)', marginTop: '4px', cursor: 'pointer' }}
+                  title="Clique para ver ações abertas"
+                >
+                  {analyticsData.open_actions || 0}
                 </div>
-              ) : (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', margin: '2rem 0' }}>Nenhuma dor recorrente detectada no período.</p>
-              )}
-            </div>
-          </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  de {analyticsData.total_actions || 0} ações registradas
+                </div>
+              </div>
 
-          {/* Charts Row: Time Series and Urgency Distribution */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-            {/* Evolução Temporal */}
-            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.5rem' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: 'var(--text-main)' }}>
-                Evolução Temporal no Período
-              </h3>
-              {analyticsData.time_series && analyticsData.time_series.length > 0 ? (
-                <div style={{ height: '240px', width: '100%' }}>
+              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ações Vencidas (SLA)</div>
+                <div
+                  onClick={() => handleOpenDrilldown('overdue_actions', 'overdue')}
+                  style={{ fontSize: '24px', fontWeight: 700, color: 'var(--danger)', marginTop: '4px', cursor: 'pointer' }}
+                  title="Clique para ver ações vencidas"
+                >
+                  {analyticsData.overdue_actions || 0}
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--danger)', marginTop: '2px' }}>
+                  exigem regularização
+                </div>
+              </div>
+
+              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Qualidade Geral</div>
+                  <button
+                    onClick={() => setIsDataQualityModalOpen(true)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--primary-color)',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      padding: 0,
+                      textDecoration: 'underline'
+                    }}
+                  >
+                    Detalhar
+                  </button>
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
+                  {analyticsData.data_quality?.score_qualidade || 100}%
+                </div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Dados: {analyticsData.data_quality?.score_qualidade_dados || 100}% (50%) | IA: {analyticsData.data_quality?.score_qualidade_ia || 100}% (50%)
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Nível 3: Gráficos de Temas e Dores */}
+          {analyticsData && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+              {/* Gráfico de Temas Mais Discutidos */}
+              <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '14px', color: 'var(--text-main)' }}>
+                  Temas Mais Discutidos nas Reuniões
+                </h4>
+                <div style={{ height: '240px' }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analyticsData.time_series}>
+                    <BarChart data={(analyticsData.top_topics || []).slice(0, 6)} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="label" stroke="var(--text-muted)" fontSize={11} />
-                      <YAxis stroke="var(--text-muted)" fontSize={11} />
-                      <Tooltip
-                        contentStyle={{ background: 'var(--panel-bg)', borderColor: 'var(--border-color)', color: 'var(--text-main)', borderRadius: '8px' }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: '12px' }} />
-                      <Bar dataKey="total_reunioes" name="Reuniões" fill="var(--primary-color)" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="total_dores" name="Dores Mapeadas" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="total_tarefas" name="Tarefas" fill="#10b981" radius={[4, 4, 0, 0]} />
+                      <XAxis type="number" stroke="var(--text-muted)" fontSize={11} />
+                      <YAxis type="category" dataKey="label" stroke="var(--text-muted)" fontSize={11} width={130} />
+                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', fontSize: '12px' }} />
+                      <Bar dataKey="reunioes_com_tema" name="Reuniões" fill="var(--primary-color)" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
-              ) : (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', margin: '3rem 0' }}>Sem dados suficientes para série temporal.</p>
-              )}
-            </div>
-
-            {/* Distribuição de Urgência */}
-            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.5rem' }}>
-              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem', color: 'var(--text-main)' }}>
-                Distribuição de Urgência
-              </h3>
-              {urgencyPieData.length > 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', height: '240px' }}>
-                  <div style={{ flex: 1, height: '100%' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={urgencyPieData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={85}
-                          stroke="none"
-                        >
-                          {urgencyPieData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          contentStyle={{ background: 'var(--panel-bg)', borderColor: 'var(--border-color)', color: 'var(--text-main)', borderRadius: '8px' }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  </div>
-                  <div style={{ width: '150px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {urgencyPieData.map((entry) => (
-                      <div
-                        key={entry.name}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', cursor: 'pointer' }}
-                        onClick={() => handleOpenDrilldown('urgency', entry.name)}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: entry.color }}></span>
-                          <span style={{ color: 'var(--text-main)' }}>{entry.name}</span>
-                        </div>
-                        <span style={{ fontWeight: 'bold', color: entry.color }}>{entry.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', margin: '3rem 0' }}>Sem dados de urgência disponíveis.</p>
-              )}
-            </div>
-          </div>
-
-          {/* Clientes em Risco & Qualidade de Dados */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
-            {/* Clientes com Maior Concentração de Problemas */}
-            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>Clientes com Maior Atenção</h3>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Concentração de dores e ações pendentes</span>
               </div>
 
-              {analyticsData.clients_at_risk && analyticsData.clients_at_risk.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {analyticsData.clients_at_risk.slice(0, 6).map((client) => (
-                    <div
-                      key={client.codigo_cliente}
-                      style={{
-                        background: 'var(--bg-main)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        cursor: 'pointer'
-                      }}
-                      onClick={() => handleOpenDrilldown('client', client.codigo_cliente)}
-                      title="Ver reuniões deste cliente"
-                    >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: 'bold', color: 'var(--primary-color)', fontSize: '13px' }}>
-                            {client.codigo_cliente}
-                          </span>
-                          <span style={{
-                            fontSize: '10px',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            background: client.urgencia_maxima === 'Crítica' || client.urgencia_maxima === 'Alta' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                            color: client.urgencia_maxima === 'Crítica' || client.urgencia_maxima === 'Alta' ? 'var(--danger)' : 'var(--warning)',
-                            fontWeight: 600
-                          }}>
-                            {client.urgencia_maxima}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {client.dores_principais && client.dores_principais.length > 0 ? (
-                            <span>Dores: {client.dores_principais.join(', ')}</span>
-                          ) : (
-                            <span>{client.total_reunioes} reunião(ões) registradas</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#ef4444' }}>
-                          {client.total_dores} dores
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          {client.acoes_pendentes} ações abertas
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+              {/* Gráfico de Dores Recorrentes */}
+              <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '14px', color: 'var(--text-main)' }}>
+                  Dores Críticas e Gargalos Operacionais
+                </h4>
+                <div style={{ height: '240px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={(analyticsData.recurring_pains || []).slice(0, 6)} layout="vertical" margin={{ left: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis type="number" stroke="var(--text-muted)" fontSize={11} />
+                      <YAxis type="category" dataKey="label" stroke="var(--text-muted)" fontSize={11} width={130} />
+                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', fontSize: '12px' }} />
+                      <Bar dataKey="reunioes_afetadas" name="Reuniões Afetadas" fill="var(--warning)" radius={[0, 4, 4, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              ) : (
-                <p style={{ color: 'var(--text-muted)', textAlign: 'center', margin: '2rem 0' }}>Nenhum cliente em situação de risco identificada.</p>
-              )}
+              </div>
             </div>
+          )}
 
-            {/* Qualidade de Dados & Observabilidade */}
-            <div style={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.5rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)' }}>Qualidade de Dados & Saúde do Sistema</h3>
-                <span style={{
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  background: (analyticsData.data_quality?.score_qualidade || 0) >= 80 ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)',
-                  color: (analyticsData.data_quality?.score_qualidade || 0) >= 80 ? 'var(--success)' : 'var(--warning)',
-                }}>
-                  Score: {analyticsData.data_quality?.score_qualidade}%
+          {/* Nível 4: Clientes que Exigem Acompanhamento Prioritário (Apenas clientes válidos) */}
+          {analyticsData?.clients_at_risk && analyticsData.clients_at_risk.length > 0 && (
+            <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>
+                  Clientes que Exigem Acompanhamento Prioritário
+                </h4>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Clientes identificados com dores críticas ou reuniões recorrentes
                 </span>
               </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '8px' }}>Código do Cliente</th>
+                      <th style={{ padding: '8px' }}>Reuniões</th>
+                      <th style={{ padding: '8px' }}>Total de Dores</th>
+                      <th style={{ padding: '8px' }}>Dores Principais</th>
+                      <th style={{ padding: '8px' }}>Urgência Máxima</th>
+                      <th style={{ padding: '8px' }}>Ações Pendentes</th>
+                      <th style={{ padding: '8px' }}>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analyticsData.clients_at_risk.map((cli, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '8px', fontWeight: 600, color: 'var(--primary-color)' }}>
+                          {cli.codigo_cliente}
+                        </td>
+                        <td style={{ padding: '8px' }}>{cli.total_reunioes}</td>
+                        <td style={{ padding: '8px', color: 'var(--warning)', fontWeight: 600 }}>{cli.total_dores}</td>
+                        <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{cli.dores_principais?.join(', ') || '-'}</td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: cli.urgencia_maxima === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                            color: cli.urgencia_maxima === 'Crítica' ? 'var(--danger)' : 'var(--warning)'
+                          }}>
+                            {cli.urgencia_maxima}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px' }}>{cli.acoes_pendentes}</td>
+                        <td style={{ padding: '8px' }}>
+                          <button
+                            onClick={() => handleOpenClientTimeline(cli.codigo_cliente)}
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: '4px',
+                              background: 'rgba(0, 210, 255, 0.1)',
+                              border: '1px solid var(--primary-color)',
+                              color: 'var(--primary-color)',
+                              fontSize: '11px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Ver Timeline
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-              {analyticsData.data_quality && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
-                  <div style={{ background: 'var(--bg-main)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sem Transcrição</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: analyticsData.data_quality.reunioes_sem_transcricao > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                      {analyticsData.data_quality.reunioes_sem_transcricao}
-                    </div>
-                  </div>
+          {/* Nível 5: Segmentos e Reuniões sem Cliente Identificado */}
+          {analyticsData?.segments_unidentified && analyticsData.segments_unidentified.length > 0 && (
+            <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>
+                  Segmentos e Reuniões sem Cliente Específico Identificado
+                </h4>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Reuniões gerais, institucionais ou vinculadas apenas ao segmento econômico
+                </span>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '8px' }}>Segmento / Origem</th>
+                      <th style={{ padding: '8px' }}>Total de Reuniões</th>
+                      <th style={{ padding: '8px' }}>Total de Dores</th>
+                      <th style={{ padding: '8px' }}>Dores Mapeadas</th>
+                      <th style={{ padding: '8px' }}>Urgência Máxima</th>
+                      <th style={{ padding: '8px' }}>Ações Pendentes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {analyticsData.segments_unidentified.map((seg, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '8px', fontWeight: 600, color: 'var(--text-main)' }}>
+                          <span className="badge" style={{ fontSize: '11px' }}>{seg.segment_or_source}</span>
+                        </td>
+                        <td style={{ padding: '8px' }}>{seg.total_reunioes}</td>
+                        <td style={{ padding: '8px', color: 'var(--warning)', fontWeight: 600 }}>{seg.total_dores}</td>
+                        <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{seg.dores_principais?.join(', ') || '-'}</td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: seg.urgencia_maxima === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                            color: seg.urgencia_maxima === 'Crítica' ? 'var(--danger)' : 'var(--warning)'
+                          }}>
+                            {seg.urgencia_maxima}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px' }}>{seg.acoes_pendentes}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
-                  <div style={{ background: 'var(--bg-main)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sem Análise IA</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: analyticsData.data_quality.reunioes_sem_analise > 0 ? 'var(--warning)' : 'var(--success)' }}>
-                      {analyticsData.data_quality.reunioes_sem_analise}
-                    </div>
-                  </div>
+      {/* ABA 2: COMPARAÇÃO ENTRE PERÍODOS */}
+      {activeTab === 'comparacao' && (
+        <div style={{ background: 'var(--panel-bg)', padding: '1.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', color: 'var(--text-main)' }}>
+                Comparativo Entre Trimestres e Intervalos
+              </h3>
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
+                Cálculo determinístico de deltas de pautas, dores resolvidas e novos riscos.
+              </p>
+            </div>
 
-                  <div style={{ background: 'var(--bg-main)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sem Cliente Identificado</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--text-main)' }}>
-                      {analyticsData.data_quality.reunioes_sem_cliente}
-                    </div>
-                  </div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '4px' }}>Base:</span>
+                <select
+                  value={baseQ}
+                  onChange={(e) => setBaseQ(e.target.value)}
+                  style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '12px' }}
+                >
+                  <option value="2026-01-01:2026-03-31">1º Tri 2026 (Jan-Mar)</option>
+                  <option value="2026-04-01:2026-06-30">2º Tri 2026 (Abr-Jun)</option>
+                  <option value="2026-07-01:2026-09-30">3º Tri 2026 (Jul-Set)</option>
+                </select>
+              </div>
 
-                  <div style={{ background: 'var(--bg-main)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Datas Inválidas</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: analyticsData.data_quality.datas_invalidas > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                      {analyticsData.data_quality.datas_invalidas}
-                    </div>
-                  </div>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '4px' }}>vs Comparado:</span>
+                <select
+                  value={compQ}
+                  onChange={(e) => setCompQ(e.target.value)}
+                  style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '12px' }}
+                >
+                  <option value="2025-10-01:2025-12-31">4º Tri 2025 (Out-Dez)</option>
+                  <option value="2025-07-01:2025-09-30">3º Tri 2025 (Jul-Set)</option>
+                  <option value="2026-01-01:2026-03-31">1º Tri 2026 (Jan-Mar)</option>
+                </select>
+              </div>
 
-                  <div style={{ background: 'var(--bg-main)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Análises Antigas</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
-                      {analyticsData.data_quality.analises_antigas}
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'var(--bg-main)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Falhas no Ollama</div>
-                    <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: analyticsData.data_quality.falhas_ia > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                      {analyticsData.data_quality.falhas_ia}
-                    </div>
-                  </div>
-                </div>
-              )}
+              <button
+                onClick={loadComparison}
+                disabled={compareLoading}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  background: 'var(--primary-color)',
+                  color: '#000',
+                  fontWeight: 600,
+                  border: 'none',
+                  fontSize: '12px',
+                  cursor: 'pointer'
+                }}
+              >
+                {compareLoading ? 'Calculando...' : 'Comparar'}
+              </button>
             </div>
           </div>
-        </>
-      ) : null}
 
-      {/* Drilldown Modal */}
+          {compareData && (
+            <div>
+              {/* Resumo de Deltas */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Variação de Reuniões</div>
+                  <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
+                    {compareData.total_meetings_base} vs {compareData.total_meetings_compare}
+                    <span style={{ fontSize: '12px', marginLeft: '6px', color: compareData.total_meetings_delta >= 0 ? 'var(--success)' : 'var(--danger)' }}>
+                      ({compareData.total_meetings_delta >= 0 ? `+${compareData.total_meetings_delta}` : compareData.total_meetings_delta})
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Dores Novas Detectadas</div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--warning)', marginTop: '4px' }}>
+                    {compareData.new_pains?.length > 0 ? compareData.new_pains.join(', ') : 'Nenhuma dor nova'}
+                  </div>
+                </div>
+
+                <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Dores Resolvidas / Não Recorrentes</div>
+                  <div style={{ fontSize: '16px', fontWeight: 600, color: 'var(--success)', marginTop: '4px' }}>
+                    {compareData.resolved_pains?.length > 0 ? compareData.resolved_pains.join(', ') : 'Nenhuma'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabela de Variação de Temas */}
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: 'var(--text-main)' }}>
+                Evolução das Pautas e Assuntos
+              </h4>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                      <th style={{ padding: '8px' }}>Tema</th>
+                      <th style={{ padding: '8px' }}>Período Atual</th>
+                      <th style={{ padding: '8px' }}>Período Anterior</th>
+                      <th style={{ padding: '8px' }}>Variação Absoluta</th>
+                      <th style={{ padding: '8px' }}>Tendência</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {compareData.topics_comparison?.map((top, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                        <td style={{ padding: '8px', fontWeight: 600, color: 'var(--text-main)' }}>{top.label}</td>
+                        <td style={{ padding: '8px' }}>{top.base_count}</td>
+                        <td style={{ padding: '8px' }}>{top.compare_count}</td>
+                        <td style={{ padding: '8px', color: top.delta_count > 0 ? 'var(--warning)' : (top.delta_count < 0 ? 'var(--success)' : 'var(--text-muted)') }}>
+                          {top.delta_count > 0 ? `+${top.delta_count}` : top.delta_count} ({top.delta_percent}%)
+                        </td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            background: top.trend === 'aumentou' ? 'rgba(245, 158, 11, 0.15)' : (top.trend === 'diminuiu' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)'),
+                            color: top.trend === 'aumentou' ? 'var(--warning)' : (top.trend === 'diminuiu' ? 'var(--success)' : 'var(--text-muted)')
+                          }}>
+                            {top.trend === 'aumentou' ? '▲ Aumentou' : (top.trend === 'diminuiu' ? '▼ Diminuiu' : '― Estável')}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ABA 3: CICLO DE VIDA E RESOLUÇÃO DE DORES */}
+      {activeTab === 'ciclo_vida_dores' && (
+        <div style={{ background: 'var(--panel-bg)', padding: '1.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+          <div style={{ marginBottom: '1.2rem' }}>
+            <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', color: 'var(--text-main)' }}>
+              Acompanhamento de Resolução das Dores Corporativas
+            </h3>
+            <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '12px' }}>
+              Rastreabilidade de primeira e última aparição, taxa de conclusão de ações e produtos TOTVS recomendados.
+            </p>
+          </div>
+
+          {lifecycleLoading ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Carregando dados de ciclo de vida...</p>
+          ) : lifecycleData?.items ? (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '8px' }}>Dor Identificada</th>
+                    <th style={{ padding: '8px' }}>1ª Aparição</th>
+                    <th style={{ padding: '8px' }}>Última Aparição</th>
+                    <th style={{ padding: '8px' }}>Reuniões</th>
+                    <th style={{ padding: '8px' }}>Clientes</th>
+                    <th style={{ padding: '8px' }}>Ações Resolvidas</th>
+                    <th style={{ padding: '8px' }}>Tendência</th>
+                    <th style={{ padding: '8px' }}>Solução TOTVS Sugerida</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lifecycleData.items.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td style={{ padding: '8px', fontWeight: 600, color: 'var(--text-main)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.cor }}></span>
+                          {item.label}
+                        </div>
+                        {item.has_unresolved_alert && (
+                          <span style={{ fontSize: '10px', color: 'var(--danger)', display: 'block', marginTop: '2px' }}>
+                            ⚠️ Recorrente em 3+ reuniões sem resolução
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{item.first_seen_date || '-'}</td>
+                      <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{item.last_seen_date || '-'}</td>
+                      <td style={{ padding: '8px', fontWeight: 600 }}>{item.meetings_count}</td>
+                      <td style={{ padding: '8px' }}>{item.affected_clients_count} cliente(s)</td>
+                      <td style={{ padding: '8px' }}>
+                        <span style={{ color: item.completed_tasks_count > 0 ? 'var(--success)' : 'var(--warning)' }}>
+                          {item.completed_tasks_count} / {item.related_tasks_count}
+                        </span>
+                        {item.overdue_tasks_count > 0 && (
+                          <span style={{ color: 'var(--danger)', marginLeft: '4px' }}>
+                            ({item.overdue_tasks_count} vencidas)
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px' }}>
+                        <span style={{
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          background: item.trend === 'aumentando' ? 'rgba(239, 68, 68, 0.15)' : (item.trend === 'reduzindo' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)'),
+                          color: item.trend === 'aumentando' ? 'var(--danger)' : (item.trend === 'reduzindo' ? 'var(--success)' : 'var(--text-muted)')
+                        }}>
+                          {item.trend === 'aumentando' ? '▲ Aumentando' : (item.trend === 'reduzindo' ? '▼ Reduzindo' : '― Estável')}
+                        </span>
+                      </td>
+                      <td style={{ padding: '8px', color: 'var(--primary-color)', fontWeight: 500 }}>
+                        {item.associated_totvs_product}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {/* MODAL: LINHA DO TEMPO DO CLIENTE */}
+      {selectedClientTimeline && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            maxWidth: '750px',
+            width: '100%',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            padding: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ margin: '0 0 2px 0', fontSize: '18px', color: 'var(--text-main)' }}>
+                  Jornada e Linha do Tempo: {selectedClientTimeline.client_code}
+                </h3>
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                  Saúde da Conta:{' '}
+                  <strong style={{
+                    color: selectedClientTimeline.relationship_health === 'Crítico' ? 'var(--danger)' :
+                           (selectedClientTimeline.relationship_health === 'Atenção' ? 'var(--warning)' : 'var(--success)')
+                  }}>
+                    {selectedClientTimeline.relationship_health}
+                  </strong>{' '}
+                  | {selectedClientTimeline.total_meetings} reunião(ões)
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedClientTimeline(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}>
+              {selectedClientTimeline.timeline?.map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    borderLeft: '2px solid var(--primary-color)',
+                    paddingLeft: '1rem',
+                    position: 'relative'
+                  }}
+                >
+                  <div style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>
+                    📅 {item.date || 'Data não informada'}
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', margin: '2px 0' }}>
+                    {item.tema}
+                  </div>
+                  {item.dores?.length > 0 && (
+                    <div style={{ fontSize: '11px', color: 'var(--warning)', marginTop: '2px' }}>
+                      <strong>Dores:</strong> {item.dores.join(', ')}
+                    </div>
+                  )}
+                  {item.decisao && item.decisao !== 'Não mencionado' && (
+                    <div style={{ fontSize: '11px', color: 'var(--success)', marginTop: '2px' }}>
+                      <strong>Decisão:</strong> {item.decisao}
+                    </div>
+                  )}
+                  {item.recomendacoes_totvs?.length > 0 && (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      <strong>Sistemas TOTVS:</strong> {item.recomendacoes_totvs.join(', ')}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+              <button
+                onClick={() => setSelectedClientTimeline(null)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  background: 'var(--primary-color)',
+                  color: '#000',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RESUMO EXECUTIVO CONTROLADO */}
+      {isSummaryModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            maxWidth: '700px',
+            width: '100%',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            padding: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--primary-color)' }}>
+                Resumo Executivo Estruturado
+              </h3>
+              <button
+                onClick={() => setIsSummaryModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {summaryLoading ? (
+              <p style={{ color: 'var(--text-muted)' }}>Consolidando dados executivos...</p>
+            ) : executiveSummary ? (
+              <div style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ padding: '10px', background: 'rgba(0, 210, 255, 0.05)', borderRadius: '6px', borderLeft: '3px solid var(--primary-color)' }}>
+                  {executiveSummary.resumo_executivo_texto}
+                </div>
+
+                <div>
+                  <strong style={{ color: 'var(--primary-color)' }}>Principais Assuntos Discutidos:</strong>
+                  <ul style={{ margin: '4px 0', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                    {executiveSummary.principais_assuntos?.map((ass, i) => (
+                      <li key={i}>{ass}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <strong style={{ color: 'var(--warning)' }}>Dores e Gargalos Persistentes:</strong>
+                  <ul style={{ margin: '4px 0', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                    {executiveSummary.dores_persistentes?.map((dor, i) => (
+                      <li key={i}>{dor}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                {executiveSummary.recomendacoes_proximos_passos?.length > 0 && (
+                  <div>
+                    <strong style={{ color: 'var(--success)' }}>Recomendações de Próximos Passos:</strong>
+                    <ul style={{ margin: '4px 0', paddingLeft: '18px', color: 'var(--text-muted)' }}>
+                      {executiveSummary.recomendacoes_proximos_passos.map((rec, i) => (
+                        <li key={i}>{rec}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+              <button
+                onClick={() => setIsSummaryModalOpen(false)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  background: 'var(--primary-color)',
+                  color: '#000',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Concluído
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DETALHAMENTO DA QUALIDADE DOS DADOS & IA */}
+      {isDataQualityModalOpen && analyticsData?.data_quality && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            maxWidth: '650px',
+            width: '100%',
+            maxHeight: '85vh',
+            overflowY: 'auto',
+            padding: '1.5rem'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--primary-color)' }}>
+                Composição do Score de Qualidade
+              </h3>
+              <button
+                onClick={() => setIsDataQualityModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ color: 'var(--text-muted)', fontSize: '12px', marginBottom: '1.2rem' }}>
+              {analyticsData.data_quality.calculation_breakdown?.formula_geral || 'O índice geral é calculado pela média ponderada de 50% Qualidade dos Dados + 50% Qualidade da IA.'}
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1.5rem' }}>
+              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px', borderLeft: '3px solid var(--primary-color)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Qualidade dos Dados ({analyticsData.data_quality.calculation_breakdown?.peso_dados_geral || 50}%)
+                </div>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--primary-color)', marginTop: '4px' }}>
+                  {analyticsData.data_quality.score_qualidade_dados || 100}%
+                </div>
+              </div>
+              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px', borderLeft: '3px solid var(--success)' }}>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                  Qualidade da IA ({analyticsData.data_quality.calculation_breakdown?.peso_ia_geral || 50}%)
+                </div>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
+                  {analyticsData.data_quality.score_qualidade_ia || 100}%
+                </div>
+              </div>
+            </div>
+
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--text-main)' }}>
+              Componentes de Qualidade dos Dados (Peso: {analyticsData.data_quality.calculation_breakdown?.peso_dados_geral || 50}% do total):
+            </h4>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', marginBottom: '1.2rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Transcrições Válidas ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.transcricao?.peso || 35}%):
+                </span>
+                <strong style={{ color: 'var(--success)' }}>
+                  {analyticsData.data_quality.reunioes_com_transcricao || 0} de {analyticsData.data_quality.total_reunioes || 0} reuniões ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.transcricao?.valor_percentual || 100}%)
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Clientes Válidos Identificados ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.clientes?.peso || 25}%):
+                </span>
+                <strong style={{ color: 'var(--primary-color)' }}>
+                  {analyticsData.data_quality.clientes_identificados || 0} de {analyticsData.data_quality.total_reunioes || 0} reuniões ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.clientes?.valor_percentual || 100}%)
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Datas Padronizadas ISO ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.datas?.peso || 20}%):
+                </span>
+                <strong style={{ color: 'var(--success)' }}>
+                  {analyticsData.data_quality.datas_validas || 0} de {analyticsData.data_quality.total_reunioes || 0} reuniões ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.datas?.valor_percentual || 100}%)
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Tarefas com Responsável ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.tarefas_responsavel?.peso || 10}%):
+                </span>
+                <strong style={{ color: 'var(--success)' }}>
+                  {analyticsData.data_quality.tarefas_com_responsavel || 0} de {analyticsData.data_quality.total_tarefas || 0} tarefas ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.tarefas_responsavel?.valor_percentual || 100}%)
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Tarefas com Prazo Definido ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.tarefas_prazo?.peso || 10}%):
+                </span>
+                <strong style={{ color: 'var(--success)' }}>
+                  {analyticsData.data_quality.tarefas_com_prazo || 0} de {analyticsData.data_quality.total_tarefas || 0} tarefas ({analyticsData.data_quality.calculation_breakdown?.pesos_dados?.tarefas_prazo?.valor_percentual || 100}%)
+                </strong>
+              </div>
+            </div>
+
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: 'var(--text-main)' }}>
+              Componentes de Qualidade da IA (Peso: {analyticsData.data_quality.calculation_breakdown?.peso_ia_geral || 50}% do total):
+            </h4>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border-color)', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Reuniões Analisadas ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.analises_concluidas?.peso || 60}%):
+                </span>
+                <strong style={{ color: 'var(--primary-color)' }}>
+                  {analyticsData.data_quality.reunioes_analisadas || 0} de {analyticsData.data_quality.total_reunioes || 0} reuniões ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.analises_concluidas?.valor_percentual || 100}%)
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px' }}>
+                <span style={{ color: 'var(--text-main)' }}>
+                  Ausência de Falhas Técnicas ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.ausencia_falhas?.peso || 40}%):
+                </span>
+                <strong style={{ color: analyticsData.data_quality.falhas_ia > 0 ? 'var(--danger)' : 'var(--success)' }}>
+                  {analyticsData.data_quality.falhas_ia || 0} falha(s) registrada(s) ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.ausencia_falhas?.valor_percentual || 100}%)
+                </strong>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
+              <button
+                onClick={() => setIsDataQualityModalOpen(false)}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: '4px',
+                  background: 'var(--primary-color)',
+                  color: '#000',
+                  fontWeight: 600,
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Drilldown */}
       <EvidenceModal
         isOpen={isDrilldownOpen}
         onClose={() => setIsDrilldownOpen(false)}

@@ -1,15 +1,23 @@
 from typing import Optional
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Body
 
-from repositories import MeetingRepository
+from repositories import MeetingRepository, sync_json_to_sqlite
 from analytics_service import AnalyticsService, get_quarter_dates, get_period_dates
-from schemas import AnalyticsQuarterResponse, DrilldownMeetingsResponse
+from schemas import (
+    AnalyticsQuarterResponse, 
+    DrilldownMeetingsResponse,
+    PeriodComparisonResponse,
+    PainsLifecycleResponse,
+    ClientTimelineResponse,
+    ExecutiveSummaryResponse,
+    ExecutiveSummaryRequest
+)
 
-router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+router = APIRouter(tags=["Analytics"])
 repo = MeetingRepository()
 
 
-@router.get("/quarter", response_model=AnalyticsQuarterResponse)
+@router.get("/api/analytics/quarter", response_model=AnalyticsQuarterResponse)
 def get_quarter_analytics(
     start_date: Optional[str] = Query(None, description="Data de início YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="Data de fim YYYY-MM-DD"),
@@ -26,7 +34,6 @@ def get_quarter_analytics(
     """
     period_label = "Período Personalizado"
     
-    # Suporte a tipo de período (anual, semestral, trimestral)
     if year and period_type:
         p_num = period_num if period_num is not None else (quarter or 1)
         s_date, e_date, label = get_period_dates(year, period_type, p_num)
@@ -35,7 +42,6 @@ def get_quarter_analytics(
         if not end_date:
             end_date = e_date
         period_label = label
-    # Se ano e trimestre clássicos foram informados
     elif year and quarter:
         s_date, e_date, label = get_quarter_dates(year, quarter)
         if not start_date:
@@ -44,7 +50,6 @@ def get_quarter_analytics(
             end_date = e_date
         period_label = label
     elif not start_date and not end_date:
-        # Fallback default: Todo o ano atual ou todo o dataset
         start_date = "2020-01-01"
         end_date = "2030-12-31"
         period_label = "Todas as Reuniões"
@@ -68,19 +73,74 @@ def get_quarter_analytics(
     return analytics
 
 
-@router.get("/quarter/meetings", response_model=DrilldownMeetingsResponse)
+@router.get("/api/analytics/compare", response_model=PeriodComparisonResponse)
+def compare_periods(
+    base_start: str = Query(..., description="Início do período base YYYY-MM-DD"),
+    base_end: str = Query(..., description="Fim do período base YYYY-MM-DD"),
+    compare_start: str = Query(..., description="Início do período comparativo YYYY-MM-DD"),
+    compare_end: str = Query(..., description="Fim do período comparativo YYYY-MM-DD"),
+    base_label: str = Query("Período Base"),
+    compare_label: str = Query("Período Comparado")
+):
+    """
+    Compara dois intervalos/trimestres calculando matematicamente os deltas e tendências.
+    """
+    all_meetings = repo.get_all()
+    return AnalyticsService.compare_periods(
+        meetings=all_meetings,
+        base_start=base_start,
+        base_end=base_end,
+        compare_start=compare_start,
+        compare_end=compare_end,
+        base_label=base_label,
+        compare_label=compare_label
+    )
+
+
+@router.get("/api/analytics/pains/lifecycle", response_model=PainsLifecycleResponse)
+def get_pains_lifecycle():
+    """
+    Retorna o ciclo de vida completo de cada dor mapeada (aparições, evolução, SLA e resolução).
+    """
+    all_meetings = repo.get_all()
+    return AnalyticsService.calculate_pains_lifecycle(all_meetings)
+
+
+@router.get("/api/clients/{client_code}/timeline", response_model=ClientTimelineResponse)
+def get_client_timeline(client_code: str):
+    """
+    Retorna a linha do tempo executiva de reuniões, dores, tarefas e status de relacionamento do cliente.
+    """
+    all_meetings = repo.get_all()
+    return AnalyticsService.get_client_timeline(all_meetings, client_code)
+
+
+@router.post("/api/analytics/executive-summary", response_model=ExecutiveSummaryResponse)
+def generate_executive_summary(payload: ExecutiveSummaryRequest = Body(...)):
+    """
+    Gera um resumo executivo com síntese restrita aos dados estruturados pré-calculados.
+    """
+    all_meetings = repo.get_all()
+    start_date = payload.start_date or "2020-01-01"
+    end_date = payload.end_date or "2030-12-31"
+    return AnalyticsService.generate_executive_summary(
+        meetings=all_meetings,
+        start_date=start_date,
+        end_date=end_date,
+        client_code=payload.client_code
+    )
+
+
+@router.get("/api/analytics/quarter/meetings", response_model=DrilldownMeetingsResponse)
 def get_drilldown_meetings(
-    metric_type: str = Query(..., description="Tipo da métrica (topic, pain, urgency, client, overdue_actions, open_actions, unanalyzed)"),
-    metric_key: str = Query(..., description="Chave específica (ex: aprovacao_pendente, financeiro, Alta)"),
+    metric_type: str = Query(..., description="Tipo da métrica"),
+    metric_key: str = Query(..., description="Chave específica"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     client_code: Optional[str] = Query(None),
     format: Optional[str] = Query(None),
     status: Optional[str] = Query(None)
 ):
-    """
-    Permite abrir as reuniões e evidências textuais que originaram determinado resultado.
-    """
     meetings = repo.get_all(
         start_date=start_date,
         end_date=end_date,
@@ -89,9 +149,14 @@ def get_drilldown_meetings(
         status_filter=status
     )
 
-    result = AnalyticsService.get_drilldown_meetings(
+    return AnalyticsService.get_drilldown_meetings(
         meetings=meetings,
         metric_type=metric_type,
         metric_key=metric_key
     )
-    return result
+
+
+@router.post("/api/sqlite/sync")
+def sync_to_sqlite():
+    """Executa a sincronização incremental e não-destrutiva do JSON para SQLite com índices."""
+    return sync_json_to_sqlite()

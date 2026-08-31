@@ -15,12 +15,20 @@ export default function MeetingFieldSuggestions({
 
   const handleStartEdit = (fieldName, currentValue) => {
     setEditingField(fieldName);
-    setEditValue(currentValue || '');
+    if (Array.isArray(currentValue)) {
+      setEditValue(currentValue.join(', '));
+    } else {
+      setEditValue(currentValue !== null && currentValue !== undefined ? String(currentValue) : '');
+    }
   };
 
   const handleSaveEdit = async (fieldName) => {
     if (onConfirmSuggestion) {
-      await onConfirmSuggestion(meetingId, fieldName, 'edit', editValue);
+      let finalVal = editValue;
+      if (fieldName === 'participantes') {
+        finalVal = editValue.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      await onConfirmSuggestion(meetingId, fieldName, 'edit', finalVal);
     }
     setEditingField(null);
   };
@@ -28,6 +36,12 @@ export default function MeetingFieldSuggestions({
   const handleCancelEdit = () => {
     setEditingField(null);
     setEditValue('');
+  };
+
+  const handlePickCandidate = async (fieldName, candidateName) => {
+    if (onConfirmSuggestion) {
+      await onConfirmSuggestion(meetingId, fieldName, 'edit', candidateName);
+    }
   };
 
   return (
@@ -38,7 +52,7 @@ export default function MeetingFieldSuggestions({
       padding: '1.25rem',
       marginBottom: '1.5rem',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{
             width: '24px',
@@ -53,28 +67,40 @@ export default function MeetingFieldSuggestions({
             ⚡
           </div>
           <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)', fontWeight: 600 }}>
-            Campos Identificados pela IA
+            Campos e Sugestões Identificados pela IA
           </h4>
         </div>
         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-          Validação com confirmação humana obrigatória
+          Confirmação ou edição manual prevalece sobre qualquer sugestão
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
         {Object.entries(suggestions).map(([fieldName, sug]) => {
           const isEditing = editingField === fieldName;
           const status = sug.review_status || 'pending';
           const confPercent = Math.round((sug.confidence || 0) * 100);
+          const candidates = sug.candidates || [];
           
           let confColor = 'var(--success)';
           if (confPercent < 60) confColor = 'var(--danger)';
           else if (confPercent < 80) confColor = 'var(--warning)';
 
+          // Formatação do valor exibido
+          let displayVal = sug.suggested_value;
+          if (status === 'confirmed' && sug.confirmed_value !== null && sug.confirmed_value !== undefined) {
+            displayVal = sug.confirmed_value;
+          }
+          if (Array.isArray(displayVal)) {
+            displayVal = displayVal.length > 0 ? displayVal.join(', ') : 'Nenhum identificado';
+          } else if (displayVal === null || displayVal === undefined || displayVal === '') {
+            displayVal = 'Não identificado';
+          }
+
           return (
             <div key={fieldName} style={{
               background: 'var(--panel-bg)',
-              border: `1px solid ${status === 'confirmed' ? 'rgba(16, 185, 129, 0.3)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.3)' : 'var(--border-color)'}`,
+              border: `1px solid ${status === 'confirmed' ? 'rgba(16, 185, 129, 0.35)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-color)'}`,
               borderRadius: '8px',
               padding: '1rem',
               display: 'flex',
@@ -136,7 +162,7 @@ export default function MeetingFieldSuggestions({
                   </div>
                 ) : (
                   <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px', wordBreak: 'break-word' }}>
-                    {status === 'confirmed' && sug.confirmed_value !== null ? sug.confirmed_value : (sug.suggested_value || 'Não identificado')}
+                    {displayVal}
                   </div>
                 )}
 
@@ -161,11 +187,63 @@ export default function MeetingFieldSuggestions({
                     padding: '6px 8px',
                     borderRadius: '4px',
                     borderLeft: '2px solid var(--primary-color)',
-                    marginBottom: '10px',
-                    maxHeight: '70px',
+                    marginBottom: '8px',
+                    maxHeight: '65px',
                     overflowY: 'auto'
                   }}>
                     "{sug.evidence}"
+                  </div>
+                )}
+
+                {/* Lista de Múltiplos Candidatos (Seção 2) */}
+                {candidates && candidates.length > 1 && status !== 'confirmed' && (
+                  <div style={{
+                    background: 'rgba(0, 210, 255, 0.05)',
+                    border: '1px dashed rgba(0, 210, 255, 0.25)',
+                    borderRadius: '6px',
+                    padding: '6px 8px',
+                    marginBottom: '8px'
+                  }}>
+                    <span style={{ fontSize: '10px', color: 'var(--primary-color)', fontWeight: 600, display: 'block', marginBottom: '4px' }}>
+                      Candidatos Identificados:
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      {candidates.map((c, cIdx) => (
+                        <div
+                          key={cIdx}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'var(--bg-main)',
+                            padding: '3px 6px',
+                            borderRadius: '4px',
+                            fontSize: '11px'
+                          }}
+                        >
+                          <div>
+                            <strong>{c.name}</strong> <span style={{ color: 'var(--text-muted)', fontSize: '10px' }}>({Math.round(c.score * 100)}% score)</span>
+                            {c.reasons && c.reasons[0] && (
+                              <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{c.reasons[0]}</div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handlePickCandidate(fieldName, c.name)}
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: '3px',
+                              background: 'rgba(0, 210, 255, 0.15)',
+                              border: '1px solid var(--primary-color)',
+                              color: 'var(--primary-color)',
+                              fontSize: '10px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Selecionar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>

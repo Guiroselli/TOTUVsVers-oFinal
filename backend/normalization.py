@@ -70,6 +70,9 @@ PAIN_CATEGORIES = {
     },
 }
 
+# Alias de compatibilidade
+PAIN_METADATA = PAIN_CATEGORIES
+
 # Mapeamento de aliases e variações para a categoria canônica
 PAIN_ALIASES: Dict[str, str] = {
     # aprovacao_pendente
@@ -119,6 +122,8 @@ PAIN_ALIASES: Dict[str, str] = {
     "reclamacao cliente": "insatisfacao_cliente",
     "insatisfeito": "insatisfacao_cliente",
     "cliente bravo": "insatisfacao_cliente",
+    "churn": "insatisfacao_cliente",
+    "perda de cliente": "insatisfacao_cliente",
     
     # falta_metricas
     "falta_metricas": "falta_metricas",
@@ -323,22 +328,105 @@ def normalize_date_iso(date_str: Any) -> Optional[str]:
     # Fallback regex para capturar YYYY-MM-DD
     match = re.search(r'(\d{4})-(\d{2})-(\d{2})', s)
     if match:
-        return match.group(0)
+        try:
+            dt = datetime.strptime(match.group(0), "%Y-%m-%d")
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            return None
         
-    return s
+    return None
+
+
+KNOWN_SEGMENTS = {
+    "SERVICOS", "SERVIÇOS", "FINANCEIRO", "LOGISTICA", "LOGÍSTICA", "VAREJO",
+    "MANUFATURA", "SAUDE", "SAÚDE", "EDUCACAO", "EDUCAÇÃO", "AGRO", "AGRONEGOCIO", "AGRONEGÓCIO",
+    "CONSTRUCAO", "CONSTRUÇÃO", "TECNOLOGIA", "DISTRIBUICAO", "DISTRIBUIÇÃO",
+    "JURIDICO", "JURÍDICO", "HOSPITALIDADE", "RH", "SUPPLY"
+}
+
+
+def classify_client_identity(raw_value: Any) -> Dict[str, str]:
+    """
+    Classifica a identidade do registro separando código de cliente, segmento e origem.
+    Retorna dicionário com:
+    - client_code: str (código/nome do cliente ou 'Não identificado')
+    - segment: str (segmento corporativo ou 'Geral')
+    - meeting_source: str ('ao_vivo', 'upload', 'historico', 'importacao')
+    - client_identity_status: str ('valid_client', 'segment_only', 'live_meeting', 'general', 'unknown')
+    """
+    if not raw_value:
+        return {
+            "client_code": "Não identificado",
+            "segment": "Geral",
+            "meeting_source": "historico",
+            "client_identity_status": "unknown"
+        }
+        
+    s_raw = str(raw_value).strip()
+    s_clean = strip_accents(s_raw).upper()
+    
+    # 1. Ao Vivo
+    if s_clean in ["AO VIVO", "AOVIVO", "LIVE", "LIVE_MEETING"]:
+        return {
+            "client_code": "Não identificado",
+            "segment": "Geral",
+            "meeting_source": "ao_vivo",
+            "client_identity_status": "live_meeting"
+        }
+        
+    # 2. Geral / Desconhecido / Histórico / Importação
+    if s_clean in ["HISTORICO", "HISTORICA", "HISTORICO REUNIOES", "HISTORICO_REUNIAO"]:
+        return {
+            "client_code": "Não identificado",
+            "segment": "Geral",
+            "meeting_source": "historico",
+            "client_identity_status": "historico_only"
+        }
+
+    if s_clean in ["IMPORTACAO", "IMPORTACAO DADOS", "IMPORTACAO_DADOS", "UPLOAD", "ARQUIVO", "GRAVADA"]:
+        return {
+            "client_code": "Não identificado",
+            "segment": "Geral",
+            "meeting_source": "importacao",
+            "client_identity_status": "importacao_only"
+        }
+
+    if s_clean in ["GERAL", "NONE", "NULL", "NAN", "-", "DESCONHECIDO", "NAO INFORMADO", "NAO IDENTIFICADO", ""]:
+        return {
+            "client_code": "Não identificado",
+            "segment": "Geral",
+            "meeting_source": "historico",
+            "client_identity_status": "general"
+        }
+        
+    # 3. Apenas Segmento (sem código de cliente específico)
+    for seg in KNOWN_SEGMENTS:
+        if s_clean == strip_accents(seg).upper():
+            return {
+                "client_code": "Não identificado",
+                "segment": seg.title(),
+                "meeting_source": "historico",
+                "client_identity_status": "segment_only"
+            }
+            
+    # 4. Padrões de Cliente Válido (ex: T27261, CLI_1018803, CLI-01, EMPRESA X)
+    formatted_code = re.sub(r'\s+', '', s_raw).upper()
+    return {
+        "client_code": formatted_code,
+        "segment": "Geral",
+        "meeting_source": "historico",
+        "client_identity_status": "valid_client"
+    }
 
 
 def normalize_client_code(code_str: Any) -> str:
-    """Normaliza o código do cliente (ex: 'T27261', 'T-27261', ' 27261 ' -> 'T27261')."""
-    if not code_str:
-        return "Geral"
-    s = str(code_str).strip()
-    if not s or s.lower() in ["none", "null", "nan", "-", "ao vivo"]:
-        return "Ao Vivo" if s.lower() == "ao vivo" else "Geral"
-    
-    # Remove espaços
-    s = re.sub(r'\s+', '', s).upper()
-    return s
+    """Normaliza o código do cliente mantendo apenas clientes válidos ou 'Geral'."""
+    identity = classify_client_identity(code_str)
+    if identity["client_identity_status"] == "valid_client":
+        return identity["client_code"]
+    elif identity["client_identity_status"] == "live_meeting":
+        return "Ao Vivo"
+    return "Geral"
 
 
 def normalize_urgency(urgency_str: Any) -> str:

@@ -32,9 +32,13 @@ export default function MeetingDetail({
   sistemasTotvs,
   enviosPorReuniao,
   onConfirmSuggestion,
+  onConfirmRecommendation,
   onTaskStatusChange,
   onEnviarIntegracao,
-  onOpenConfig
+  onOpenConfig,
+  onOpenDocumentViewer,
+  onDownloadPdf,
+  onDownloadDocx
 }) {
   if (!meeting) return null;
 
@@ -45,6 +49,105 @@ export default function MeetingDetail({
     <div style={{ background: 'var(--panel-bg)', borderRadius: '8px', padding: '1.5rem', border: '1px solid var(--border-color)' }}>
       {resumo ? (
         <>
+          {/* Barra de Ações de Documentos (Visualizar no Front vs Baixar) */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--bg-main)',
+            padding: '10px 16px',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
+            marginBottom: '1.25rem',
+            flexWrap: 'wrap',
+            gap: '10px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <polyline points="10 9 9 9 8 9"></polyline>
+              </svg>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
+                Ata Formal & Documentação Executiva
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'pdf')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.2), rgba(59, 130, 246, 0.3))',
+                  border: '1px solid var(--primary-color)',
+                  color: 'var(--primary-color)',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                Abrir no Frontend
+              </button>
+
+              <button
+                onClick={() => onDownloadPdf && onDownloadPdf(meeting)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#ef4444',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Baixar PDF
+              </button>
+
+              <button
+                onClick={() => onDownloadDocx && onDownloadDocx(meeting)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.3)',
+                  color: '#3b82f6',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Baixar DOCX
+              </button>
+            </div>
+          </div>
           {/* SLIDE 11 — Perfil do Cliente */}
           {resumo.perfil_cliente && resumo.perfil_cliente.reunioes?.length > 0 && (
             <div style={{
@@ -197,9 +300,11 @@ export default function MeetingDetail({
               meetingId={meeting.ID_MEETING}
               tarefas={resumo.tarefas || []}
               dores={resumo.dores || []}
+              recomendacoes={meeting.recomendacoes_totvs || resumo.recomendacoes_totvs || []}
               sistemasTotvs={sistemasTotvs}
               enviosPorReuniao={enviosPorReuniao}
               onTaskStatusChange={onTaskStatusChange}
+              onConfirmRecommendation={onConfirmRecommendation}
               onEnviarIntegracao={onEnviarIntegracao}
               onOpenConfig={onOpenConfig}
             />

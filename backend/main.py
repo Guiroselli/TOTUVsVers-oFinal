@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from repositories import MeetingRepository, ProfileRepository
+from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository
 from analysis_service import AnalysisService
 from schemas import TranscriptionRequest, MeetingAnalysisResult
 from routers import analytics, meetings, integrations
@@ -54,6 +54,7 @@ def health_check():
 
 meeting_repo = MeetingRepository()
 profile_repo = ProfileRepository()
+integrations_repo = IntegrationsRepository()
 analysis_service = AnalysisService()
 
 # Inicialização segura do Whisper
@@ -67,7 +68,7 @@ except Exception as e:
 
 
 @app.get("/health")
-def health_check():
+def health_check_legacy():
     return {
         "status": "ok",
         "app": "Proton Flow API",
@@ -88,10 +89,13 @@ async def analyze_text(request: TranscriptionRequest):
     # 1. Recupera perfil do cliente se houver meeting_id
     codigo_cliente = ""
     contexto_perfil = ""
+    meeting_date_str = None
+    existing = None
     if request.meeting_id:
         existing = meeting_repo.get_by_id(request.meeting_id)
         if existing:
             codigo_cliente = existing.get("NOME_SEGMENTO", "")
+            meeting_date_str = existing.get("DT_MEETING")
             if codigo_cliente:
                 perfil = profile_repo.get_profile(codigo_cliente)
                 n_reunioes = len(perfil.get("reunioes", []))
@@ -106,14 +110,22 @@ async def analyze_text(request: TranscriptionRequest):
                     )
 
     # 2. Executa a análise via AnalysisService
-    result = analysis_service.analyze(request.text, client_context=contexto_perfil)
+    cfg = integrations_repo.get_config()
+    profile = profile_repo.get_profile(codigo_cliente) if codigo_cliente else None
+    result = analysis_service.analyze(
+        transcript=request.text, 
+        client_context=contexto_perfil,
+        meeting_date_str=meeting_date_str,
+        perfil_cliente=profile,
+        integracoes_config=cfg
+    )
     
     # 3. Registra reunião no perfil do cliente
     if codigo_cliente:
         profile_repo.register_meeting(
             client_code=codigo_cliente,
             meeting_id=request.meeting_id or "nova",
-            date_str=datetime.now().strftime("%Y-%m-%d"),
+            date_str=meeting_date_str or datetime.now().strftime("%Y-%m-%d"),
             tema=result.tema,
             dores=result.dores
         )
@@ -123,6 +135,7 @@ async def analyze_text(request: TranscriptionRequest):
     # 4. Persiste a análise na reunião se meeting_id existir
     if request.meeting_id:
         meeting_repo.update_analysis(request.meeting_id, result.model_dump())
+        meeting_repo.update_metadata(request.meeting_id, {"STATUS_MEETING": "analise_concluida"}, author="system")
 
     return result
 

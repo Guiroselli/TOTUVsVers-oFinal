@@ -10,9 +10,12 @@ export default function MeetingHistoryTable({
   onUrgencyChange,
   onSynthesize,
   onGenerateDocx,
+  onAnalyzeMeeting,
+  onOpenDocumentViewer,
   sistemasTotvs,
   enviosPorReuniao,
   onConfirmSuggestion,
+  onConfirmRecommendation,
   onTaskStatusChange,
   onEnviarIntegracao,
   onOpenConfig,
@@ -20,6 +23,34 @@ export default function MeetingHistoryTable({
   onPageChange,
   onPageSizeChange
 }) {
+  const getStatusBadge = (item) => {
+    const meta = item.RESUMO_IA?.analise_metadados || {};
+    const stAnalise = item.STATUS_ANALISE || meta.analysis_status || (item.RESUMO_IA ? 'analise_concluida' : 'aguardando_analise');
+    const stRevisao = item.STATUS_REVISAO;
+    const isFallback = meta.analysis_engine === 'deterministic_fallback' || stAnalise === 'fallback_deterministico';
+    const isInsufficient = meta.status === 'insufficient_data' || stAnalise === 'analise_concluida_dados_insuficientes';
+
+    if (item.STATUS_MEETING === 'erro_na_analise' || stAnalise === 'erro_na_analise' || stAnalise === 'analise_com_erro') {
+      return { label: 'Falha na Análise', bg: 'rgba(239, 68, 68, 0.2)', color: 'var(--danger)' };
+    }
+    if (item.STATUS_MEETING === 'analise_em_andamento' || stAnalise === 'analise_em_andamento') {
+      return { label: 'Analisando...', bg: 'rgba(0, 210, 255, 0.2)', color: 'var(--primary-color)' };
+    }
+    if (!item.RESUMO_IA || stAnalise === 'aguardando_analise') {
+      return { label: 'Aguardando Análise', bg: 'rgba(107, 114, 128, 0.2)', color: '#9ca3af' };
+    }
+    if (stRevisao === 'revisao_concluida' || stRevisao === 'concluida') {
+      return { label: 'Revisão Concluída', bg: 'rgba(16, 185, 129, 0.25)', color: 'var(--success)' };
+    }
+    if (isFallback) {
+      return { label: 'Fallback Determinístico', bg: 'rgba(245, 158, 11, 0.25)', color: 'var(--warning)' };
+    }
+    if (isInsufficient) {
+      return { label: 'Dados Insuficientes', bg: 'rgba(148, 163, 184, 0.25)', color: '#64748b' };
+    }
+    return { label: 'Revisão Pendente', bg: 'rgba(245, 158, 11, 0.2)', color: 'var(--warning)' };
+  };
+
   return (
     <div>
       <div className="table-container">
@@ -43,18 +74,19 @@ export default function MeetingHistoryTable({
                 <th style={{ width: '130px' }}>ID Reunião</th>
                 <th>Data</th>
                 <th>Segmento Cliente</th>
+                <th>Status</th>
                 <th>NPS</th>
-                <th>Duração</th>
                 <th>Responsável</th>
                 <th>Urgência</th>
-                <th style={{ minWidth: '220px' }}>Ações (IA / Exportação)</th>
+                <th style={{ minWidth: '220px' }}>Ações (IA / Documentos)</th>
               </tr>
             </thead>
             <tbody>
               {meetings && meetings.length > 0 ? (
                 meetings.map((item) => {
                   const isExpanded = expandedMeetingId === item.ID_MEETING;
-                  const hasAnalysis = Boolean(item.RESUMO_IA);
+                  const hasAnalysis = Boolean(item.RESUMO_IA && (item.RESUMO_IA.tema || (item.RESUMO_IA.dores && item.RESUMO_IA.dores.length > 0) || (item.RESUMO_IA.tarefas && item.RESUMO_IA.tarefas.length > 0)));
+                  const stBadge = getStatusBadge(item);
 
                   return (
                     <React.Fragment key={item.ID_MEETING}>
@@ -99,8 +131,29 @@ export default function MeetingHistoryTable({
                         </td>
 
                         <td>
-                          <span className="badge" style={{ fontSize: '12px' }}>
-                            {item.NOME_SEGMENTO || 'Geral'}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {item.client_code && item.client_code !== 'Não identificado' && item.client_code !== 'Geral' && item.client_code !== 'Ao Vivo' && (
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary-color)' }}>
+                                {item.client_code}
+                              </span>
+                            )}
+                            <span className="badge" style={{ fontSize: '11px', alignSelf: 'flex-start' }}>
+                              {item.segment || item.NOME_SEGMENTO || 'Geral'}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td>
+                          <span style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            padding: '2px 8px',
+                            borderRadius: '10px',
+                            background: stBadge.bg,
+                            color: stBadge.color,
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {stBadge.label}
                           </span>
                         </td>
 
@@ -119,14 +172,9 @@ export default function MeetingHistoryTable({
                         </td>
 
                         <td>
-                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                            {item.DURACAO_MEETING || '-'}
-                          </span>
-                        </td>
-
-                        <td>
                           <input
                             type="text"
+                            key={`${item.ID_MEETING}_${item.RESPONSAVEL_REUNIAO || ''}`}
                             defaultValue={item.RESPONSAVEL_REUNIAO || ''}
                             onBlur={(e) => onResponsibleChange(item.ID_MEETING, e.target.value)}
                             placeholder="Nome..."
@@ -168,53 +216,82 @@ export default function MeetingHistoryTable({
                         </td>
 
                         <td>
-                          <div style={{ display: 'flex', gap: '6px' }}>
-                            {item.TEM_PDF ? (
+                          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                            {!hasAnalysis ? (
                               <button
                                 className="btn-synth"
-                                style={{ background: 'var(--success)', color: '#fff', border: 'none', flex: 1, padding: '5px 8px', fontSize: '12px' }}
-                                onClick={() => window.open(`http://localhost:8000/pdfs/${item.ID_MEETING}.pdf`, '_blank')}
-                                title="Abrir PDF salvo no servidor"
+                                style={{
+                                  background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.2), rgba(59, 130, 246, 0.3))',
+                                  border: '1px solid var(--primary-color)',
+                                  color: 'var(--primary-color)',
+                                  flex: 1,
+                                  padding: '5px 8px',
+                                  fontSize: '12px',
+                                  fontWeight: 600
+                                }}
+                                onClick={() => onAnalyzeMeeting && onAnalyzeMeeting(item.ID_MEETING)}
+                                title="Analisar reunião com IA e extrair plano de ação"
                               >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                  <polyline points="14 2 14 8 20 8"></polyline>
-                                </svg>
-                                Ver PDF
+                                ⚡ Analisar
                               </button>
                             ) : (
-                              <button
-                                className="btn-synth"
-                                style={{ flex: 1, padding: '5px 8px', fontSize: '12px' }}
-                                onClick={() => onSynthesize(item)}
-                                title={hasAnalysis ? 'Exportar PDF com a análise existente' : 'Analisar com IA e Salvar PDF'}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                                </svg>
-                                Salvar PDF
-                              </button>
-                            )}
+                              <>
+                                <button
+                                  className="btn-synth"
+                                  style={{
+                                    background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.22), rgba(59, 130, 246, 0.32))',
+                                    border: '1px solid var(--primary-color)',
+                                    color: 'var(--primary-color)',
+                                    padding: '5px 8px',
+                                    fontSize: '11.5px',
+                                    fontWeight: 700,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'pdf') : onSynthesize(item)}
+                                  title="Visualizar ata executiva e PDF diretamente no navegador"
+                                >
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                  </svg>
+                                  Abrir
+                                </button>
 
-                            <button
-                              className="btn-synth"
-                              style={{
-                                background: 'transparent',
-                                border: '1px solid var(--primary-color)',
-                                color: 'var(--primary-color)',
-                                flex: 1,
-                                padding: '5px 8px',
-                                fontSize: '12px'
-                              }}
-                              onClick={() => onGenerateDocx(item)}
-                              title="Exportar Ata Formal em DOCX"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                              </svg>
-                              DOCX
-                            </button>
+                                <button
+                                  className="btn-synth"
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.12)',
+                                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                                    color: '#ef4444',
+                                    padding: '5px 7px',
+                                    fontSize: '11.5px',
+                                    fontWeight: 600
+                                  }}
+                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'pdf') : onSynthesize(item)}
+                                  title="Visualizar ou Baixar PDF"
+                                >
+                                  PDF
+                                </button>
+
+                                <button
+                                  className="btn-synth"
+                                  style={{
+                                    background: 'rgba(59, 130, 246, 0.12)',
+                                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                                    color: '#3b82f6',
+                                    padding: '5px 7px',
+                                    fontSize: '11.5px',
+                                    fontWeight: 600
+                                  }}
+                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'docx') : onGenerateDocx(item)}
+                                  title="Visualizar ou Baixar Ata DOCX"
+                                >
+                                  DOCX
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -227,9 +304,13 @@ export default function MeetingHistoryTable({
                               sistemasTotvs={sistemasTotvs}
                               enviosPorReuniao={enviosPorReuniao}
                               onConfirmSuggestion={onConfirmSuggestion}
+                              onConfirmRecommendation={onConfirmRecommendation}
                               onTaskStatusChange={onTaskStatusChange}
                               onEnviarIntegracao={onEnviarIntegracao}
                               onOpenConfig={onOpenConfig}
+                              onOpenDocumentViewer={onOpenDocumentViewer}
+                              onDownloadPdf={onSynthesize}
+                              onDownloadDocx={onGenerateDocx}
                             />
                           </td>
                         </tr>

@@ -31,3 +31,7 @@ backend/audit_events.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Archives & Artifacts
+*.zip
+pdf_test_outputs/

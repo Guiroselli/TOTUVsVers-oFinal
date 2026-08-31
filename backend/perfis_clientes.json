@@ -174,5 +174,16 @@
     "dores_recorrentes": {
       "aprovação_pendente": 1
     }
+  },
+  "CX9881": {
+    "codigo": "CX9881",
+    "reunioes": [
+      {
+        "meeting_id": "1018805",
+        "data": "2026-08-27",
+        "tema": "Reunião de Alinhamento Operacional"
+      }
+    ],
+    "dores_recorrentes": {}
   }
 }
