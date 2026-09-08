@@ -13,7 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository
+from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository, PDF_DIR
 from analysis_service import AnalysisService
 from schemas import TranscriptionRequest, MeetingAnalysisResult
 from routers import analytics, meetings, integrations
@@ -39,9 +39,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Diretório de PDFs
-os.makedirs("pdfs", exist_ok=True)
-app.mount("/pdfs", StaticFiles(directory="pdfs"), name="pdfs")
+# Diretório de PDFs (caminho absoluto: funciona rodando de qualquer CWD)
+os.makedirs(PDF_DIR, exist_ok=True)
+app.mount("/pdfs", StaticFiles(directory=PDF_DIR), name="pdfs")
 
 # Inclui os módulos de rotas
 app.include_router(analytics.router)

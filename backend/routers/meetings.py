@@ -3,7 +3,7 @@ import uuid
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form, Depends
 
-from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository
+from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository, PDF_DIR, pdf_path_for
 from schemas import (
     PaginatedMeetingsResponse, 
     MeetingSchema, 
@@ -232,8 +232,8 @@ async def upload_pdf(meeting_id: str = Form(...), file: UploadFile = File(...)):
     if len(content) > 30 * 1024 * 1024:  # 30MB
         raise HTTPException(status_code=400, detail="O arquivo PDF excede o tamanho máximo de 30MB.")
         
-    os.makedirs("pdfs", exist_ok=True)
-    file_path = f"pdfs/{meeting_id}.pdf"
+    os.makedirs(PDF_DIR, exist_ok=True)
+    file_path = pdf_path_for(meeting_id)
     with open(file_path, "wb") as f:
         f.write(content)
 

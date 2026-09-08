@@ -13,6 +13,30 @@ PERFIS_PATH = os.path.join(os.path.dirname(__file__), "perfis_clientes.json")
 INTEGRACOES_LOG_PATH = os.path.join(os.path.dirname(__file__), "integracoes_totvs.json")
 INTEGRACOES_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config_integracoes.json")
 AUDIT_LOG_PATH = os.path.join(os.path.dirname(__file__), "audit_events.json")
+PDF_DIR = os.path.join(os.path.dirname(__file__), "pdfs")
+
+
+def pdf_path_for(meeting_id: Any) -> str:
+    """Caminho absoluto do PDF de uma reunião (independente do CWD)."""
+    return os.path.join(PDF_DIR, f"{meeting_id}.pdf")
+
+
+def has_pdf_on_disk(meeting_id: Any) -> bool:
+    """Fonte da verdade: o PDF só existe se o arquivo existir em disco."""
+    return os.path.isfile(pdf_path_for(meeting_id))
+
+
+def _apply_pdf_state(item: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Reconcilia TEM_PDF com o disco na leitura.
+
+    A pasta backend/pdfs/ está no .gitignore, então um colaborador que clona o
+    repositório recebe o dataset com TEM_PDF=true mas sem nenhum arquivo. Sem
+    esta reconciliação o frontend mostra "Ver PDF" e o StaticFiles devolve
+    {"detail":"Not Found"}. Derivar do disco mantém o botão coerente para todos.
+    """
+    item["TEM_PDF"] = has_pdf_on_disk(item.get("ID_MEETING"))
+    return item
 
 
 def _atomic_write_json(path: str, data: Any):
@@ -138,7 +162,7 @@ class MeetingRepository:
                         search_lower not in tema_str):
                         continue
 
-                filtered.append(item)
+                filtered.append(_apply_pdf_state(item))
 
             return filtered
 
@@ -179,7 +203,7 @@ class MeetingRepository:
             data = _read_json(self.dataset_path, [])
             for item in data:
                 if str(item.get("ID_MEETING")) == str(meeting_id):
-                    return item
+                    return _apply_pdf_state(item)
             return None
 
     def save_meeting(self, meeting_dict: Dict[str, Any]) -> str:
