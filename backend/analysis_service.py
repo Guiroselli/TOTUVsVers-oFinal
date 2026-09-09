@@ -1329,17 +1329,23 @@ def consolidar_resultados(parciais: List[Dict[str, Any]]) -> Dict[str, Any]:
             if not isinstance(tema, dict):
                 continue
             nome = tema.get("tema") or tema.get("tema_canonico") or "Geral"
-            chave = _chave_norm(nome)
+            # Agrupa pela taxonomia canonica, nao pelo texto literal: blocos
+            # diferentes nomeiam o mesmo assunto de formas diferentes
+            # ("Financeiro", "Faturamento e Cobranca", "Contas a Pagar") e sem
+            # isso a fusao devolveria varios temas para um assunto so.
+            chave, label = normalize_topic_name(nome)
             if not chave:
                 continue
             if chave not in temas:
-                temas[chave] = {**tema, "topicos": list(tema.get("topicos") or [])}
+                temas[chave] = {**tema, "tema": label, "tema_canonico": chave, "topicos": []}
+                vistos = set()
             else:
                 vistos = {_chave_norm(x) for x in temas[chave]["topicos"]}
-                for topico in tema.get("topicos") or []:
-                    if _chave_norm(topico) not in vistos:
-                        temas[chave]["topicos"].append(topico)
-                        vistos.add(_chave_norm(topico))
+            for topico in tema.get("topicos") or []:
+                chave_topico = _chave_norm(topico)
+                if chave_topico and chave_topico not in vistos:
+                    temas[chave]["topicos"].append(topico)
+                    vistos.add(chave_topico)
 
         contexto = parcial.get("contexto") or {}
         for campo, acumulador in (("problema", problemas), ("decisao", decisoes)):
@@ -1356,12 +1362,18 @@ def consolidar_resultados(parciais: List[Dict[str, Any]]) -> Dict[str, Any]:
             tema_principal = candidato
             break
     if not tema_principal and temas:
-        tema_principal = next(iter(temas.values())).get("tema") or "Não identificado"
+        # Sem tema declarado, elege o assunto com mais topicos acumulados
+        tema_principal = max(
+            temas.values(), key=lambda t: len(t.get("topicos") or [])
+        ).get("tema") or "Não identificado"
 
     consolidado["tema"] = tema_principal or "Não identificado"
     consolidado["dores"] = sorted(dores.values(), key=lambda d: _severidade_rank(d.get("severidade") if isinstance(d, dict) else None))
     consolidado["tarefas"] = list(tarefas.values())
-    consolidado["organizacao_por_temas"] = list(temas.values())
+    # Assuntos mais discutidos primeiro
+    consolidado["organizacao_por_temas"] = sorted(
+        temas.values(), key=lambda t: len(t.get("topicos") or []), reverse=True
+    )
     consolidado["contexto"] = {
         "problema": " | ".join(problemas) if problemas else "Não identificado",
         "decisao": " | ".join(decisoes) if decisoes else "Não mencionado",
