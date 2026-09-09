@@ -454,6 +454,20 @@ export default function MeetingApp() {
       const execSummary = meetingObj.RESUMO_EXECUTIVO || analysisData.resumo_executivo || {};
       const meta = analysisData.analise_metadados || {};
 
+      // Ordena riscos por severidade: quem le este documento precisa ver o
+      // mais grave primeiro, nao a ordem em que a IA devolveu.
+      const severityRank = (s) => {
+        const v = String(s || '').toLowerCase();
+        if (v.includes('crít') || v.includes('crit')) return 0;
+        if (v.includes('alta')) return 1;
+        if (v.includes('méd') || v.includes('med')) return 2;
+        return 3;
+      };
+
+      // Uma acao sem dono ou sem prazo nao vai acontecer. Sinalizar isso e
+      // acionavel para a lideranca: e o que ela consegue resolver na hora.
+      const semDefinicao = (v) => !v || /não\s+(identificado|mencionado|definido)/i.test(String(v));
+
       const doc = new jsPDF();
 
       // Cabeçalho TOTVS Azul Escuro Corporativo
@@ -634,11 +648,13 @@ export default function MeetingApp() {
         currentY += 4.5;
 
         if (risks.length > 0) {
-          const riskRows = risks.map(r => [
-            r.text,
-            r.severity || 'Média',
-            r.source_refs?.length ? r.source_refs.join(', ') : 'Sessão'
-          ]);
+          const riskRows = [...risks]
+            .sort((a, b) => severityRank(a.severity) - severityRank(b.severity))
+            .map(r => [
+              r.text,
+              r.severity || 'Média',
+              r.source_refs?.length ? r.source_refs.join(', ') : 'Sessão'
+            ]);
 
           autoTable(doc, {
             startY: currentY,
@@ -716,6 +732,53 @@ export default function MeetingApp() {
             bodyStyles: { fontSize: 7.8, textColor: [51, 65, 85], cellPadding: 1.8 },
             columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 125 }, 2: { cellWidth: 45 } },
             margin: { left: 15, right: 15 }
+          });
+          currentY = doc.lastAutoTable.finalY + 4.5;
+        }
+
+        // 7.1 Lacunas de Execução (acoes sem dono ou sem prazo)
+        const tarefasValidas = (analysisData.tarefas || []).filter(
+          t => (t.task_validation_status || 'valid') === 'valid'
+        );
+        const lacunas = tarefasValidas.filter(
+          t => semDefinicao(t.responsavel) || semDefinicao(t.prazo)
+        );
+
+        if (lacunas.length > 0) {
+          if (currentY + (lacunas.length * 6) + 15 > 270) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          doc.setFontSize(10.5);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(217, 119, 6);
+          doc.text(
+            `7.1 Lacunas de Execução (${lacunas.length} de ${tarefasValidas.length} ações)`,
+            15,
+            currentY
+          );
+          currentY += 4.5;
+
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Ação Acordada', 'Responsável', 'Prazo']],
+            body: lacunas.map(t => [
+              t.tarefa || 'Não mencionado',
+              semDefinicao(t.responsavel) ? 'SEM DONO' : t.responsavel,
+              semDefinicao(t.prazo) ? 'SEM PRAZO' : t.prazo
+            ]),
+            theme: 'grid',
+            headStyles: { fillColor: [217, 119, 6], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+            bodyStyles: { fontSize: 7.8, textColor: [51, 65, 85], cellPadding: 1.8 },
+            columnStyles: { 0: { cellWidth: 110 }, 1: { cellWidth: 35 }, 2: { cellWidth: 35 } },
+            margin: { left: 15, right: 15 },
+            didParseCell: (data) => {
+              if (data.section === 'body' && data.column.index > 0 && String(data.cell.raw).indexOf('SEM ') === 0) {
+                data.cell.styles.textColor = [217, 119, 6];
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
           });
           currentY = doc.lastAutoTable.finalY + 4.5;
         }
