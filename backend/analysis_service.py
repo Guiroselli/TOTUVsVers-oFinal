@@ -8,6 +8,8 @@ import os
 import re
 import json
 import time
+import shutil
+import logging
 import requests
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
@@ -43,10 +45,116 @@ from normalization import (
 from date_utils import parse_relative_deadline
 from totvs_catalog import compute_recommendations
 
+logger = logging.getLogger(__name__)
+
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
 ANALYSIS_PROMPT_VERSION = os.getenv("ANALYSIS_PROMPT_VERSION", "v2")
+
+# ────────────────────────────────────────────────────────────
+# PERFIS DE HARDWARE
+#
+# O mesmo código roda em máquinas muito diferentes. Num notebook sem placa de
+# vídeo o Ollama processa em CPU e um modelo de 8B não devolve resposta dentro
+# do timeout — a análise cai sempre no fallback determinístico e nenhum tema,
+# dor ou tarefa é detectado. Numa máquina com placa dedicada o mesmo modelo
+# responde rápido e entrega uma análise bem melhor.
+#
+# Por isso a configuração é escolhida por perfil, detectado automaticamente:
+#
+#   PROTON_PERFIL=auto  (padrão) → detecta a placa de vídeo e escolhe sozinho
+#   PROTON_PERFIL=gpu             → força o perfil de máquina com placa
+#   PROTON_PERFIL=cpu             → força o perfil de máquina sem placa
+#
+# Qualquer variável OLLAMA_* definida no ambiente tem prioridade sobre o
+# perfil, então dá para ajustar um único parâmetro sem abandonar o resto.
+# ────────────────────────────────────────────────────────────
+
+PERFIS_HARDWARE = {
+    # Sem placa de vídeo: modelo pequeno, contexto curto e blocos menores.
+    # Medido num i7-1355U (sem GPU): ~70-120s por bloco, com extração real.
+    "cpu": {
+        "model": "qwen2.5:3b",
+        "num_ctx": 4096,
+        "num_predict": 2048,
+        "chunk_chars": 4000,
+        "chunk_overlap": 400,
+        "max_chunks": 12,
+        "timeout": 300,
+    },
+    # Com placa de vídeo dedicada: cabe um modelo maior, contexto cheio e
+    # blocos grandes, o que reduz o número de chamadas e melhora a síntese.
+    "gpu": {
+        "model": "llama3",
+        "num_ctx": 8192,
+        "num_predict": 3072,
+        "chunk_chars": 9000,
+        "chunk_overlap": 700,
+        "max_chunks": 12,
+        "timeout": 180,
+    },
+}
+
+
+def _tem_gpu_disponivel() -> bool:
+    """
+    Detecta se há placa de vídeo utilizável para inferência.
+
+    Primeiro pergunta ao próprio Ollama quanto de memória de vídeo ele está
+    usando (fonte mais confiável, porque reflete o que ele realmente conseguiu
+    carregar). Se não houver modelo carregado no momento, cai para a presença
+    das ferramentas de linha de comando dos fabricantes.
+    """
+    try:
+        import requests as _requests
+        base = OLLAMA_URL.split("/api/")[0]
+        resp = _requests.get(f"{base}/api/ps", timeout=3)
+        if resp.ok:
+            modelos = resp.json().get("models") or []
+            if modelos:
+                return any((m.get("size_vram") or 0) > 0 for m in modelos)
+    except Exception:
+        pass
+
+    # Nenhum modelo carregado: procura os utilitários de GPU no PATH
+    return any(shutil.which(cmd) for cmd in ("nvidia-smi", "rocm-smi"))
+
+
+def _resolver_perfil() -> str:
+    escolhido = os.getenv("PROTON_PERFIL", "auto").strip().lower()
+    if escolhido in PERFIS_HARDWARE:
+        return escolhido
+    if escolhido not in ("auto", ""):
+        logger.warning("PROTON_PERFIL=%r desconhecido; usando deteccao automatica.", escolhido)
+    return "gpu" if _tem_gpu_disponivel() else "cpu"
+
+
+PERFIL_ATIVO = _resolver_perfil()
+_PERFIL = PERFIS_HARDWARE[PERFIL_ATIVO]
+
+
+def _cfg(env_var: str, chave: str, cast=str):
+    """Variável de ambiente explícita vence o perfil; senão usa o perfil."""
+    bruto = os.getenv(env_var)
+    return cast(bruto) if bruto is not None else _PERFIL[chave]
+
+
+OLLAMA_MODEL = _cfg("OLLAMA_MODEL", "model")
+OLLAMA_TIMEOUT_SECONDS = _cfg("OLLAMA_TIMEOUT_SECONDS", "timeout", int)
+OLLAMA_NUM_CTX = _cfg("OLLAMA_NUM_CTX", "num_ctx", int)
+OLLAMA_NUM_PREDICT = _cfg("OLLAMA_NUM_PREDICT", "num_predict", int)
+# Cada bloco precisa caber com folga em OLLAMA_NUM_CTX junto do system prompt
+# e da resposta gerada.
+OLLAMA_CHUNK_CHARS = _cfg("OLLAMA_CHUNK_CHARS", "chunk_chars", int)
+OLLAMA_CHUNK_OVERLAP = _cfg("OLLAMA_CHUNK_OVERLAP", "chunk_overlap", int)
+OLLAMA_MAX_CHUNKS = _cfg("OLLAMA_MAX_CHUNKS", "max_chunks", int)
+# Teto de frases-gatilho pre-detectadas. Antes fixo em 15, o que limitava
+# reunioes longas agora que a transcricao inteira e analisada.
+MAX_GATILHOS = int(os.getenv("MAX_GATILHOS", "40"))
+
+logger.info(
+    "Perfil de hardware: %s | modelo=%s ctx=%s bloco=%sc timeout=%ss",
+    PERFIL_ATIVO, OLLAMA_MODEL, OLLAMA_NUM_CTX, OLLAMA_CHUNK_CHARS, OLLAMA_TIMEOUT_SECONDS,
+)
 
 PADROES_GATILHO = {
     "aprovacao_pendente": [
@@ -303,7 +411,7 @@ def detectar_gatilhos(transcricao: str) -> List[Dict[str, Any]]:
         if g["posicao"] - ultima >= 15:
             filtrados.append(g)
             ultima = g["posicao"]
-    return filtrados[:15]
+    return filtrados[:MAX_GATILHOS]
 
 
 def identificar_candidatos_responsavel(
@@ -1108,6 +1216,159 @@ def build_executive_summary(
     }
 
 
+def dividir_transcricao(texto: str, tamanho: int = OLLAMA_CHUNK_CHARS, sobreposicao: int = OLLAMA_CHUNK_OVERLAP) -> List[str]:
+    """
+    Divide a transcrição em blocos que cabem na janela de contexto do modelo.
+
+    O llama3 tem contexto de 8k tokens. Uma transcrição de reunião real passa
+    facilmente de 100k caracteres, então enviá-la inteira (ou truncá-la) faz o
+    modelo simplesmente não enxergar a maior parte do que foi discutido — que é
+    a causa de temas, dores e tarefas não serem detectados.
+
+    O corte respeita quebras de linha e fim de frase para não partir uma fala no
+    meio, e cada bloco carrega uma sobreposição com o anterior para não perder
+    assuntos que atravessam a fronteira.
+    """
+    texto = texto or ""
+    if len(texto) <= tamanho:
+        return [texto] if texto.strip() else []
+
+    blocos: List[str] = []
+    inicio = 0
+    while inicio < len(texto) and len(blocos) < OLLAMA_MAX_CHUNKS:
+        fim = min(inicio + tamanho, len(texto))
+
+        # Recua até uma fronteira natural (quebra de linha ou fim de frase)
+        if fim < len(texto):
+            janela = texto[inicio:fim]
+            corte = max(janela.rfind("\n"), janela.rfind(". "), janela.rfind("? "), janela.rfind("! "))
+            if corte > tamanho * 0.5:
+                fim = inicio + corte + 1
+
+        bloco = texto[inicio:fim].strip()
+        if bloco:
+            blocos.append(bloco)
+
+        if fim >= len(texto):
+            break
+        inicio = max(fim - sobreposicao, inicio + 1)
+
+    return blocos
+
+
+def _chave_norm(valor: Any) -> str:
+    """Chave de deduplicação: minúscula, sem acento e sem pontuação de borda."""
+    return re.sub(r"[^a-z0-9]+", " ", strip_accents(str(valor or "")).lower()).strip()
+
+
+def _severidade_rank(valor: Any) -> int:
+    v = strip_accents(str(valor or "")).lower()
+    if "critic" in v:
+        return 0
+    if "alta" in v:
+        return 1
+    if "med" in v:
+        return 2
+    return 3
+
+
+def consolidar_resultados(parciais: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Funde as análises de cada bloco em um resultado único.
+
+    A união é determinística (sem nova chamada ao modelo): dores e tarefas são
+    deduplicadas por conteúdo normalizado, mantendo-se a maior severidade
+    observada para cada dor, e os temas têm seus tópicos unidos.
+    """
+    if not parciais:
+        return {}
+    if len(parciais) == 1:
+        return parciais[0]
+
+    consolidado: Dict[str, Any] = dict(parciais[0])
+
+    dores: Dict[str, Any] = {}
+    tarefas: Dict[str, Any] = {}
+    temas: Dict[str, Dict[str, Any]] = {}
+    problemas: List[str] = []
+    decisoes: List[str] = []
+
+    for parcial in parciais:
+        if not isinstance(parcial, dict):
+            continue
+
+        for d in parcial.get("dores") or []:
+            rotulo = d.get("label") or d.get("categoria") if isinstance(d, dict) else d
+            chave = _chave_norm(rotulo)
+            if not chave:
+                continue
+            atual = dores.get(chave)
+            if atual is None:
+                dores[chave] = d
+            elif isinstance(d, dict) and isinstance(atual, dict):
+                # Mantém a leitura mais severa entre os blocos
+                if _severidade_rank(d.get("severidade")) < _severidade_rank(atual.get("severidade")):
+                    dores[chave] = d
+
+        for t in parcial.get("tarefas") or []:
+            if not isinstance(t, dict):
+                continue
+            chave = _chave_norm(t.get("tarefa"))
+            if not chave:
+                continue
+            anterior = tarefas.get(chave)
+            if anterior is None:
+                tarefas[chave] = t
+            else:
+                # Completa lacunas de responsável/prazo com o que outro bloco viu
+                for campo in ("responsavel", "prazo", "prioridade"):
+                    if not anterior.get(campo) and t.get(campo):
+                        anterior[campo] = t[campo]
+
+        for tema in parcial.get("organizacao_por_temas") or []:
+            if not isinstance(tema, dict):
+                continue
+            nome = tema.get("tema") or tema.get("tema_canonico") or "Geral"
+            chave = _chave_norm(nome)
+            if not chave:
+                continue
+            if chave not in temas:
+                temas[chave] = {**tema, "topicos": list(tema.get("topicos") or [])}
+            else:
+                vistos = {_chave_norm(x) for x in temas[chave]["topicos"]}
+                for topico in tema.get("topicos") or []:
+                    if _chave_norm(topico) not in vistos:
+                        temas[chave]["topicos"].append(topico)
+                        vistos.add(_chave_norm(topico))
+
+        contexto = parcial.get("contexto") or {}
+        for campo, acumulador in (("problema", problemas), ("decisao", decisoes)):
+            valor = str(contexto.get(campo) or "").strip()
+            if valor and not re.match(r"^n[ãa]o\s+(identificado|mencionado)", strip_accents(valor).lower()):
+                if _chave_norm(valor) not in {_chave_norm(x) for x in acumulador}:
+                    acumulador.append(valor)
+
+    # Tema principal: o primeiro bloco que identificou algo concreto
+    tema_principal = ""
+    for parcial in parciais:
+        candidato = str((parcial or {}).get("tema") or "").strip()
+        if candidato and not re.match(r"^n[ãa]o\s+identificado", strip_accents(candidato).lower()):
+            tema_principal = candidato
+            break
+    if not tema_principal and temas:
+        tema_principal = next(iter(temas.values())).get("tema") or "Não identificado"
+
+    consolidado["tema"] = tema_principal or "Não identificado"
+    consolidado["dores"] = sorted(dores.values(), key=lambda d: _severidade_rank(d.get("severidade") if isinstance(d, dict) else None))
+    consolidado["tarefas"] = list(tarefas.values())
+    consolidado["organizacao_por_temas"] = list(temas.values())
+    consolidado["contexto"] = {
+        "problema": " | ".join(problemas) if problemas else "Não identificado",
+        "decisao": " | ".join(decisoes) if decisoes else "Não mencionado",
+    }
+    return consolidado
+
+
 class AnalysisService:
     """Serviço de análise de reuniões com Ollama, validação Pydantic e segurança."""
     def __init__(self, 
@@ -1134,41 +1395,50 @@ class AnalysisService:
         
         # 1. Pré-detecção determinística de gatilhos
         gatilhos = detectar_gatilhos(safe_transcript)
-        bloco_gatilhos = ""
-        if gatilhos:
-            linhas = [f'- [{g["label"]}] "{g["frase"]}"' for g in gatilhos]
-            bloco_gatilhos = "\n\n<gatilhos_pre_detectados>\n" + "\n".join(linhas) + "\n</gatilhos_pre_detectados>"
 
         bloco_perfil = f"\n<contexto_cliente>{client_context}</contexto_cliente>\n" if client_context else ""
-        
-        # Prompt com delimitação estrita de dado não confiável
-        texto_enriquecido = (
-            f"{bloco_perfil}"
-            f"{bloco_gatilhos}\n\n"
-            f"<untrusted_meeting_transcript>\n"
-            f"{safe_transcript[:25000]}\n"
-            f"</untrusted_meeting_transcript>"
-        )
 
-        # 2. Montagem do payload para Ollama (sem expor credenciais)
-        payload = {
-            "model": self.model_name,
-            "prompt": texto_enriquecido,
-            "system": SYSTEM_PROMPT_V2,
-            "stream": False,
-            "format": "json",
-            "options": {
-                "num_ctx": 8192,
-                "temperature": 0.1
+        # 2. Análise em blocos: a transcrição é dividida para caber na janela de
+        # contexto do modelo. Truncar em 25k caracteres fazia o modelo perder a
+        # maior parte das reuniões longas (a mediana da base passa de 26k).
+        blocos = dividir_transcricao(safe_transcript)
+        if not blocos:
+            blocos = [safe_transcript]
+
+        def _analisar_bloco(bloco: str) -> Dict[str, Any]:
+            """Executa uma passada do modelo sobre um trecho da transcrição."""
+            # Só envia os gatilhos que pertencem a este trecho
+            gatilhos_bloco = [g for g in gatilhos if g.get("frase") and g["frase"][:80] in bloco]
+            texto_gatilhos = ""
+            if gatilhos_bloco:
+                linhas_bloco = [f'- [{g["label"]}] "{g["frase"]}"' for g in gatilhos_bloco]
+                texto_gatilhos = "\n\n<gatilhos_pre_detectados>\n" + "\n".join(linhas_bloco) + "\n</gatilhos_pre_detectados>"
+
+            texto_enriquecido = (
+                f"{bloco_perfil}"
+                f"{texto_gatilhos}\n\n"
+                f"<untrusted_meeting_transcript>\n"
+                f"{bloco}\n"
+                f"</untrusted_meeting_transcript>"
+            )
+
+            payload = {
+                "model": self.model_name,
+                "prompt": texto_enriquecido,
+                "system": SYSTEM_PROMPT_V2,
+                "stream": False,
+                "format": "json",
+                "options": {
+                    "num_ctx": OLLAMA_NUM_CTX,
+                    "num_predict": OLLAMA_NUM_PREDICT,
+                    "temperature": 0.1
+                }
             }
-        }
 
-        try:
             response = requests.post(self.ollama_url, json=payload, timeout=self.timeout_seconds)
             response.raise_for_status()
-            data = response.json()
-            raw_response_text = data.get("response", "{}")
-            
+            raw_response_text = response.json().get("response", "{}")
+
             clean_text = raw_response_text.strip()
             if clean_text.startswith("```json"):
                 clean_text = clean_text[7:]
@@ -1176,9 +1446,26 @@ class AnalysisService:
                 clean_text = clean_text[3:]
             if clean_text.endswith("```"):
                 clean_text = clean_text[:-3]
-            clean_text = clean_text.strip()
-            
-            raw_dict = json.loads(clean_text)
+            return json.loads(clean_text.strip())
+
+        try:
+            parciais: List[Dict[str, Any]] = []
+            primeiro_erro: Optional[Exception] = None
+
+            for bloco in blocos:
+                try:
+                    parciais.append(_analisar_bloco(bloco))
+                except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+                    # Um bloco que falha não invalida a reunião inteira; só se
+                    # todos falharem é que caímos no fallback determinístico.
+                    if primeiro_erro is None:
+                        primeiro_erro = e
+                    continue
+
+            if not parciais:
+                raise primeiro_erro if primeiro_erro else json.JSONDecodeError("Sem resposta do modelo", "", 0)
+
+            raw_dict = consolidar_resultados(parciais)
             
         except requests.exceptions.RequestException as e:
             duration = round(time.time() - start_time, 2)

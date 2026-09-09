@@ -54,7 +54,7 @@ O **Proton Flow** é uma solução corporativa avançada de inteligência gerenc
 
 - **Frontend**: React 19, Vite 8, JavaScript moderno, Recharts, jsPDF, docx, file-saver.
 - **Backend**: Python 3.10+, FastAPI, Pydantic v2, Uvicorn, Requests, Faster-Whisper, Pytest.
-- **IA / LLM**: Ollama local com modelo configurável (preferencialmente `llama3`).
+- **IA / LLM**: Ollama local, com modelo e parâmetros escolhidos por perfil de hardware (`qwen2.5:3b` sem GPU, `llama3` com GPU).
 - **Persistência**: Camada Repository thread-safe com escritas atômicas e rastreabilidade de auditoria.
 
 ---
@@ -66,14 +66,55 @@ Crie ou configure as variáveis de ambiente no arquivo `.env` ou nas variáveis 
 ```env
 # Backend (FastAPI / Ollama)
 OLLAMA_URL=http://localhost:11434/api/generate
-OLLAMA_MODEL=llama3
-OLLAMA_TIMEOUT_SECONDS=180
 ANALYSIS_PROMPT_VERSION=v2
 CORS_ORIGINS=*
+
+# Perfil de hardware: auto (padrao) | cpu | gpu
+PROTON_PERFIL=auto
 
 # Frontend (Vite)
 VITE_API_URL=http://localhost:8000
 ```
+
+### Perfis de hardware
+
+O modelo e os parametros do Ollama sao escolhidos automaticamente conforme a
+maquina, porque a diferenca entre rodar com e sem placa de video e decisiva:
+**sem GPU, um modelo de 8B nao responde dentro do timeout e toda analise cai no
+fallback deterministico** — nenhum tema, dor ou tarefa e detectado.
+
+| | perfil `cpu` (sem placa) | perfil `gpu` (com placa) |
+|---|---|---|
+| modelo | `qwen2.5:3b` | `llama3` |
+| `num_ctx` | 4096 | 8192 |
+| bloco de analise | 4.000 chars | 9.000 chars |
+| `num_predict` | 2048 | 3072 |
+| timeout | 300s | 180s |
+
+A deteccao pergunta ao proprio Ollama quanta memoria de video esta em uso
+(`/api/ps`) e, se nao houver modelo carregado, procura `nvidia-smi`/`rocm-smi`.
+
+Para forcar um perfil, use `PROTON_PERFIL=cpu` ou `PROTON_PERFIL=gpu`. Qualquer
+variavel individual tem prioridade sobre o perfil, entao da para ajustar um
+parametro isolado sem abandonar o resto:
+
+```env
+PROTON_PERFIL=gpu
+OLLAMA_MODEL=mistral        # sobrepoe so o modelo; o resto segue o perfil gpu
+```
+
+Variaveis disponiveis para ajuste fino: `OLLAMA_MODEL`, `OLLAMA_NUM_CTX`,
+`OLLAMA_NUM_PREDICT`, `OLLAMA_CHUNK_CHARS`, `OLLAMA_CHUNK_OVERLAP`,
+`OLLAMA_MAX_CHUNKS`, `OLLAMA_TIMEOUT_SECONDS`, `MAX_GATILHOS`.
+
+### Analise em blocos
+
+Transcricoes reais passam facilmente de 100 mil caracteres, muito alem da
+janela de contexto do modelo. A transcricao e dividida em blocos que cabem no
+contexto, cada bloco e analisado e os resultados sao fundidos: dores sao
+deduplicadas mantendo a maior severidade observada, tarefas tem lacunas de
+responsavel e prazo preenchidas entre blocos, e os temas tem seus topicos
+unidos.
 
 ---
 
@@ -82,7 +123,9 @@ VITE_API_URL=http://localhost:8000
 ### Pré-requisitos
 1. [Node.js](https://nodejs.org/) (v20.19+ ou v22+)
 2. [Python](https://www.python.org/) 3.10+
-3. [Ollama](https://ollama.com/) instalado com o modelo Llama 3 (`ollama run llama3`).
+3. [Ollama](https://ollama.com/) instalado com o modelo do seu perfil:
+   - Sem placa de video: `ollama pull qwen2.5:3b`
+   - Com placa de video: `ollama pull llama3`
 
 ---
 
