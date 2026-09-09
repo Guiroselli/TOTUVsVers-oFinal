@@ -1378,13 +1378,32 @@ export default function MeetingApp() {
           doc.setFontSize(8.5);
           doc.setFont('helvetica', 'normal');
           doc.setTextColor(71, 85, 105);
+
+          // Esta lista e desenhada linha a linha (sem autoTable, que pagina
+          // sozinho), entao a quebra precisa ser checada a cada item: com
+          // muitos temas o texto passava por cima do rodape da pagina.
+          const LIMITE_Y = 275;
+          const garantirEspaco = (altura) => {
+            if (currentY + altura > LIMITE_Y) {
+              doc.addPage();
+              currentY = 20;
+              doc.setFontSize(8.5);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(71, 85, 105);
+            }
+          };
+
           analysisData.organizacao_por_temas.forEach(t => {
             const tName = t.tema || t.tema_canonico || 'Geral';
+            garantirEspaco(8);
+            doc.setFont('helvetica', 'bold');
             doc.text(`• ${tName.toUpperCase()}`, 18, currentY);
+            doc.setFont('helvetica', 'normal');
             currentY += 4.0;
             if (t.topicos) {
               t.topicos.forEach(topico => {
                 const splitTop = doc.splitTextToSize(`- ${topico}`, 170);
+                garantirEspaco((splitTop.length * 3.8) + 1);
                 doc.text(splitTop, 24, currentY);
                 currentY += (splitTop.length * 3.8) + 1;
               });
