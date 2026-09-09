@@ -274,8 +274,10 @@ export default function MeetingApp() {
     }
 
     try {
-      setIsGeneratingPDF(true);
-      setGeneratingMessage('Gerando Ata Executiva em DOCX...');
+      if (shouldDownload) {
+        setIsGeneratingPDF(true);
+        setGeneratingMessage('Gerando Ata Executiva em DOCX...');
+      }
       const meetingObj = meetings.find(m => String(m.ID_MEETING) === String(meetingId)) || {};
       const analysisData = existingData || meetingObj.RESUMO_IA || {};
       const execSummary = meetingObj.RESUMO_EXECUTIVO || analysisData.resumo_executivo || {};
@@ -425,7 +427,9 @@ export default function MeetingApp() {
       alert('Ocorreu um erro ao gerar o DOCX Executivo.');
       return null;
     } finally {
-      setIsGeneratingPDF(false);
+      if (shouldDownload) {
+        setIsGeneratingPDF(false);
+      }
     }
   };
 
@@ -436,8 +440,10 @@ export default function MeetingApp() {
       return null;
     }
 
-    setIsGeneratingPDF(true);
-    setGeneratingMessage('Gerando Ata Executiva em PDF a partir dos dados estruturados...');
+    if (shouldDownload) {
+      setIsGeneratingPDF(true);
+      setGeneratingMessage('Gerando Ata Executiva em PDF a partir dos dados estruturados...');
+    }
 
     try {
       const { jsPDF } = await import('jspdf');
@@ -779,7 +785,9 @@ export default function MeetingApp() {
       alert('Ocorreu um erro ao gerar o PDF Executivo.');
       return null;
     } finally {
-      setIsGeneratingPDF(false);
+      if (shouldDownload) {
+        setIsGeneratingPDF(false);
+      }
     }
   };
 
@@ -791,8 +799,10 @@ export default function MeetingApp() {
     }
 
     try {
-      setIsGeneratingPDF(true);
-      setGeneratingMessage('Gerando Documento DOCX...');
+      if (shouldDownload) {
+        setIsGeneratingPDF(true);
+        setGeneratingMessage('Gerando Documento DOCX...');
+      }
       const meetingObj = meetings.find(m => String(m.ID_MEETING) === String(meetingId)) || {};
       const analysisData = existingData || meetingObj.RESUMO_IA || {};
       const meta = analysisData.analise_metadados || {};
@@ -1064,7 +1074,9 @@ export default function MeetingApp() {
       alert('Ocorreu um erro ao gerar o DOCX.');
       return null;
     } finally {
-      setIsGeneratingPDF(false);
+      if (shouldDownload) {
+        setIsGeneratingPDF(false);
+      }
     }
   };
 
@@ -1075,8 +1087,10 @@ export default function MeetingApp() {
       return null;
     }
 
-    setIsGeneratingPDF(true);
-    setGeneratingMessage('Gerando ata executiva em PDF a partir dos dados persistidos...');
+    if (shouldDownload) {
+      setIsGeneratingPDF(true);
+      setGeneratingMessage('Gerando ata operacional em PDF a partir dos dados persistidos...');
+    }
 
     try {
       const { jsPDF } = await import('jspdf');
@@ -1597,7 +1611,9 @@ export default function MeetingApp() {
       alert('Ocorreu um erro ao gerar o PDF.');
       return null;
     } finally {
-      setIsGeneratingPDF(false);
+      if (shouldDownload) {
+        setIsGeneratingPDF(false);
+      }
     }
   };
 
@@ -1652,7 +1668,11 @@ export default function MeetingApp() {
   // Handler para troca dinâmica de tipo de ata dentro do DocumentViewerModal
   const handleSwitchDocTypeInViewer = async (newDocType, _format) => {
     if (!viewerState.meeting) return;
-    setViewerState(prev => ({ ...prev, isLoadingPdf: true }));
+    setViewerState(prev => ({
+      ...prev,
+      initialDocType: newDocType,
+      isLoadingPdf: true
+    }));
     try {
       const res = newDocType === 'executive'
         ? await generateExecutivePDF(viewerState.meeting.ANON_TRANSCRICAO, true, viewerState.meeting.ID_MEETING, viewerState.meeting.RESUMO_IA, false)
@@ -1661,15 +1681,16 @@ export default function MeetingApp() {
       if (res && res.blobUrl) {
         setViewerState(prev => ({
           ...prev,
+          initialDocType: newDocType,
           pdfBlobUrl: res.blobUrl,
           isLoadingPdf: false
         }));
       } else {
-        setViewerState(prev => ({ ...prev, isLoadingPdf: false }));
+        setViewerState(prev => ({ ...prev, initialDocType: newDocType, isLoadingPdf: false }));
       }
     } catch (err) {
       console.error('Erro ao alternar tipo de documento:', err);
-      setViewerState(prev => ({ ...prev, isLoadingPdf: false }));
+      setViewerState(prev => ({ ...prev, initialDocType: newDocType, isLoadingPdf: false }));
     }
   };
 

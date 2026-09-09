@@ -14,13 +14,20 @@ export default function DocumentViewerModal({
   onDownloadExecutiveDocx,
   onSwitchDocType,
 }) {
-  const [docType, setDocType] = useState(initialDocType);
-  const [format, setFormat] = useState(initialFormat);
+  const [docType, setDocType] = useState(initialDocType || 'executive');
+  const [format, setFormat] = useState(initialFormat || 'pdf');
 
   useEffect(() => {
-    if (initialDocType) setDocType(initialDocType);
-    if (initialFormat) setFormat(initialFormat);
-  }, [initialDocType, initialFormat, isOpen]);
+    if (initialDocType) {
+      setDocType(initialDocType);
+    }
+  }, [initialDocType]);
+
+  useEffect(() => {
+    if (initialFormat) {
+      setFormat(initialFormat);
+    }
+  }, [initialFormat]);
 
   if (!isOpen || !meeting) return null;
 
