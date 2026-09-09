@@ -23,7 +23,13 @@ from schemas import (
     PainSchema, 
     TopicGroupSchema, 
     ContextoSchema,
-    TOTVSProductRecommendation
+    TOTVSProductRecommendation,
+    ExecutiveSummarySchema,
+    ExecutiveRiskItem,
+    ExecutiveDecisionItem,
+    ExecutiveDecisionRequiredItem,
+    ExecutiveNextStepItem,
+    ExecutiveRecommendationItem
 )
 from normalization import (
     normalize_pain_category, 
@@ -803,6 +809,305 @@ def validar_evidencias_contra_transcricao(resultado: Dict[str, Any], transcricao
     return resultado
 
 
+def build_executive_summary(
+    analysis_data: Dict[str, Any],
+    meeting_metadata: Optional[Dict[str, Any]] = None,
+    use_llm: bool = False
+) -> Dict[str, Any]:
+    """
+    Gera a 'Ata Executiva' oficial (ExecutiveSummarySchema) direcionada à liderança executiva.
+    - Curto, objetivo (1 a 2 páginas).
+    - Focado em: O que aconteceu? Por que importa? Impacto no negócio? Riscos? Decisões tomadas? Decisões necessárias? Próximos passos estratégicos?
+    - Zero alucinação ou texto inventado.
+    - Separação rigorosa de decisões tomadas vs decisões necessárias da liderança.
+    - Rastreabilidade integral para a análise operacional.
+    """
+    meeting_meta = meeting_metadata or {}
+    meeting_id = str(meeting_meta.get("meeting_id") or analysis_data.get("ID_MEETING") or "")
+    
+    tema = str(analysis_data.get("tema") or "").strip()
+    if not tema or tema.lower() in ["reunião geral", "geral", "não identificado", "alinhamento operacional"]:
+        tema = "Alinhamento Estratégico e Operacional"
+
+    contexto = analysis_data.get("contexto") or {}
+    if not isinstance(contexto, dict):
+        contexto = {}
+    problema = str(contexto.get("problema") or "").strip()
+    decisao = str(contexto.get("decisao") or "").strip()
+    
+    dores = analysis_data.get("dores") or []
+    tarefas = analysis_data.get("tarefas") or []
+    recs = analysis_data.get("recomendacoes_totvs") or []
+    meta = analysis_data.get("analise_metadados") or {}
+    if not isinstance(meta, dict):
+        meta = {}
+    
+    urgencia = str(analysis_data.get("nivel_urgencia") or "Média").strip()
+    responsavel = str(analysis_data.get("responsavel_reuniao") or "Não identificado").strip()
+    
+    analysis_status = meta.get("analysis_status") or "analise_concluida"
+    is_insufficient = (
+        meta.get("status") == "insufficient_data" or
+        analysis_status in ["analise_concluida_dados_insuficientes", "reuniao_sem_conteudo_estruturado"]
+    )
+    is_fallback = (
+        meta.get("analysis_engine") == "deterministic_fallback" or
+        analysis_status in ["fallback_deterministico", "analise_contingencia_tarefas_pendentes"] or
+        analysis_data.get("STATUS_ANALISE") == "fallback_deterministico"
+    )
+
+    # 1. Caso de Dados Insuficientes
+    if is_insufficient:
+        return {
+            "version": "executive_v1",
+            "status": "insufficient_data",
+            "generated_at": datetime.now().isoformat(),
+            "source_analysis_id": meeting_id,
+            "summary_for_decision": "Sessão sem registro de conteúdo estruturado suficiente para extração de síntese executiva. Recomenda-se validação da gravação e alinhamento direto com os participantes.",
+            "current_situation": "Registro da sessão não contém elementos operacionais ou contextuais identificáveis.",
+            "business_impact": "Impacto operacional e de negócio não quantificado devido à insuficiência de dados na transcrição.",
+            "main_risks": [],
+            "decisions_made": [],
+            "decisions_required": [
+                {
+                    "text": "Validar a pauta e o alinhamento da sessão diretamente com os participantes.",
+                    "owner_level": "Liderança Operacional",
+                    "source_refs": ["system:insufficient_data"]
+                }
+            ],
+            "strategic_next_steps": [
+                {
+                    "text": "Confirmar se a gravação foi capturada corretamente e reagendar a sessão, se necessário.",
+                    "source_refs": ["system:insufficient_data"]
+                }
+            ],
+            "executive_recommendation": None,
+            "urgency": urgencia,
+            "confidence": "Baixa (Dados Insuficientes)",
+            "review_status": "pending_review",
+            "source_refs": ["system:insufficient_data"],
+            "missing_information": ["Pauta estruturada da sessão", "Problema central", "Responsável confirmado"],
+            "generation_method": "insufficient_data",
+            "prompt_version": "2.1.0",
+            "model_version": None
+        }
+
+    # 2. Processa tarefas válidas vs pendentes (elimina rejected_noise)
+    valid_tasks = []
+    pending_tasks = []
+    for t in tarefas:
+        if isinstance(t, dict):
+            v_status = t.get("task_validation_status", "valid")
+            if v_status == "valid":
+                valid_tasks.append(t)
+            elif v_status == "pending_review":
+                pending_tasks.append(t)
+
+    # 3. Construção do Resumo para Decisão (2 a 4 frases concisas)
+    sentences = []
+    sentences.append(f"A reunião deliberou sobre o alinhamento referente a '{tema}'.")
+    
+    if problema and problema.lower() not in ["não mencionado", "não identificado", "-", "none", "null"]:
+        sentences.append(f"O foco principal de atenção identificado foi: {problema}.")
+    elif dores:
+        primeira_dor = dores[0].get("label") if isinstance(dores[0], dict) else str(dores[0])
+        sentences.append(f"O mapeamento identificou {len(dores)} gargalo(s) operacional(is), destacando-se {primeira_dor}.")
+    else:
+        sentences.append("A sessão estruturou os direcionamentos operacionais e fluxos de trabalho da equipe.")
+
+    if decisao and decisao.lower() not in ["não mencionado", "não identificado", "-", "none", "null", "nenhuma", "nenhum"]:
+        sentences.append(f"Como decisão formal da sessão, estabeleceu-se: {decisao}.")
+    elif pending_tasks:
+        sentences.append("As ações com escopo resumido foram encaminhadas para validação prévia da liderança antes da execução.")
+    else:
+        sentences.append("Os encaminhamentos acordados seguem sob execução das respectivas frentes de trabalho.")
+
+    if recs and isinstance(recs[0], dict):
+        top_rec_name = recs[0].get("product_name", "TOTVS")
+        sentences.append(f"Identificou-se oportunidade de suporte operacional via ecossistema {top_rec_name}.")
+
+    summary_for_decision = " ".join(sentences)
+
+    # 4. Situação Atual
+    if problema and problema.lower() not in ["não mencionado", "não identificado", "-", "none", "null"]:
+        current_situation = problema
+    elif dores:
+        primeira_dor = dores[0].get("label") if isinstance(dores[0], dict) else str(dores[0])
+        current_situation = f"Gargalo operacional identificado em {primeira_dor}, demandando acompanhamento das frentes responsáveis."
+    else:
+        current_situation = "Operação em andamento regular sem ocorrências de bloqueios críticos na sessão."
+
+    # 5. Impacto para o Negócio
+    SEVERITY_ORDER = {"Crítica": 4, "Critica": 4, "Alta": 3, "Média": 2, "Media": 2, "Baixa": 1}
+    max_pain_sev = "Média"
+    max_pain_val = 2
+    for d in dores:
+        if isinstance(d, dict):
+            s = d.get("severidade", "Média")
+            v = SEVERITY_ORDER.get(s, 2)
+            if v > max_pain_val:
+                max_pain_val = v
+                max_pain_sev = s
+
+    if urgencia in ["Crítica", "Critica"] or max_pain_val >= 4:
+        business_impact = "Risco de paralisação ou impacto severo no fluxo operacional, com potencial desgaste no relacionamento com o cliente e necessidade de intervenção imediata da liderança."
+    elif urgencia in ["Alta"] or max_pain_val >= 3:
+        business_impact = "Risco de atrasos nos prazos operacionais, retrabalho e ineficiência em processos manuais, requerendo priorização gerencial."
+    elif dores:
+        business_impact = "Impacto operacional moderado em rotinas internas, mitigável por meio de padronização de procedimentos e acompanhamento de tarefas."
+    else:
+        business_impact = "Impacto operacional controlado dentro dos parâmetros regulares da operação."
+
+    # 6. Riscos Principais (Máximo 3, ordenados por severidade com source_refs)
+    sorted_dores = sorted(
+        [d for d in dores if isinstance(d, dict)],
+        key=lambda x: SEVERITY_ORDER.get(x.get("severidade", "Média"), 2),
+        reverse=True
+    )
+    main_risks = []
+    for idx, d in enumerate(sorted_dores[:3]):
+        lbl = d.get("label") or d.get("descricao") or "Risco Operacional"
+        desc = d.get("descricao") or d.get("trecho") or lbl
+        main_risks.append({
+            "text": f"{lbl}: {desc}",
+            "severity": d.get("severidade", "Média"),
+            "source_refs": [f"pain:{idx}"]
+        })
+
+    # 7. Decisões Tomadas (Máximo 3, baseado em deliberação formal)
+    decisions_made = []
+    if decisao and decisao.lower() not in ["não mencionado", "não identificado", "-", "none", "null", "nenhuma", "nenhum"]:
+        decisions_made.append({
+            "text": decisao,
+            "source_refs": ["context:decisao"]
+        })
+
+    # 8. Decisões Necessárias da Liderança (Máximo 3)
+    decisions_required = []
+    # 8.1 Validação de ações pendentes de revisão
+    if pending_tasks:
+        pt = pending_tasks[0]
+        idx_pt = tarefas.index(pt)
+        decisions_required.append({
+            "text": f"Validar escopo e autorizar a execução da ação: '{pt.get('tarefa')}' (Responsável sugerido: {pt.get('responsavel', 'A definir')}).",
+            "owner_level": "Liderança Operacional",
+            "source_refs": [f"task:{idx_pt}"]
+        })
+    # 8.2 Validação de recomendação TOTVS preliminar
+    if recs and isinstance(recs[0], dict) and recs[0].get("review_status") == "pending":
+        top_rec = recs[0]
+        decisions_required.append({
+            "text": f"Avaliar e homologar estudo de aderência do {top_rec.get('product_name')} para saneamento dos gargalos identificados.",
+            "owner_level": "Liderança Executiva / TI",
+            "source_refs": [f"rec:{top_rec.get('product_key')}"]
+        })
+    # 8.3 Responsável geral não definido
+    if responsavel in ["Não identificado", "Não informado", "", None]:
+        decisions_required.append({
+            "text": "Designar formalmente o responsável geral pelo acompanhamento das entregas desta reunião.",
+            "owner_level": "Liderança Operacional",
+            "source_refs": ["metadata:responsavel"]
+        })
+    decisions_required = decisions_required[:3]
+
+    # 9. Próximos Passos Estratégicos (Máximo 3)
+    strategic_next_steps = []
+    for vt in valid_tasks[:2]:
+        idx_t = tarefas.index(vt)
+        resp_t = vt.get("responsavel", "Responsável")
+        pz_t = vt.get("prazo", "A definir")
+        strategic_next_steps.append({
+            "text": f"Acompanhar entrega: '{vt.get('tarefa')}' sob responsabilidade de {resp_t} (Prazo: {pz_t}).",
+            "source_refs": [f"task:{idx_t}"]
+        })
+    if recs and isinstance(recs[0], dict):
+        top_rec = recs[0]
+        nxt = top_rec.get("implementation_next_step") or "alinhamento técnico inicial"
+        strategic_next_steps.append({
+            "text": f"Conduzir {nxt} referente à solução {top_rec.get('product_name')}.",
+            "source_refs": [f"rec:{top_rec.get('product_key')}"]
+        })
+    if not strategic_next_steps:
+        strategic_next_steps.append({
+            "text": "Consolidar alinhamentos internos e acompanhar status na próxima sessão de acompanhamento.",
+            "source_refs": ["theme:geral"]
+        })
+    strategic_next_steps = strategic_next_steps[:3]
+
+    # 10. Recomendação Executiva TOTVS
+    executive_recommendation = None
+    if recs and isinstance(recs[0], dict):
+        top_rec = recs[0]
+        is_conf = top_rec.get("review_status") == "confirmed"
+        benefits = top_rec.get("expected_benefits") or []
+        executive_recommendation = {
+            "product_name": top_rec.get("product_name", "TOTVS"),
+            "reason": top_rec.get("why_recommended", "Solução indicada para mitigação dos gargalos operacionais identificados."),
+            "status": "Confirmado pela liderança" if is_conf else "Preliminar — requer validação humana",
+            "expected_benefits": benefits[:3] if isinstance(benefits, list) else [],
+            "source_refs": [f"rec:{top_rec.get('product_key')}"]
+        }
+
+    # 11. Informações Faltantes
+    missing_information = []
+    if responsavel in ["Não identificado", "Não informado", "", None]:
+        missing_information.append("Responsável geral pela reunião não identificado")
+    if not valid_tasks and not pending_tasks:
+        missing_information.append("Plano de ação operacional explícito não mencionado")
+    if any(vt.get("prazo") in ["Não mencionado", "A definir", None] for vt in valid_tasks):
+        missing_information.append("Prazos formais de algumas entregas pendentes de definição")
+    if not decisions_made:
+        missing_information.append("Decisões finais formalizadas não registradas na sessão")
+
+    # 12. Compilação de Source Refs
+    all_refs = ["theme:principal"]
+    for r in main_risks:
+        all_refs.extend(r.get("source_refs", []))
+    for d in decisions_made:
+        all_refs.extend(d.get("source_refs", []))
+    for dr in decisions_required:
+        all_refs.extend(dr.get("source_refs", []))
+    for sns in strategic_next_steps:
+        all_refs.extend(sns.get("source_refs", []))
+    if executive_recommendation:
+        all_refs.extend(executive_recommendation.get("source_refs", []))
+    seen_refs = set()
+    unique_refs = [ref for ref in all_refs if not (ref in seen_refs or seen_refs.add(ref))]
+
+    # 13. Nível de Confiança e Status
+    if is_fallback:
+        conf_str = "Média (65%) — Baseada em Regras Determinísticas"
+        gen_method = "deterministic_executive_template"
+        status_val = "fallback_generated"
+    else:
+        conf_str = meta.get("semantic_confidence") or "Alta (85%)"
+        gen_method = "deterministic_executive_template"
+        status_val = "generated"
+
+    return {
+        "version": "executive_v1",
+        "status": status_val,
+        "generated_at": datetime.now().isoformat(),
+        "source_analysis_id": meeting_id,
+        "summary_for_decision": summary_for_decision,
+        "current_situation": current_situation,
+        "business_impact": business_impact,
+        "main_risks": main_risks,
+        "decisions_made": decisions_made,
+        "decisions_required": decisions_required,
+        "strategic_next_steps": strategic_next_steps,
+        "executive_recommendation": executive_recommendation,
+        "urgency": urgencia,
+        "confidence": conf_str,
+        "review_status": "pending_review",
+        "source_refs": unique_refs,
+        "missing_information": missing_information,
+        "generation_method": gen_method,
+        "prompt_version": "2.1.0",
+        "model_version": meta.get("model_name") or meta.get("model") or "deterministic"
+    }
+
+
 class AnalysisService:
     """Serviço de análise de reuniões com Ollama, validação Pydantic e segurança."""
     def __init__(self, 
@@ -986,7 +1291,15 @@ class AnalysisService:
             "warning": None,
             "parsing_error": None
         }
-        
+
+        # Constrói a Ata Executiva oficial persistida junto à análise operacional
+        exec_summary = build_executive_summary(
+            processed_dict,
+            meeting_metadata={"meeting_date": meeting_date_str},
+            use_llm=False
+        )
+        processed_dict["resumo_executivo"] = exec_summary
+
         return MeetingAnalysisResult.model_validate(processed_dict)
 
     def _build_deterministic_fallback(self, 
@@ -1141,7 +1454,7 @@ class AnalysisService:
         meta_dict["items_discarded_noise"] = len(rejected_fallback_tasks)
         meta_dict["rejected_tasks_audit"] = rejected_fallback_tasks
 
-        return {
+        fallback_res = {
             "tema": "Não identificado",
             "contexto": {
                 "problema": "Não identificado",
@@ -1191,3 +1504,24 @@ class AnalysisService:
             "perfil_cliente": perfil_cliente,
             "codigo_cliente": ""
         }
+
+        # Constrói a Ata Executiva oficial persistida junto ao fallback
+        exec_summary = build_executive_summary(
+            fallback_res,
+            meeting_metadata={"meeting_date": meeting_date_str},
+            use_llm=False
+        )
+        fallback_res["resumo_executivo"] = exec_summary
+
+        return fallback_res
+
+    def build_executive_summary(self, 
+                                analysis_data: Dict[str, Any], 
+                                meeting_metadata: Optional[Dict[str, Any]] = None,
+                                use_llm: bool = False) -> Dict[str, Any]:
+        """Método público para gerar ou obter a Ata Executiva a partir de dados da reunião."""
+        return build_executive_summary(
+            analysis_data=analysis_data,
+            meeting_metadata=meeting_metadata,
+            use_llm=use_llm
+        )

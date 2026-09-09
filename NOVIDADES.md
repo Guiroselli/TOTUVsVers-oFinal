@@ -1,143 +1,88 @@
-# Relatório de Modificações e Melhorias — Proton Flow v2.1 Final
+# Relatório de Modificações e Melhorias — Proton Flow v2.1
 
-Este documento consolida todas as alterações, correções estruturais, novas funcionalidades e validações implementadas no **Proton Flow v2.1**.
-
----
-
-## 1. Visualização Direta de Documentos no Frontend (PDF e DOCX)
-
-### O que mudou:
-Anteriormente, ao clicar para exportar o PDF ou DOCX, o arquivo era apenas baixado diretamente para o computador do usuário. Agora, a aplicação conta com um **Visualizador de Documentos Integrado** diretamente no navegador.
-
-### Novas Funcionalidades:
-* **Modal Visualizador de Alta Resolução (`DocumentViewerModal.jsx`)**:
-  * **Aba 1 (Visualização PDF)**: Renderiza o PDF corporativo completo em um `iframe` integrado, permitindo ler, rolar, dar zoom e inspecionar a ata antes de baixar.
-  * **Aba 2 (Ata Executiva DOCX)**: Exibe o documento formatado em padrão executivo A4 na tela (cabeçalho TOTVS, metadados, dores mapeadas, plano de ação estruturado, recomendações TOTVS e auditoria de IA).
-* **Controles na Barra Superior do Visualizador**:
-  * Alternância dinâmica entre **PDF** e **Ata Executiva (DOCX)**.
-  * Botão **Baixar PDF** (`.pdf`).
-  * Botão **Baixar DOCX** (`.docx`).
-  * Botão **Nova Aba** (abre o PDF nativo em uma aba dedicada).
-  * Botão **Imprimir** (chama o diálogo de impressão nativo do navegador).
-  * Botão **Fechar**.
-* **Novos Botões na Tabela de Histórico (`MeetingHistoryTable.jsx`)**:
-  * `[ 👁️ Abrir ]`: Abre o visualizador imediatamente no frontend.
-  * `[ 📄 PDF ]`: Atalho para abrir o visualizador na aba de PDF.
-  * `[ 📝 DOCX ]`: Atalho para abrir o visualizador na aba da Ata Executiva.
-* **Barra de Documentação nos Detalhes da Reunião (`MeetingDetail.jsx`)**:
-  * Painel superior ao expandir qualquer reunião analisada com botões rápidos de abertura no front e download sob demanda.
+Este documento consolida todas as alterações, inovações arquiteturais, novas funcionalidades e validações implementadas no **Proton Flow v2.1**, com destaque para a implementação da **Ata Executiva Real** ao lado da **Ata Operacional**.
 
 ---
 
-## 2. Eliminação de Falsos Positivos de Tarefas e Auditoria de Ruído
+## 1. Nova Saída Documental Oficial: Ata Executiva vs. Ata Operacional
 
-### Problema Anterior:
-Frases conversacionais e ruídos de transcrição (como `"vai entrar. vai agendar hoje à tarde. precisa fazer no saque hoje. apresentar uma solução mais adequada."` ou comentários informais) estavam sendo extraídos indevidamente como tarefas operacionais no modo contingência/fallback.
+O sistema passa a contar com duas representações documentais oficiais complementares, originadas da **mesma reunião e da mesma análise estruturada persistida**, sem duplicação de dados e com zero chamadas silenciosas a LLMs ao abrir ou exportar:
 
-### Correções Implementadas:
-* **Processamento Sentença a Sentença (`backend/analysis_service.py`)**:
-  * O pipeline divide a transcrição por pontuação e quebras de linha (`[.?!;
-]+`).
-  * Tags de locutor (`[Lucas]:`, `Carlos:`, `(10:30)`) são removidas antes da validação.
-* **Classificação Rigorosa (`classify_task_operational_intent`)**:
-  * Avalia presença de verbo de ação operacional + entregável concreto (`relatório`, `contrato`, `planilha`, `webhook`, `API`, `módulo`, `sla`, etc.).
-  * Descarte de expressões vagas, perguntas (`"precisa pra quando?"`) e conversações.
-  * Sentenças de ruído são marcadas como `rejected_noise` e **nenhum regex de extração busca dentro delas**.
-* **Auditoria de Ruído (`RejectedTaskAudit`)**:
-  * Todas as frases descartadas são auditadas em `rejected_fallback_tasks` e `rejected_tasks_audit` nos metadados da reunião.
-* **Segmentação no PDF e DOCX**:
-  * Tarefas `valid`: Aparecem no Plano de Ação principal.
-  * Tarefas `pending_review`: Movidas para a subseção `3.1 Itens Pendentes de Validação Humana`.
-  * Tarefas `rejected_noise`: 100% descartadas dos documentos formais.
+### A) 📋 Ata Operacional (Execução e Equipes de Campo)
+Documento detalhado e aprofundado, preservando e aprimorando todas as capacidades técnicas do Proton Flow:
+* **Plano de Ação Detalhado**: Tarefas operacionais com responsáveis, prazos em formato relativo e ISO, status (`Não Inicializado`, `Em Andamento`, `Concluído`), prioridades e evidências textuais da transcrição.
+* **Mapeamento de Dores e Gargalos**: Dores operacionais categorizadas com níveis de severidade (`Crítica`, `Alta`, `Média`), trechos literais e associação a sistemas TOTVS.
+* **Subseção de Validação Humana (3.1)**: Itens identificados com escopo resumido ou em contingência isolados para aprovação prévia.
+* **Catálogo e Recomendações TOTVS**: Análise completa de fit score, justificativas técnicas e integração com ERPs/módulos.
+* **Auditoria Técnica e Parâmetros de IA**: Confiança técnica vs. semântica, contagem de itens descartados por ruído e diagnóstico de qualidade.
 
----
-
-## 3. Catálogo Híbrido e Motor de Recomendações TOTVS
-
-* **Catálogo Corporativo com 10 Soluções TOTVS**:
-  * *TOTVS Fluig*, *TOTVS Protheus (Backoffice)*, *TOTVS RM*, *TOTVS Datasul*, *TOTVS Logix*, *TOTVS CRM Gestão de Clientes*, *TOTVS Carol (IA & Analytics)*, *TOTVS WMS*, *TOTVS Protheus Folha* e *TOTVS Moda*.
-* **Motor de Matching Inteligente (`backend/totvs_catalog.py`)**:
-  * Cruza dores mapeadas, escopo de tarefas operacionais, segmento e urgência da reunião.
-  * Gera score de adequação (`fit_score`), justificativa preliminar individualizada e permite confirmação ou rejeição humana no frontend.
+### B) 👔 Ata Executiva (Liderança, Diretoria e Tomada de Decisão)
+Síntese executiva limpa e objetiva de 1 a 2 páginas, desenhada especificamente para C-Level e diretores:
+1. **Resumo para Tomada de Decisão**: Síntese direta respondendo *O que aconteceu e por que isso importa para a organização*.
+2. **Situação Atual**: Panorama conciso do cenário operacional discutido na sessão.
+3. **Impacto para o Negócio**: Consequências diretas em custos, prazos, faturamento ou riscos operacionais.
+4. **Riscos Principais & Pontos Críticos**: Riscos priorizados por severidade (`Crítica` e `Alta` no topo), com badges visuais e rastreabilidade (`source_refs`).
+5. **Decisões Tomadas na Sessão**: Lista estrita de deliberações já aprovadas. Se não houver, exibe com total transparência: *"Nenhuma decisão final formalizada na sessão"*, com **zero alucinações**.
+6. **Decisões Necessárias da Liderança**: Separação clara de pendências de aprovação, alçadas de diretoria e escalonamentos com indicação de `owner_level` (ex: `Liderança Executiva / TI`).
+7. **Próximos Passos Estratégicos**: Máximo de 3 marcos estratégicos consolidados, referenciando a Ata Operacional para o detalhamento da equipe.
+8. **Recomendação TOTVS & Ecossistema**: Produto recomendado, status de aprovação, justificativa estratégica e benefícios esperados.
+9. **Informações Não Identificadas**: Pontos ausentes na sessão explicitamente destacados para evitar decisões baseadas em premissas falsas.
 
 ---
 
-## 4. Analytics Executivo e Métricas de Qualidade de Dados
+## 2. Visualizador Integrado no Frontend (`DocumentViewerModal.jsx`)
 
-* **Contrato de Qualidade Atualizado (`backend/schemas.py` & `backend/analytics_service.py`)**:
-  * Adicionado o campo `total_tarefas` no schema `DataQualityMetrics`.
-  * Cálculo de score de qualidade de dados (50%) e qualidade da IA (50%).
-* **Filtros Temporais Expandidos**:
-  * Suporte a filtros Anual (Ano Completo), Semestral (1º e 2º Semestres) e Trimestral (Q1 a Q4).
-* **Drilldown de Evidências**:
-  * Modal interativo que exibe as atas e trechos exatos que justificam cada métrica do dashboard executivo.
-
----
-
-## 5. Sincronização, Persistência e Limpeza de Dados
-
-* **Sincronização de Status Atômica (`backend/repositories.py`)**:
-  * `STATUS_ANALISE` e `STATUS_MEETING` são sempre persistidos de forma síncrona com o status canônico dos metadados da IA (`analise_concluida`, `analise_contingencia_tarefas_pendentes`, `reuniao_sem_conteudo_estruturado`, etc.).
-* **Migração da Base de Dados (`backend/dataset_limpo.json`)**:
-  * Todos os registros foram migrados para garantir coerência estrita de status.
-* **Botão Resetar Análises**:
-  * Permite resetar todas as reuniões do histórico para `aguardando_analise` caso o usuário deseje reanalisar tudo via IA.
+A interface do usuário foi aprimorada com controles independentes para inspeção e exportação:
+* **Seletor de Tipo de Ata**: Alternância em um clique entre **👔 Ata Executiva** e **📋 Ata Operacional**.
+* **Seletor de Formato**: Alternância instantânea entre **📄 PDF** (preview corporativo em iframe) e **📝 DOCX / HTML** (layout Paper View formatado em A4).
+* **Botões Dedicados de Download**:
+  * `[ 📥 Baixar PDF Executivo ]` e `[ 📥 Baixar DOCX Executivo ]`
+  * `[ 📥 Baixar PDF Operacional ]` e `[ 📥 Baixar DOCX Operacional ]`
+* **Troca Dinâmica em Memória**: O preview do PDF e DOCX é gerado e atualizado dinamicamente sem recarregar a página.
 
 ---
 
-## 6. Qualidade de Código, Linting e Testes
+## 3. Botões e Ações na Tabela de Histórico e Detalhes
 
-* **84 Testes Automatizados (`pytest`)**:
-  * Testes unitários e de integração cobrindo exportação, idempotência, concorrência, catalogação TOTVS, detecção de ruído, contingência e contratos de API (100% aprovados).
-* **Linting do Frontend (`oxlint src`)**:
-  * Configurado no `package.json` (`npm run lint`), executando com **0 erros e 0 warnings**.
-* **Build de Produção Frontend (`vite build`)**:
-  * Validado e executando com code-splitting limpo.
-
----
-
-## 7. Como Rodar Localmente
-
-### Backend (FastAPI):
-```bash
-cd backend
-python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-### Frontend (React + Vite):
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Executar Testes e Lint:
-```bash
-# Testes do Backend
-python -m pytest backend/tests
-
-# Lint do Frontend
-cd frontend
-npm run lint
-
-# Build do Frontend
-npm run build
-```
+* **Tabela de Histórico (`MeetingHistoryTable.jsx`)**:
+  * Botão `[ 👔 Executiva ]`: Abre diretamente a visualização executiva da ata.
+  * Botão `[ 📋 Operacional ]`: Abre diretamente a visualização técnica operacional.
+* **Painel Expandido da Reunião (`MeetingDetail.jsx`)**:
+  * Dois cards temáticos superiores (**Ata Executiva** e **Ata Operacional**) com botões rápidos para visualização no front e download de PDF e DOCX.
 
 ---
 
-## 8. Como Enviar as Alterações para o GitHub
+## 4. Backend, Endpoints REST e Persistência Atômica
 
-Como o repositório remoto `https://github.com/Guiroselli/TOTUVsVers-oFinal` exige autenticação do usuário, utilize um dos métodos abaixo no seu terminal:
+* **Schemas Pydantic (`backend/schemas.py`)**:
+  * `ExecutiveSummarySchema`, `ExecutiveRiskItem`, `ExecutiveDecisionItem`, `ExecutiveDecisionRequiredItem`, `ExecutiveNextStepItem`, `ExecutiveRecommendationItem`.
+  * `GenerateExecutiveSummaryRequest`, `ExecutiveStatusUpdateRequest`.
+* **Serviço de Análise (`backend/analysis_service.py`)**:
+  * Função determinística e desacoplada `build_executive_summary()`.
+  * Integrada automaticamente tanto no pipeline principal de IA (Ollama) quanto no pipeline de contingência (fallback determinístico).
+* **Repositório e Persistência (`backend/repositories.py`)**:
+  * `save_executive_summary()`, `get_executive_summary()`, `update_executive_summary_status()`.
+  * Persistência em `RESUMO_EXECUTIVO` na raiz da reunião e em `RESUMO_IA.resumo_executivo`.
+* **Rotas da API FastAPI (`backend/routers/meetings.py`)**:
+  * `GET /api/meetings/{meeting_id}/executive-summary`: Retorna a ata executiva persistida sem reprocessamento.
+  * `POST /api/meetings/{meeting_id}/executive-summary/generate`: Regenera ou reconstrói a ata executiva sob demanda.
+  * `PATCH /api/meetings/{meeting_id}/executive-summary/status`: Atualiza o status de revisão humana (`pending_review`, `reviewed`, `approved`).
 
-### Opção A: Utilizando Personal Access Token (PAT)
-```bash
-git push https://<SEU_GITHUB_USERNAME>:<SEU_TOKEN>@github.com/Guiroselli/TOTUVsVers-oFinal.git main
-```
+---
 
-### Opção B: Utilizando Git Credential Manager no Terminal Interativo
-Abra um terminal (PowerShell ou Bash) na pasta do projeto e execute:
-```bash
-git push origin main
-```
-O Git abrirá a janela do navegador para você autenticar e autorizar o envio para o repositório.
+## 5. Garantias de Segurança, Anti-Alucinação e Descarte de Ruído
+
+* **Zero Alucinação**: Decisões não tomadas não são inventadas. Se o contexto não tiver decisão aprovada, `decisions_made = []`.
+* **Zero Placeholders**: Nenhuma ocorrência de `undefined`, `null`, `NaN` ou `lorem ipsum` em PDFs ou DOCXs.
+* **Descarte Rigoroso de Ruído (`rejected_noise`)**: Frases conversacionais e saudações informais são expurgadas dos documentos formais e mantidas apenas na trilha de auditoria.
+
+---
+
+## 6. Resultados da Validação Automatizada
+
+* **Backend Test Suite (Pytest)**: **93/93 testes aprovados (100% de sucesso)**.
+  * Testes unitários para a Ata Executiva (`test_executive_summary.py`).
+  * Testes de compatibilidade lado a lado de exportação (`test_export_logic.py`).
+  * Testes de integração de endpoints de API (`test_api_meetings.py`).
+* **Frontend Lint (Oxlint)**: **0 erros e 0 warnings**.
+* **Frontend Build (Vite)**: **Produção gerada com sucesso**.

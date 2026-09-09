@@ -268,6 +268,15 @@ class MeetingRepository:
                     # Se vier sugestões, sincroniza no nível da reunião
                     if "field_suggestions" in analysis_data:
                         item["field_suggestions"] = analysis_data["field_suggestions"]
+                    # Sincroniza a Ata Executiva persistida
+                    if "resumo_executivo" in analysis_data and analysis_data["resumo_executivo"]:
+                        item["RESUMO_EXECUTIVO"] = analysis_data["resumo_executivo"]
+                    elif not item.get("RESUMO_EXECUTIVO"):
+                        from analysis_service import build_executive_summary
+                        item["RESUMO_EXECUTIVO"] = build_executive_summary(
+                            analysis_data,
+                            meeting_metadata={"meeting_id": str(meeting_id)}
+                        )
                     # Sincroniza status canônico de análise
                     meta = analysis_data.get("analise_metadados") or {}
                     canon_status = meta.get("analysis_status") or "analise_concluida"
@@ -279,6 +288,90 @@ class MeetingRepository:
                     if analysis_data.get("responsavel_reuniao") and (not item.get("RESPONSAVEL_REUNIAO") or item.get("RESPONSAVEL_REUNIAO") in ["Não identificado", "Não informado", "", None]):
                         item["RESPONSAVEL_REUNIAO"] = str(analysis_data["responsavel_reuniao"]).strip()
                     updated = True
+                    break
+            if updated:
+                _atomic_write_json(self.dataset_path, data)
+            return updated
+
+    def get_executive_summary(self, meeting_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retorna a Ata Executiva persistida da reunião.
+        Se ainda não existir mas a reunião tiver RESUMO_IA, gera deterministicamente e persiste.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    exec_sum = item.get("RESUMO_EXECUTIVO")
+                    if not exec_sum and isinstance(item.get("RESUMO_IA"), dict):
+                        exec_sum = item["RESUMO_IA"].get("resumo_executivo")
+                    if not exec_sum and isinstance(item.get("RESUMO_IA"), dict):
+                        from analysis_service import build_executive_summary
+                        exec_sum = build_executive_summary(
+                            item["RESUMO_IA"],
+                            meeting_metadata={
+                                "meeting_id": str(meeting_id),
+                                "client_code": item.get("NOME_SEGMENTO"),
+                                "segment": item.get("segment")
+                            }
+                        )
+                        item["RESUMO_EXECUTIVO"] = exec_sum
+                        _atomic_write_json(self.dataset_path, data)
+                    return exec_sum
+            return None
+
+    def save_executive_summary(self, meeting_id: str, summary_data: Dict[str, Any], author: str = "system") -> bool:
+        """Salva ou atualiza a Ata Executiva da reunião de forma atômica e auditada."""
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            updated = False
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    old_sum = item.get("RESUMO_EXECUTIVO")
+                    item["RESUMO_EXECUTIVO"] = summary_data
+                    if isinstance(item.get("RESUMO_IA"), dict):
+                        item["RESUMO_IA"]["resumo_executivo"] = summary_data
+                    self._add_audit_event_unlocked(
+                        meeting_id,
+                        "save_executive_summary",
+                        "RESUMO_EXECUTIVO",
+                        old_sum.get("status") if isinstance(old_sum, dict) else None,
+                        summary_data.get("status"),
+                        author
+                    )
+                    updated = True
+                    break
+            if updated:
+                _atomic_write_json(self.dataset_path, data)
+            return updated
+
+    def update_executive_summary_status(self, meeting_id: str, status: str, author: str = "user") -> bool:
+        """Atualiza o status de revisão da Ata Executiva ('pending_review' | 'reviewed' | 'approved')."""
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            updated = False
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    exec_sum = item.get("RESUMO_EXECUTIVO")
+                    if not exec_sum and isinstance(item.get("RESUMO_IA"), dict):
+                        exec_sum = item["RESUMO_IA"].get("resumo_executivo")
+                    if isinstance(exec_sum, dict):
+                        old_st = exec_sum.get("review_status", "pending_review")
+                        exec_sum["review_status"] = status
+                        exec_sum["reviewed_at"] = datetime.now().isoformat()
+                        exec_sum["reviewed_by"] = author
+                        item["RESUMO_EXECUTIVO"] = exec_sum
+                        if isinstance(item.get("RESUMO_IA"), dict):
+                            item["RESUMO_IA"]["resumo_executivo"] = exec_sum
+                        self._add_audit_event_unlocked(
+                            meeting_id,
+                            "update_executive_status",
+                            "RESUMO_EXECUTIVO.review_status",
+                            old_st,
+                            status,
+                            author
+                        )
+                        updated = True
                     break
             if updated:
                 _atomic_write_json(self.dataset_path, data)

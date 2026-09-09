@@ -12,6 +12,10 @@ export default function MeetingHistoryTable({
   onGenerateDocx,
   onAnalyzeMeeting,
   onOpenDocumentViewer,
+  onDownloadExecutivePdf,
+  onDownloadExecutiveDocx,
+  onDownloadOperationalPdf,
+  onDownloadOperationalDocx,
   sistemasTotvs,
   enviosPorReuniao,
   onConfirmSuggestion,
@@ -243,52 +247,35 @@ export default function MeetingHistoryTable({
                                     border: '1px solid var(--primary-color)',
                                     color: 'var(--primary-color)',
                                     padding: '5px 8px',
-                                    fontSize: '11.5px',
+                                    fontSize: '11px',
                                     fontWeight: 700,
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '4px'
                                   }}
-                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'pdf') : onSynthesize(item)}
-                                  title="Visualizar ata executiva e PDF diretamente no navegador"
+                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'executive', 'pdf') : (onDownloadExecutivePdf ? onDownloadExecutivePdf(item) : onSynthesize(item))}
+                                  title="Abrir Ata Executiva (Visão Liderança / Decisão)"
                                 >
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                  </svg>
-                                  Abrir
+                                  👔 Executiva
                                 </button>
 
                                 <button
                                   className="btn-synth"
                                   style={{
-                                    background: 'rgba(239, 68, 68, 0.12)',
-                                    border: '1px solid rgba(239, 68, 68, 0.35)',
-                                    color: '#ef4444',
-                                    padding: '5px 7px',
-                                    fontSize: '11.5px',
-                                    fontWeight: 600
+                                    background: 'rgba(16, 185, 129, 0.15)',
+                                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                                    color: 'var(--success)',
+                                    padding: '5px 8px',
+                                    fontSize: '11px',
+                                    fontWeight: 700,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
                                   }}
-                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'pdf') : onSynthesize(item)}
-                                  title="Visualizar ou Baixar PDF"
+                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'operational', 'pdf') : (onDownloadOperationalPdf ? onDownloadOperationalPdf(item) : onSynthesize(item))}
+                                  title="Abrir Ata Operacional (Tarefas, Prazos & Evidências)"
                                 >
-                                  PDF
-                                </button>
-
-                                <button
-                                  className="btn-synth"
-                                  style={{
-                                    background: 'rgba(59, 130, 246, 0.12)',
-                                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                                    color: '#3b82f6',
-                                    padding: '5px 7px',
-                                    fontSize: '11.5px',
-                                    fontWeight: 600
-                                  }}
-                                  onClick={() => onOpenDocumentViewer ? onOpenDocumentViewer(item, 'docx') : onGenerateDocx(item)}
-                                  title="Visualizar ou Baixar Ata DOCX"
-                                >
-                                  DOCX
+                                  📋 Operacional
                                 </button>
                               </>
                             )}
@@ -309,8 +296,12 @@ export default function MeetingHistoryTable({
                               onEnviarIntegracao={onEnviarIntegracao}
                               onOpenConfig={onOpenConfig}
                               onOpenDocumentViewer={onOpenDocumentViewer}
-                              onDownloadPdf={onSynthesize}
-                              onDownloadDocx={onGenerateDocx}
+                              onDownloadExecutivePdf={onDownloadExecutivePdf || onSynthesize}
+                              onDownloadExecutiveDocx={onDownloadExecutiveDocx || onGenerateDocx}
+                              onDownloadOperationalPdf={onDownloadOperationalPdf || onSynthesize}
+                              onDownloadOperationalDocx={onDownloadOperationalDocx || onGenerateDocx}
+                              onDownloadPdf={onDownloadOperationalPdf || onSynthesize}
+                              onDownloadDocx={onDownloadOperationalDocx || onGenerateDocx}
                             />
                           </td>
                         </tr>

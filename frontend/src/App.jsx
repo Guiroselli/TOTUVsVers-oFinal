@@ -40,7 +40,8 @@ export default function MeetingApp() {
     meeting: null,
     pdfBlobUrl: null,
     isLoadingPdf: false,
-    initialTab: 'pdf'
+    initialDocType: 'executive',
+    initialFormat: 'pdf'
   });
 
   // 1. Carrega sistemas TOTVS
@@ -262,6 +263,523 @@ export default function MeetingApp() {
       await loadSistemasTotvs();
     } catch (err) {
       console.error('Erro ao remover webhook:', err);
+    }
+  };
+
+  // DOCX Generation (Executive Minutes — Síntese Estratégica)
+  const generateExecutiveDocx = async (rawText, isHistorical = false, meetingId = null, existingData = null, shouldDownload = true) => {
+    if (isHistorical && !existingData) {
+      alert('Esta reunião ainda não foi analisada pela Inteligência Artificial. Analise a reunião antes de exportar o documento.');
+      return null;
+    }
+
+    try {
+      setIsGeneratingPDF(true);
+      setGeneratingMessage('Gerando Ata Executiva em DOCX...');
+      const meetingObj = meetings.find(m => String(m.ID_MEETING) === String(meetingId)) || {};
+      const analysisData = existingData || meetingObj.RESUMO_IA || {};
+      const execSummary = meetingObj.RESUMO_EXECUTIVO || analysisData.resumo_executivo || {};
+      const meta = analysisData.analise_metadados || {};
+
+      const { Document, Packer, Paragraph, Table, TableCell, TableRow, WidthType, HeadingLevel } = await import('docx');
+      const { saveAs } = await import('file-saver');
+
+      const isFallback = (
+        meta.analysis_engine === 'deterministic_fallback' ||
+        meta.analysis_status === 'fallback_deterministico' ||
+        execSummary.generation_method === 'fallback_generated'
+      );
+
+      const children = [];
+
+      children.push(new Paragraph({ text: 'ATA EXECUTIVA DE REUNIÃO', heading: HeadingLevel.TITLE }));
+      children.push(new Paragraph('Proton Flow v2.1 • Síntese Estratégica & Apoio à Decisão da Liderança'));
+      children.push(new Paragraph(''));
+
+      const dateStr = meetingObj.DT_MEETING || 'Não informada';
+      const clientName = meetingObj.client_code && meetingObj.client_code !== 'Não identificado' ? meetingObj.client_code : (meetingObj.NOME_SEGMENTO || 'Não identificado');
+      const segmentName = meetingObj.segment || meetingObj.NOME_SEGMENTO || 'Geral';
+      const respStr = meetingObj.RESPONSAVEL_REUNIAO || analysisData.responsavel_reuniao || 'Não identificado';
+      const urgencyStr = meetingObj.NIVEL_URGENCIA || execSummary.urgency || 'Não Definido';
+
+      const metaTableRows = [
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph(`ID da Reunião: ${meetingId || 'N/A'}`)] }),
+            new TableCell({ children: [new Paragraph(`Data: ${dateStr}`)] }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph(`Cliente: ${clientName}`)] }),
+            new TableCell({ children: [new Paragraph(`Segmento: ${segmentName}`)] }),
+          ],
+        }),
+        new TableRow({
+          children: [
+            new TableCell({ children: [new Paragraph(`Facilitador: ${respStr}`)] }),
+            new TableCell({ children: [new Paragraph(`Urgência: ${urgencyStr}`)] }),
+          ],
+        }),
+      ];
+
+      children.push(new Table({ rows: metaTableRows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+      children.push(new Paragraph(''));
+
+      if (isFallback) {
+        children.push(new Paragraph('AVISO DE CONTINGÊNCIA: Esta síntese foi gerada a partir de regras determinísticas de contingência e requer validação humana antes da tomada de decisão.'));
+        children.push(new Paragraph(''));
+      }
+
+      // 1. Resumo para Tomada de Decisão
+      children.push(new Paragraph({ text: '1. Resumo para Tomada de Decisão', heading: HeadingLevel.HEADING_1 }));
+      children.push(new Paragraph(execSummary.summary_for_decision || 'A sessão deliberou sobre direcionamento estratégico e alinhamentos operacionais.'));
+      children.push(new Paragraph(''));
+
+      // 2. Situação Atual
+      children.push(new Paragraph({ text: '2. Situação Atual', heading: HeadingLevel.HEADING_1 }));
+      children.push(new Paragraph(execSummary.current_situation || 'Operação em andamento regular conforme discutido na sessão.'));
+      children.push(new Paragraph(''));
+
+      // 3. Impacto para o Negócio
+      children.push(new Paragraph({ text: '3. Impacto para o Negócio', heading: HeadingLevel.HEADING_1 }));
+      children.push(new Paragraph(execSummary.business_impact || 'Impacto operacional monitorado dentro do planejamento regular.'));
+      children.push(new Paragraph(''));
+
+      // 4. Riscos Principais
+      children.push(new Paragraph({ text: '4. Riscos Principais & Pontos Críticos', heading: HeadingLevel.HEADING_1 }));
+      const risks = execSummary.main_risks || [];
+      if (risks.length > 0) {
+        risks.forEach(r => {
+          children.push(new Paragraph(`• [Severidade: ${r.severity}] ${r.text}`));
+        });
+      } else {
+        children.push(new Paragraph('• Nenhum risco crítico identificado na sessão.'));
+      }
+      children.push(new Paragraph(''));
+
+      // 5. Decisões Tomadas
+      children.push(new Paragraph({ text: '5. Decisões Tomadas na Sessão', heading: HeadingLevel.HEADING_1 }));
+      const decisions = execSummary.decisions_made || [];
+      if (decisions.length > 0) {
+        decisions.forEach(d => {
+          children.push(new Paragraph(`• ${d.text}`));
+        });
+      } else {
+        children.push(new Paragraph('• Nenhuma decisão final formalizada na sessão.'));
+      }
+      children.push(new Paragraph(''));
+
+      // 6. Decisões Necessárias da Liderança
+      children.push(new Paragraph({ text: '6. Decisões Necessárias da Liderança', heading: HeadingLevel.HEADING_1 }));
+      const required = execSummary.decisions_required || [];
+      if (required.length > 0) {
+        required.forEach(dr => {
+          children.push(new Paragraph(`• [${dr.owner_level || 'Liderança'}]: ${dr.text}`));
+        });
+      } else {
+        children.push(new Paragraph('• Nenhuma decisão pendente de escalonamento.'));
+      }
+      children.push(new Paragraph(''));
+
+      // 7. Próximos Passos Estratégicos
+      children.push(new Paragraph({ text: '7. Próximos Passos Estratégicos', heading: HeadingLevel.HEADING_1 }));
+      const steps = execSummary.strategic_next_steps || [];
+      if (steps.length > 0) {
+        steps.forEach((s, idx) => {
+          children.push(new Paragraph(`${idx + 1}. ${s.text} (${s.target_milestone || 'Alinhamento'})`));
+        });
+      } else {
+        children.push(new Paragraph('• Próximos passos operacionais disponíveis na Ata Operacional.'));
+      }
+      children.push(new Paragraph(''));
+
+      // 8. Recomendação TOTVS
+      const rec = execSummary.executive_recommendation;
+      if (rec) {
+        children.push(new Paragraph({ text: '8. Recomendação TOTVS & Ecossistema', heading: HeadingLevel.HEADING_1 }));
+        children.push(new Paragraph(`Produto: ${rec.product_name} (${rec.status})`));
+        children.push(new Paragraph(`Justificativa: ${rec.reason}`));
+        if (rec.expected_benefits?.length) {
+          children.push(new Paragraph(`Benefícios esperados: ${rec.expected_benefits.join(', ')}`));
+        }
+        children.push(new Paragraph(''));
+      }
+
+      // Footer
+      children.push(new Paragraph(''));
+      children.push(new Paragraph('Documento gerado pelo Proton Flow v2.1 • O plano operacional detalhado com todas as tarefas, prazos e evidências técnicas está disponível na Ata Operacional.'));
+
+      const doc = new Document({
+        sections: [{ properties: {}, children }]
+      });
+
+      const blob = await Packer.toBlob(doc);
+      if (shouldDownload) {
+        saveAs(blob, `Ata_Executiva_${meetingId || 'ProtonFlow'}.docx`);
+      }
+      return { doc, blob };
+
+    } catch (err) {
+      console.error('Erro ao gerar DOCX Executivo:', err);
+      alert('Ocorreu um erro ao gerar o DOCX Executivo.');
+      return null;
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  // PDF Generation (Executive Minutes — 1-2 Páginas Síntese Decisória)
+  const generateExecutivePDF = async (rawText, isHistorical = false, meetingId = null, existingData = null, shouldDownload = true) => {
+    if (isHistorical && !existingData) {
+      alert('Esta reunião ainda não foi analisada pela Inteligência Artificial. Analise a reunião antes de exportar o documento.');
+      return null;
+    }
+
+    setIsGeneratingPDF(true);
+    setGeneratingMessage('Gerando Ata Executiva em PDF a partir dos dados estruturados...');
+
+    try {
+      const { jsPDF } = await import('jspdf');
+      const autoTable = (await import('jspdf-autotable')).default;
+
+      const meetingObj = meetings.find(m => String(m.ID_MEETING) === String(meetingId)) || {};
+      const analysisData = existingData || meetingObj.RESUMO_IA || {};
+      const execSummary = meetingObj.RESUMO_EXECUTIVO || analysisData.resumo_executivo || {};
+      const meta = analysisData.analise_metadados || {};
+
+      const doc = new jsPDF();
+
+      // Cabeçalho TOTVS Azul Escuro Corporativo
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 36, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(17);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Proton Flow — Ata Executiva de Reunião', 15, 17);
+      doc.setFontSize(9.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text('Síntese Estratégica & Apoio à Decisão da Liderança', 15, 26);
+
+      // Identidade e Metadados
+      const idStatus = meetingObj.client_identity_status || 'unknown';
+      const rawSeg = meetingObj.NOME_SEGMENTO || '';
+      const rawSegClean = rawSeg.trim().toUpperCase();
+
+      let clientName = 'Não identificado (Sem cliente específico)';
+      let segmentName = meetingObj.segment || 'Geral';
+      let meetingSourceDisplay = meetingObj.meeting_source === 'ao_vivo' || rawSegClean === 'AO VIVO' ? 'Ao Vivo' : 'Reunião Gravada';
+
+      if (idStatus === 'segment_only' || ['SERVICOS', 'SERVIÇOS', 'FINANCEIRO', 'LOGISTICA', 'LOGÍSTICA', 'VAREJO', 'SAUDE', 'SAÚDE', 'EDUCACAO', 'EDUCAÇÃO', 'AGRO', 'TECNOLOGIA'].includes(rawSegClean)) {
+        clientName = 'Não identificado (Somente segmento)';
+        segmentName = rawSegClean === 'SERVICOS' || rawSegClean === 'SERVIÇOS' ? 'Serviços' : (rawSeg ? rawSeg.charAt(0).toUpperCase() + rawSeg.slice(1).toLowerCase() : 'Serviços');
+      } else if (idStatus === 'live_meeting' || rawSegClean === 'AO VIVO') {
+        clientName = 'Não identificado (Reunião ao vivo)';
+        segmentName = meetingObj.segment || 'Geral';
+        meetingSourceDisplay = 'Ao Vivo';
+      } else if (idStatus === 'valid_client' && meetingObj.client_code && meetingObj.client_code !== 'Não identificado') {
+        clientName = meetingObj.client_code;
+        segmentName = meetingObj.segment || 'Geral';
+      } else if (meetingObj.client_code && !['SERVICOS', 'SERVIÇOS', 'AO VIVO', 'Ao Vivo', 'GERAL', 'Geral', 'Não identificado'].includes(meetingObj.client_code.trim())) {
+        clientName = meetingObj.client_code;
+        segmentName = meetingObj.segment || 'Geral';
+      }
+
+      const dateStr = meetingObj.DT_MEETING || 'Não informada';
+      const respStr = meetingObj.RESPONSAVEL_REUNIAO || analysisData.responsavel_reuniao || 'Não identificado';
+      const urgencyStr = meetingObj.NIVEL_URGENCIA || execSummary.urgency || 'Não Definido';
+
+      const isFallback = (
+        meta.analysis_engine === 'deterministic_fallback' ||
+        meta.analysis_status === 'fallback_deterministico' ||
+        meta.analysis_status === 'analise_contingencia_tarefas_pendentes' ||
+        meetingObj.STATUS_ANALISE === 'fallback_deterministico' ||
+        execSummary.generation_method === 'fallback_generated'
+      );
+
+      const isUnanalyzed = !analysisData || Object.keys(analysisData).length === 0;
+
+      // 1. Grid de Metadados
+      const meetingIdDisplay = meetingId ? (meetingId.length > 12 ? `${meetingId.substring(0, 12)}...` : meetingId) : 'N/A';
+      const metaRows = [
+        [
+          `ID: ${meetingIdDisplay}`,
+          `Data: ${dateStr}`
+        ],
+        [
+          `Cliente: ${clientName}`,
+          `Segmento: ${segmentName}`
+        ],
+        [
+          `Origem: ${meetingSourceDisplay}`,
+          `Facilitador: ${respStr}`
+        ],
+        [
+          `Nível de Urgência: ${urgencyStr}`,
+          `Status: ${isFallback ? 'Contingência' : 'Análise Concluída'}`
+        ]
+      ];
+
+      autoTable(doc, {
+        startY: 40,
+        body: metaRows,
+        theme: 'plain',
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 1.8,
+          textColor: [51, 65, 85],
+          overflow: 'linebreak'
+        },
+        columnStyles: {
+          0: { cellWidth: 95, fontStyle: 'bold' },
+          1: { cellWidth: 85, fontStyle: 'normal' }
+        },
+        margin: { left: 15, right: 15 },
+        tableLineColor: [226, 232, 240],
+        tableLineWidth: 0.5
+      });
+
+      let currentY = doc.lastAutoTable.finalY + 4;
+
+      if (isFallback) {
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        const bannerText = 'AVISO DE CONTINGÊNCIA: Esta síntese executiva foi gerada a partir de regras determinísticas de contingência. Recomenda-se validação humana antes da tomada de decisão formal.';
+        const splitBanner = doc.splitTextToSize(bannerText, 172);
+        const bannerH = (splitBanner.length * 3.8) + 4;
+
+        doc.setFillColor(254, 243, 199);
+        doc.setDrawColor(245, 158, 11);
+        doc.setLineWidth(0.4);
+        doc.roundedRect(15, currentY, 180, bannerH, 2, 2, 'FD');
+
+        doc.setTextColor(180, 83, 9);
+        doc.text(splitBanner, 19, currentY + 3.8);
+        currentY += bannerH + 4;
+      }
+
+      if (isUnanalyzed) {
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(220, 38, 38);
+        doc.text('Reunião ainda não analisada. Analise a reunião antes de exportar a Ata Executiva.', 15, currentY + 5);
+        currentY += 15;
+      } else {
+        // 1. Resumo para Tomada de Decisão
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(15, 23, 42);
+        doc.text('1. Resumo para Tomada de Decisão', 15, currentY);
+        currentY += 4.5;
+
+        doc.setFontSize(8.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(30, 41, 59);
+        const summaryText = execSummary.summary_for_decision || (analysisData.tema ? `A sessão deliberou sobre ${analysisData.tema}.` : 'Alinhamento geral sobre direcionamento operacional.');
+        const splitSummary = doc.splitTextToSize(summaryText, 180);
+        
+        doc.setFillColor(240, 253, 244);
+        doc.setDrawColor(187, 247, 208);
+        doc.setLineWidth(0.3);
+        const summaryBoxH = (splitSummary.length * 3.8) + 5;
+        doc.roundedRect(15, currentY, 180, summaryBoxH, 2, 2, 'FD');
+        doc.setTextColor(20, 83, 45);
+        doc.text(splitSummary, 18, currentY + 4);
+        currentY += summaryBoxH + 4.5;
+
+        // 2 & 3. Situação Atual e Impacto para o Negócio
+        const sitText = execSummary.current_situation || 'Operação em andamento regular conforme discutido na sessão.';
+        const impText = execSummary.business_impact || 'Impacto operacional monitorado dentro do planejamento regular.';
+
+        const splitSit = doc.splitTextToSize(sitText, 82);
+        const splitImp = doc.splitTextToSize(impText, 82);
+        const maxLines = Math.max(splitSit.length, splitImp.length);
+        const gridH = (maxLines * 3.8) + 10;
+
+        if (currentY + gridH > 270) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['2. Situação Atual', '3. Impacto para o Negócio']],
+          body: [[sitText, impText]],
+          theme: 'grid',
+          headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+          bodyStyles: { fontSize: 8, textColor: [51, 65, 85], cellPadding: 2.5 },
+          columnStyles: { 0: { cellWidth: 90 }, 1: { cellWidth: 90 } },
+          margin: { left: 15, right: 15 }
+        });
+        currentY = doc.lastAutoTable.finalY + 4.5;
+
+        // 4. Riscos Principais & Pontos Críticos
+        const risks = execSummary.main_risks || [];
+        if (currentY + (risks.length * 6) + 15 > 270) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(185, 28, 28);
+        doc.text('4. Riscos Principais & Pontos Críticos', 15, currentY);
+        currentY += 4.5;
+
+        if (risks.length > 0) {
+          const riskRows = risks.map(r => [
+            r.text,
+            r.severity || 'Média',
+            r.source_refs?.length ? r.source_refs.join(', ') : 'Sessão'
+          ]);
+
+          autoTable(doc, {
+            startY: currentY,
+            head: [['Risco / Ponto de Atenção', 'Severidade', 'Evidência / Ref']],
+            body: riskRows,
+            theme: 'grid',
+            headStyles: { fillColor: [185, 28, 28], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+            bodyStyles: { fontSize: 7.8, textColor: [51, 65, 85], cellPadding: 1.8 },
+            columnStyles: { 0: { cellWidth: 110 }, 1: { cellWidth: 35 }, 2: { cellWidth: 35 } },
+            margin: { left: 15, right: 15 }
+          });
+          currentY = doc.lastAutoTable.finalY + 4.5;
+        } else {
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(148, 163, 184);
+          doc.text('• Nenhum risco crítico identificado na sessão.', 15, currentY);
+          currentY += 5;
+        }
+
+        // 5 & 6. Decisões Tomadas vs Decisões Necessárias
+        const decisions = execSummary.decisions_made || [];
+        const required = execSummary.decisions_required || [];
+
+        const decTextList = decisions.length > 0
+          ? decisions.map(d => `• ${d.text}`).join('\n')
+          : 'Nenhuma decisão final formalizada na sessão.';
+        const reqTextList = required.length > 0
+          ? required.map(dr => `• [${dr.owner_level || 'Liderança'}]: ${dr.text}`).join('\n')
+          : 'Nenhuma decisão pendente de escalonamento.';
+
+        if (currentY + 25 > 270) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        autoTable(doc, {
+          startY: currentY,
+          head: [['5. Decisões Tomadas na Sessão', '6. Decisões Necessárias da Liderança']],
+          body: [[decTextList, reqTextList]],
+          theme: 'grid',
+          headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+          bodyStyles: { fontSize: 7.8, textColor: [51, 65, 85], cellPadding: 2.2 },
+          columnStyles: { 0: { cellWidth: 90 }, 1: { cellWidth: 90 } },
+          margin: { left: 15, right: 15 }
+        });
+        currentY = doc.lastAutoTable.finalY + 4.5;
+
+        // 7. Próximos Passos Estratégicos (max 3)
+        const nextSteps = execSummary.strategic_next_steps || [];
+        if (nextSteps.length > 0) {
+          if (currentY + (nextSteps.length * 6) + 12 > 270) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          doc.setFontSize(10.5);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(2, 132, 199);
+          doc.text('7. Próximos Passos Estratégicos', 15, currentY);
+          currentY += 4.5;
+
+          const stepRows = nextSteps.map((s, idx) => [
+            `${idx + 1}`,
+            s.text,
+            s.target_milestone || 'Alinhamento'
+          ]);
+
+          autoTable(doc, {
+            startY: currentY,
+            head: [['#', 'Marco Estratégico', 'Referência / Meta']],
+            body: stepRows,
+            theme: 'grid',
+            headStyles: { fillColor: [2, 132, 199], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+            bodyStyles: { fontSize: 7.8, textColor: [51, 65, 85], cellPadding: 1.8 },
+            columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 125 }, 2: { cellWidth: 45 } },
+            margin: { left: 15, right: 15 }
+          });
+          currentY = doc.lastAutoTable.finalY + 4.5;
+        }
+
+        // 8. Recomendação TOTVS & Ecossistema
+        const execRec = execSummary.executive_recommendation;
+        if (execRec) {
+          if (currentY + 20 > 270) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          doc.setFontSize(10.5);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(0, 160, 230);
+          doc.text(`8. Recomendação TOTVS: ${execRec.product_name} (${execRec.status})`, 15, currentY);
+          currentY += 4.5;
+
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(51, 65, 85);
+          const recText = `${execRec.reason}${execRec.expected_benefits?.length ? ` Benefícios: ${execRec.expected_benefits.join(', ')}` : ''}`;
+          const splitRec = doc.splitTextToSize(recText, 180);
+          doc.text(splitRec, 15, currentY);
+          currentY += (splitRec.length * 3.8) + 4;
+        }
+
+        // 9. Informações Faltantes (se houver)
+        const missing = execSummary.missing_information || [];
+        if (missing.length > 0) {
+          if (currentY + 15 > 270) {
+            doc.addPage();
+            currentY = 20;
+          }
+          doc.setFontSize(7.8);
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor(185, 28, 28);
+          doc.text(`• Pontos não identificados na sessão: ${missing.join('; ')}`, 15, currentY);
+          currentY += 4.5;
+        }
+      }
+
+      // Rodapé em todas as páginas
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(148, 163, 184);
+
+        const footerText = 'Proton Flow v2.1 • Ata Executiva • Detalhamento de tarefas e evidências disponível na Ata Operacional.';
+        doc.text(footerText, 15, 290);
+        doc.text(`Página ${i} de ${pageCount}`, 180, 290);
+      }
+
+      const pdfBlob = doc.output('blob');
+      const pdfBlobUrl = URL.createObjectURL(pdfBlob);
+
+      if (shouldDownload) {
+        doc.save(`Ata_Executiva_${meetingId || 'ProtonFlow'}.pdf`);
+      }
+
+      return { doc, blob: pdfBlob, blobUrl: pdfBlobUrl };
+
+    } catch (err) {
+      console.error('Erro ao gerar PDF Executivo:', err);
+      alert('Ocorreu um erro ao gerar o PDF Executivo.');
+      return null;
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -1096,7 +1614,7 @@ export default function MeetingApp() {
   };
 
   // Handler de abertura e pré-visualização de ata/documento no frontend (sem forçar download)
-  const handleOpenDocumentViewer = async (meeting, initialTab = 'pdf') => {
+  const handleOpenDocumentViewer = async (meeting, docType = 'executive', format = 'pdf') => {
     if (!meeting.RESUMO_IA) {
       alert('Esta reunião ainda não foi analisada pela Inteligência Artificial. Analise a reunião antes de abrir a ata.');
       return;
@@ -1107,11 +1625,15 @@ export default function MeetingApp() {
       meeting,
       pdfBlobUrl: null,
       isLoadingPdf: true,
-      initialTab
+      initialDocType: docType,
+      initialFormat: format
     });
 
     try {
-      const res = await generatePDF(meeting.ANON_TRANSCRICAO, true, meeting.ID_MEETING, meeting.RESUMO_IA, false);
+      const res = docType === 'executive'
+        ? await generateExecutivePDF(meeting.ANON_TRANSCRICAO, true, meeting.ID_MEETING, meeting.RESUMO_IA, false)
+        : await generatePDF(meeting.ANON_TRANSCRICAO, true, meeting.ID_MEETING, meeting.RESUMO_IA, false);
+
       if (res && res.blobUrl) {
         setViewerState(prev => ({
           ...prev,
@@ -1123,6 +1645,30 @@ export default function MeetingApp() {
       }
     } catch (err) {
       console.error('Erro ao gerar preview de PDF:', err);
+      setViewerState(prev => ({ ...prev, isLoadingPdf: false }));
+    }
+  };
+
+  // Handler para troca dinâmica de tipo de ata dentro do DocumentViewerModal
+  const handleSwitchDocTypeInViewer = async (newDocType, _format) => {
+    if (!viewerState.meeting) return;
+    setViewerState(prev => ({ ...prev, isLoadingPdf: true }));
+    try {
+      const res = newDocType === 'executive'
+        ? await generateExecutivePDF(viewerState.meeting.ANON_TRANSCRICAO, true, viewerState.meeting.ID_MEETING, viewerState.meeting.RESUMO_IA, false)
+        : await generatePDF(viewerState.meeting.ANON_TRANSCRICAO, true, viewerState.meeting.ID_MEETING, viewerState.meeting.RESUMO_IA, false);
+
+      if (res && res.blobUrl) {
+        setViewerState(prev => ({
+          ...prev,
+          pdfBlobUrl: res.blobUrl,
+          isLoadingPdf: false
+        }));
+      } else {
+        setViewerState(prev => ({ ...prev, isLoadingPdf: false }));
+      }
+    } catch (err) {
+      console.error('Erro ao alternar tipo de documento:', err);
       setViewerState(prev => ({ ...prev, isLoadingPdf: false }));
     }
   };
@@ -1299,8 +1845,12 @@ export default function MeetingApp() {
               onToggleExpand={(id) => setExpandedMeetingId(expandedMeetingId === id ? null : id)}
               onResponsibleChange={handleResponsibleChange}
               onUrgencyChange={handleUrgencyChange}
-              onSynthesize={(item) => generatePDF(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
-              onGenerateDocx={(item) => generateDocx(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
+              onSynthesize={(item) => generateExecutivePDF(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
+              onGenerateDocx={(item) => generateExecutiveDocx(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA)}
+              onDownloadExecutivePdf={(item) => generateExecutivePDF(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA, true)}
+              onDownloadExecutiveDocx={(item) => generateExecutiveDocx(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA, true)}
+              onDownloadOperationalPdf={(item) => generatePDF(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA, true)}
+              onDownloadOperationalDocx={(item) => generateDocx(item.ANON_TRANSCRICAO, true, item.ID_MEETING, item.RESUMO_IA, true)}
               onAnalyzeMeeting={handleAnalyzeMeeting}
               onOpenDocumentViewer={handleOpenDocumentViewer}
               sistemasTotvs={sistemasTotvs}
@@ -1363,9 +1913,13 @@ export default function MeetingApp() {
         meeting={viewerState.meeting}
         pdfBlobUrl={viewerState.pdfBlobUrl}
         isLoadingPdf={viewerState.isLoadingPdf}
-        initialTab={viewerState.initialTab}
-        onDownloadPdf={(m) => generatePDF(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
-        onDownloadDocx={(m) => generateDocx(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
+        initialDocType={viewerState.initialDocType}
+        initialFormat={viewerState.initialFormat}
+        onSwitchDocType={handleSwitchDocTypeInViewer}
+        onDownloadExecutivePdf={(m) => generateExecutivePDF(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
+        onDownloadExecutiveDocx={(m) => generateExecutiveDocx(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
+        onDownloadOperationalPdf={(m) => generatePDF(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
+        onDownloadOperationalDocx={(m) => generateDocx(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
       />
     </div>
   );

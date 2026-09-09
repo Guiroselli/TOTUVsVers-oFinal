@@ -123,6 +123,26 @@ export const api = {
 
   getPerfilCliente: (codigo) => request(`/api/perfil_cliente/${encodeURIComponent(codigo)}`),
 
+  // Ata Executiva Dedicada (Executive Minutes)
+  getMeetingExecutiveSummary: (meetingId) =>
+    request(`/api/meetings/${meetingId}/executive-summary`),
+
+  generateMeetingExecutiveSummary: (meetingId, forceRegenerate = false, useLlm = false) =>
+    request(`/api/meetings/${meetingId}/executive-summary/generate`, {
+      method: 'POST',
+      body: JSON.stringify({
+        meeting_id: String(meetingId),
+        force_regenerate: forceRegenerate,
+        use_llm: useLlm,
+      }),
+    }),
+
+  updateMeetingExecutiveStatus: (meetingId, status) =>
+    request(`/api/meetings/${meetingId}/executive-summary/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+
   // Analytics, Comparisons & Timelines
   getQuarterAnalytics: (params = {}) => {
     const searchParams = new URLSearchParams();

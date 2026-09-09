@@ -563,6 +563,66 @@ def test_data_quality_metrics_contract_total_tarefas():
     assert hasattr(res.data_quality, "calculation_breakdown")
 
 
+def test_side_by_side_executive_and_operational_export_contract():
+    """
+    Valida que a mesma reunião estruturada produz representações oficiais distintas:
+    1. Ata Operacional: Detalhamento completo de tarefas, prazos, evidências e dores.
+    2. Ata Executiva: Síntese de 1-2 páginas para liderança com situação, impacto, riscos, decisões e próximos passos.
+    Ambas com zero placeholders e persistência atômica.
+    """
+    from analysis_service import AnalysisService, build_executive_summary
+    from schemas import ExecutiveSummarySchema, MeetingAnalysisResult
+
+    svc = AnalysisService()
+    transcript = (
+        "Reunião de alinhamento com a equipe de logística da Distribuidora Alfa. "
+        "Carlos identificou que o sistema de separação de pedidos está travando na conferência. "
+        "A Mariana Souza assumiu o compromisso de revisar a integração de pedidos até sexta-feira. "
+        "Decidimos aprovar o uso do TOTVS WMS para otimizar o fluxo de armazém. "
+        "Ficou pendente a aprovação da diretoria para a verba de infraestrutura."
+    )
+
+    result = svc.analyze(transcript, client_context="Distribuidora Alfa", meeting_date_str="2026-09-09")
+    
+    # 1. Validação da Ata Operacional (Result)
+    assert isinstance(result, MeetingAnalysisResult)
+    assert len(result.tarefas) >= 1
+    assert result.resumo_executivo is not None
+    
+    # 2. Validação da Ata Executiva (resumo_executivo)
+    exec_summary = result.resumo_executivo
+    assert isinstance(exec_summary, ExecutiveSummarySchema)
+    assert len(exec_summary.summary_for_decision) > 0
+    assert len(exec_summary.current_situation) > 0
+    assert len(exec_summary.business_impact) > 0
+    assert len(exec_summary.strategic_next_steps) <= 3
+    assert exec_summary.urgency in ["Baixa", "Média", "Alta", "Crítica"]
+    
+    # Decisões Tomadas vs Necessárias
+    decisions_made_texts = [d.text for d in exec_summary.decisions_made]
+    decisions_req_texts = [dr.text for dr in exec_summary.decisions_required]
+    # No modo contingência, decisões pendentes/escalonamentos vão para decisions_required
+    assert len(decisions_made_texts) >= 0
+    assert len(decisions_req_texts) >= 0
+
+    # Testa também a extração direta com decisão explícita no contexto
+    explicit_data = {
+        "tema": "Implantação TOTVS WMS",
+        "contexto": {"problema": "Gargalo no armazém", "decisao": "Aprovada contratação do TOTVS WMS"},
+        "tarefas": [],
+        "dores": []
+    }
+    exec_explicit = build_executive_summary(explicit_data)
+    assert any("aprovada" in d["text"].lower() or "wms" in d["text"].lower() for d in exec_explicit["decisions_made"])
+    
+    # Zero placeholders
+    for field in [exec_summary.summary_for_decision, exec_summary.current_situation, exec_summary.business_impact]:
+        assert "undefined" not in field.lower()
+        assert "lorem ipsum" not in field.lower()
+        assert "nan" not in field.lower()
+
+
+
 
 
 

@@ -6,17 +6,21 @@ export default function DocumentViewerModal({
   meeting,
   pdfBlobUrl,
   isLoadingPdf = false,
-  initialTab = 'pdf',
-  onDownloadPdf,
-  onDownloadDocx,
+  initialDocType = 'executive', // 'executive' | 'operational'
+  initialFormat = 'pdf', // 'pdf' | 'docx'
+  onDownloadOperationalPdf,
+  onDownloadOperationalDocx,
+  onDownloadExecutivePdf,
+  onDownloadExecutiveDocx,
+  onSwitchDocType,
 }) {
-  const [activeTab, setActiveTab] = useState(initialTab);
+  const [docType, setDocType] = useState(initialDocType);
+  const [format, setFormat] = useState(initialFormat);
 
   useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab, isOpen]);
+    if (initialDocType) setDocType(initialDocType);
+    if (initialFormat) setFormat(initialFormat);
+  }, [initialDocType, initialFormat, isOpen]);
 
   if (!isOpen || !meeting) return null;
 
@@ -28,12 +32,22 @@ export default function DocumentViewerModal({
   const pendingTasks = tarefas.filter(t => t.task_validation_status === 'pending_review');
   const recs = analysisData.recomendacoes_totvs || meeting.recomendacoes_totvs || [];
 
+  // Dados da Ata Executiva
+  const execSummary = meeting.RESUMO_EXECUTIVO || analysisData.resumo_executivo || {};
+  const mainRisks = execSummary.main_risks || [];
+  const decisionsMade = execSummary.decisions_made || [];
+  const decisionsRequired = execSummary.decisions_required || [];
+  const strategicNextSteps = execSummary.strategic_next_steps || [];
+  const execRec = execSummary.executive_recommendation;
+  const missingInfo = execSummary.missing_information || [];
+
   const isFallback = (
     meta.analysis_engine === 'deterministic_fallback' ||
     meta.analysis_status === 'fallback_deterministico' ||
     meta.analysis_status === 'analise_contingencia_tarefas_pendentes' ||
     meta.analysis_status === 'reuniao_sem_conteudo_estruturado' ||
-    meeting.STATUS_ANALISE === 'fallback_deterministico'
+    meeting.STATUS_ANALISE === 'fallback_deterministico' ||
+    execSummary.generation_method === 'fallback_generated'
   );
 
   const clientName = meeting.client_code && meeting.client_code !== 'Não identificado' 
@@ -42,7 +56,18 @@ export default function DocumentViewerModal({
   const segmentName = meeting.segment || meeting.NOME_SEGMENTO || 'Geral';
   const dateStr = meeting.DT_MEETING || new Date().toISOString().substring(0, 10);
   const respStr = meeting.RESPONSAVEL_REUNIAO || analysisData.responsavel_reuniao || 'Não identificado';
-  const urgencyStr = meeting.NIVEL_URGENCIA || analysisData.nivel_urgencia || 'Não Definido';
+  const urgencyStr = meeting.NIVEL_URGENCIA || analysisData.nivel_urgencia || execSummary.urgency || 'Não Definido';
+
+  const handleDocTypeToggle = (type) => {
+    setDocType(type);
+    if (onSwitchDocType) {
+      onSwitchDocType(type, format);
+    }
+  };
+
+  const handleFormatToggle = (fmt) => {
+    setFormat(fmt);
+  };
 
   const handleOpenNewTab = () => {
     if (pdfBlobUrl) {
@@ -53,7 +78,7 @@ export default function DocumentViewerModal({
   };
 
   const handlePrint = () => {
-    if (activeTab === 'pdf' && pdfBlobUrl) {
+    if (format === 'pdf' && pdfBlobUrl) {
       const iframe = document.getElementById('pdf-preview-iframe');
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.print();
@@ -68,8 +93,8 @@ export default function DocumentViewerModal({
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.82)',
-        backdropFilter: 'blur(5px)',
+        background: 'rgba(0, 0, 0, 0.85)',
+        backdropFilter: 'blur(6px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -83,12 +108,12 @@ export default function DocumentViewerModal({
           background: 'var(--panel-bg)',
           border: '1px solid var(--border-color)',
           borderRadius: '12px',
-          maxWidth: '1150px',
+          maxWidth: '1200px',
           width: '100%',
-          height: '92vh',
+          height: '94vh',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
           overflow: 'hidden',
         }}
         onClick={(e) => e.stopPropagation()}
@@ -111,159 +136,234 @@ export default function DocumentViewerModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span
                 style={{
-                  background: 'rgba(0, 210, 255, 0.15)',
-                  color: 'var(--primary-color)',
+                  background: docType === 'executive' ? 'rgba(0, 210, 255, 0.18)' : 'rgba(16, 185, 129, 0.18)',
+                  color: docType === 'executive' ? 'var(--primary-color)' : 'var(--success)',
                   fontSize: '11px',
                   fontWeight: 700,
                   padding: '3px 8px',
                   borderRadius: '4px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
+                  border: `1px solid ${docType === 'executive' ? 'rgba(0,210,255,0.3)' : 'rgba(16,185,129,0.3)'}`
                 }}
               >
-                Visualizador de Ata
+                {docType === 'executive' ? '👔 ATA EXECUTIVA' : '📋 ATA OPERACIONAL'}
               </span>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: 600 }}>
-                Reunião #{meeting.ID_MEETING} — {analysisData.tema || 'Alinhamento Geral'}
+              <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                Reunião #{meeting.ID_MEETING} — {analysisData.tema || 'Alinhamento Estratégico'}
               </h3>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-              Cliente: <strong style={{ color: 'var(--text-main)' }}>{clientName}</strong> • Data: <strong>{dateStr}</strong> • Responsável: <strong>{respStr}</strong>
+              Cliente: <strong style={{ color: 'var(--text-main)' }}>{clientName}</strong> • Data: <strong>{dateStr}</strong> • Urgência: <strong style={{ color: urgencyStr === 'Crítica' || urgencyStr === 'Alta' ? '#ef4444' : 'var(--primary-color)' }}>{urgencyStr}</strong>
             </p>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div
-            style={{
-              display: 'flex',
-              background: 'var(--panel-bg)',
-              padding: '3px',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-            }}
-          >
-            <button
-              onClick={() => setActiveTab('pdf')}
+          {/* Selectors: Document Type & Format */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            {/* 1. Escolha do Tipo de Ata */}
+            <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                borderRadius: '6px',
-                border: 'none',
-                background: activeTab === 'pdf' ? 'var(--primary-color)' : 'transparent',
-                color: activeTab === 'pdf' ? '#000' : 'var(--text-main)',
-                fontWeight: activeTab === 'pdf' ? 700 : 500,
-                fontSize: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
+                background: 'var(--panel-bg)',
+                padding: '3px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-              </svg>
-              Visualização PDF
-            </button>
-            <button
-              onClick={() => setActiveTab('docx')}
+              <button
+                onClick={() => handleDocTypeToggle('executive')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: docType === 'executive' ? 'var(--primary-color)' : 'transparent',
+                  color: docType === 'executive' ? '#000' : 'var(--text-main)',
+                  fontWeight: docType === 'executive' ? 700 : 500,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Ata Executiva: Síntese de 1-2 páginas para tomada de decisão da liderança"
+              >
+                👔 Ata Executiva
+              </button>
+              <button
+                onClick={() => handleDocTypeToggle('operational')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: docType === 'operational' ? 'var(--success)' : 'transparent',
+                  color: docType === 'operational' ? '#fff' : 'var(--text-main)',
+                  fontWeight: docType === 'operational' ? 700 : 500,
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                title="Ata Operacional: Detalhamento completo de tarefas, evidências e catálogo"
+              >
+                📋 Ata Operacional
+              </button>
+            </div>
+
+            {/* 2. Escolha do Formato de Visualização */}
+            <div
               style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 14px',
-                borderRadius: '6px',
-                border: 'none',
-                background: activeTab === 'docx' ? 'var(--primary-color)' : 'transparent',
-                color: activeTab === 'docx' ? '#000' : 'var(--text-main)',
-                fontWeight: activeTab === 'docx' ? 700 : 500,
-                fontSize: '12px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
+                background: 'var(--panel-bg)',
+                padding: '3px',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-              </svg>
-              Ata Executiva (DOCX)
-            </button>
+              <button
+                onClick={() => handleFormatToggle('pdf')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: format === 'pdf' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                  color: 'var(--text-main)',
+                  fontWeight: format === 'pdf' ? 700 : 400,
+                  fontSize: '11.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                📄 PDF
+              </button>
+              <button
+                onClick={() => handleFormatToggle('docx')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: format === 'docx' ? 'rgba(255,255,255,0.15)' : 'transparent',
+                  color: 'var(--text-main)',
+                  fontWeight: format === 'docx' ? 700 : 400,
+                  fontSize: '11.5px',
+                  cursor: 'pointer',
+                }}
+              >
+                📝 DOCX / HTML
+              </button>
+            </div>
           </div>
 
           {/* Action Buttons */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={() => onDownloadPdf && onDownloadPdf(meeting)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                background: 'rgba(239, 68, 68, 0.15)',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-              title="Baixar arquivo PDF localmente"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Baixar PDF
-            </button>
-
-            <button
-              onClick={() => onDownloadDocx && onDownloadDocx(meeting)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                background: 'rgba(59, 130, 246, 0.15)',
-                color: '#3b82f6',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-              title="Baixar arquivo DOCX localmente"
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="7 10 12 15 17 10"></polyline>
-                <line x1="12" y1="15" x2="12" y2="3"></line>
-              </svg>
-              Baixar DOCX
-            </button>
+            {docType === 'executive' ? (
+              <>
+                <button
+                  onClick={() => onDownloadExecutivePdf && onDownloadExecutivePdf(meeting)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 11px',
+                    borderRadius: '6px',
+                    background: 'rgba(0, 210, 255, 0.15)',
+                    color: 'var(--primary-color)',
+                    border: '1px solid rgba(0, 210, 255, 0.35)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Baixar PDF da Ata Executiva"
+                >
+                  📥 Baixar PDF Executivo
+                </button>
+                <button
+                  onClick={() => onDownloadExecutiveDocx && onDownloadExecutiveDocx(meeting)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 11px',
+                    borderRadius: '6px',
+                    background: 'rgba(59, 130, 246, 0.15)',
+                    color: '#3b82f6',
+                    border: '1px solid rgba(59, 130, 246, 0.35)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Baixar DOCX da Ata Executiva"
+                >
+                  📥 Baixar DOCX Executivo
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={() => onDownloadOperationalPdf && onDownloadOperationalPdf(meeting)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 11px',
+                    borderRadius: '6px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Baixar PDF da Ata Operacional"
+                >
+                  📥 Baixar PDF Operacional
+                </button>
+                <button
+                  onClick={() => onDownloadOperationalDocx && onDownloadOperationalDocx(meeting)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 11px',
+                    borderRadius: '6px',
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#10b981',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    fontSize: '11.5px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                  title="Baixar DOCX da Ata Operacional"
+                >
+                  📥 Baixar DOCX Operacional
+                </button>
+              </>
+            )}
 
             <button
               onClick={handleOpenNewTab}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
-                padding: '6px 10px',
+                gap: '4px',
+                padding: '6px 9px',
                 borderRadius: '6px',
                 background: 'var(--panel-bg)',
                 color: 'var(--text-main)',
                 border: '1px solid var(--border-color)',
-                fontSize: '12px',
+                fontSize: '11.5px',
                 cursor: 'pointer',
               }}
-              title="Abrir PDF em nova aba do navegador"
+              title="Abrir documento em nova aba"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                <polyline points="15 3 21 3 21 9"></polyline>
-                <line x1="10" y1="14" x2="21" y2="3"></line>
-              </svg>
-              Nova Aba
+              ↗️ Nova Aba
             </button>
 
             <button
@@ -271,22 +371,18 @@ export default function DocumentViewerModal({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px',
-                padding: '6px 10px',
+                gap: '4px',
+                padding: '6px 9px',
                 borderRadius: '6px',
                 background: 'var(--panel-bg)',
                 color: 'var(--text-main)',
                 border: '1px solid var(--border-color)',
-                fontSize: '12px',
+                fontSize: '11.5px',
                 cursor: 'pointer',
               }}
-              title="Imprimir documento"
+              title="Imprimir"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                <rect x="6" y="14" width="12" height="8"></rect>
-              </svg>
+              🖨️
             </button>
 
             <button
@@ -295,13 +391,13 @@ export default function DocumentViewerModal({
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--text-muted)',
-                fontSize: '20px',
+                fontSize: '18px',
                 cursor: 'pointer',
                 padding: '4px 8px',
                 borderRadius: '4px',
-                marginLeft: '6px',
+                marginLeft: '4px',
               }}
-              title="Fechar visualizador"
+              title="Fechar"
             >
               ✕
             </button>
@@ -310,7 +406,7 @@ export default function DocumentViewerModal({
 
         {/* Modal Body */}
         <div style={{ flex: 1, overflow: 'hidden', background: '#0b1120', display: 'flex', flexDirection: 'column' }}>
-          {activeTab === 'pdf' ? (
+          {format === 'pdf' ? (
             <div style={{ flex: 1, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
               {isLoadingPdf ? (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
@@ -323,7 +419,7 @@ export default function DocumentViewerModal({
                     animation: 'spin 1s linear infinite',
                     marginBottom: '1rem'
                   }}></div>
-                  <p>Renderizando pré-visualização do PDF no frontend...</p>
+                  <p>Renderizando pré-visualização do PDF ({docType === 'executive' ? 'Ata Executiva' : 'Ata Operacional'})...</p>
                 </div>
               ) : pdfBlobUrl ? (
                 <iframe
@@ -335,9 +431,9 @@ export default function DocumentViewerModal({
                     border: 'none',
                     background: '#525659',
                   }}
-                  title="Pré-visualização do PDF"
+                  title={`Pré-visualização do PDF (${docType === 'executive' ? 'Executiva' : 'Operacional'})`}
                 />
-              ) : meeting.TEM_PDF ? (
+              ) : meeting.TEM_PDF && docType === 'operational' ? (
                 <iframe
                   id="pdf-preview-iframe"
                   src={`http://localhost:8000/pdfs/${meeting.ID_MEETING}.pdf`}
@@ -352,11 +448,11 @@ export default function DocumentViewerModal({
               ) : (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', textAlign: 'center' }}>
                   <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                    O arquivo PDF desta reunião ainda não foi renderizado em memória.
+                    O arquivo PDF desta ata ({docType === 'executive' ? 'Ata Executiva' : 'Ata Operacional'}) ainda não foi gerado em memória.
                   </p>
                   <button
                     className="btn-primary"
-                    onClick={() => onDownloadPdf && onDownloadPdf(meeting)}
+                    onClick={() => docType === 'executive' ? onDownloadExecutivePdf(meeting) : onDownloadOperationalPdf(meeting)}
                   >
                     Gerar PDF Agora
                   </button>
@@ -364,231 +460,426 @@ export default function DocumentViewerModal({
               )}
             </div>
           ) : (
-            /* Document Executive Preview (DOCX HTML Mode) */
+            /* Format: DOCX / HTML Paper Preview */
             <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', justifyContent: 'center', background: '#1e293b' }}>
-              <div
-                style={{
-                  maxWidth: '850px',
-                  width: '100%',
-                  background: '#ffffff',
-                  color: '#1e293b',
-                  padding: '3rem 3.5rem',
-                  borderRadius: '6px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                  fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  lineHeight: '1.6',
-                }}
-              >
-                {/* Header Banner */}
-                <div style={{ background: '#0f172a', color: '#ffffff', padding: '1.25rem 1.5rem', borderRadius: '6px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em', color: '#ffffff' }}>
-                      ATA FORMAL DE REUNIÃO EXECUTIVA
-                    </h2>
-                    <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
-                      Proton Flow v2.1 • Inteligência Estruturante & Ecossistema TOTVS
+              {docType === 'executive' ? (
+                /* ==================== 1. ATA EXECUTIVA (LIDERANÇA) ==================== */
+                <div
+                  style={{
+                    maxWidth: '850px',
+                    width: '100%',
+                    background: '#ffffff',
+                    color: '#0f172a',
+                    padding: '3rem 3.5rem',
+                    borderRadius: '6px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.35)',
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    lineHeight: '1.6',
+                  }}
+                >
+                  {/* Header Banner */}
+                  <div style={{ background: '#0f172a', color: '#ffffff', padding: '1.25rem 1.5rem', borderRadius: '6px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em', color: '#ffffff' }}>
+                        ATA EXECUTIVA DE REUNIÃO
+                      </h2>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
+                        Proton Flow v2.1 • Síntese Estratégica & Apoio à Decisão da Liderança
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '11px', color: '#cbd5e1' }}>
+                      <div><strong>ID:</strong> #{meeting.ID_MEETING}</div>
+                      <div>{dateStr}</div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right', fontSize: '11px', color: '#cbd5e1' }}>
-                    <div><strong>ID:</strong> #{meeting.ID_MEETING}</div>
-                    <div>{dateStr}</div>
-                  </div>
-                </div>
 
-                {isFallback && (
-                  <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', padding: '10px 14px', borderRadius: '4px', marginBottom: '1.5rem', fontSize: '12px', color: '#92400e' }}>
-                    <strong>MODO CONTINGÊNCIA ATIVO:</strong> Esta análise foi processada por regras determinísticas de contingência. As ações identificadas requerem validação humana obrigatória.
-                  </div>
-                )}
-
-                {/* 1. Metadados */}
-                <div style={{ marginBottom: '1.75rem' }}>
-                  <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#0f172a', borderBottom: '2px solid #e2e8f0', paddingBottom: '4px', marginBottom: '10px' }}>
-                    1. Metadados da Sessão
-                  </h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12.5px' }}>
-                    <div><strong>Tema Principal:</strong> {analysisData.tema || 'Alinhamento Geral'}</div>
-                    <div><strong>Responsável Geral:</strong> {respStr}</div>
-                    <div><strong>Cliente:</strong> {clientName}</div>
-                    <div><strong>Segmento:</strong> {segmentName}</div>
-                    <div><strong>Nível de Urgência:</strong> <span style={{ color: urgencyStr === 'Crítica' || urgencyStr === 'Alta' ? '#dc2626' : '#2563eb', fontWeight: 600 }}>{urgencyStr}</span></div>
-                    <div><strong>Data da Reunião:</strong> {dateStr}</div>
-                  </div>
-                </div>
-
-                {/* 2. Resumo Executivo & Contexto */}
-                <div style={{ marginBottom: '1.75rem' }}>
-                  <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#0f172a', borderBottom: '2px solid #e2e8f0', paddingBottom: '4px', marginBottom: '10px' }}>
-                    2. Resumo Executivo & Contexto
-                  </h3>
-                  {analysisData.contexto ? (
-                    <div style={{ fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {analysisData.contexto.problema && (
-                        <div><strong>Problema Discutido:</strong> {analysisData.contexto.problema}</div>
-                      )}
-                      {analysisData.contexto.decisao && (
-                        <div><strong>Decisões / Encaminhamentos:</strong> {analysisData.contexto.decisao}</div>
-                      )}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '12.5px', color: '#64748b', fontStyle: 'italic' }}>
-                      Resumo da sessão consolidado nos tópicos e ações operacionais abaixo.
+                  {isFallback && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', padding: '10px 14px', borderRadius: '4px', marginBottom: '1.5rem', fontSize: '12px', color: '#92400e' }}>
+                      <strong>AVISO DE CONTINGÊNCIA:</strong> Esta síntese executiva foi gerada a partir de regras de contingência. Recomenda-se validação humana antes da tomada de decisão formal.
                     </div>
                   )}
-                </div>
 
-                {/* 3. Dores Identificadas */}
-                <div style={{ marginBottom: '1.75rem' }}>
-                  <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#ef4444', borderBottom: '2px solid #fee2e2', paddingBottom: '4px', marginBottom: '10px' }}>
-                    3. Mapeamento de Dores & Gargalos Operacionais
-                  </h3>
-                  {dores.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {dores.map((d, idx) => {
-                        const isObj = typeof d === 'object' && d !== null;
-                        const label = isObj ? (d.label || d.categoria) : d;
-                        const sev = isObj ? (d.severidade || 'Média') : 'Média';
-                        const trecho = isObj ? (d.trecho || d.descricao || '') : '';
-                        return (
-                          <div key={idx} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '8px 12px', fontSize: '12px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
-                              <strong style={{ color: '#991b1b' }}>{label}</strong>
-                              <span style={{ fontSize: '10px', background: '#fee2e2', color: '#b91c1c', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>
-                                Severidade: {sev}
-                              </span>
-                            </div>
-                            {trecho && <div style={{ color: '#475569', fontStyle: 'italic' }}>"{trecho}"</div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
-                      • Nenhuma dor ou gargalo operacional crítico identificado na transcrição.
-                    </div>
-                  )}
-                </div>
+                  {/* Metadados da Sessão */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', background: '#f8fafc', padding: '12px 14px', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '1.5rem', fontSize: '12px' }}>
+                    <div><span style={{ color: '#64748b' }}>Tema Principal:</span> <strong style={{ color: '#0f172a' }}>{analysisData.tema || 'Alinhamento Geral'}</strong></div>
+                    <div><span style={{ color: '#64748b' }}>Cliente / Segmento:</span> <strong style={{ color: '#0f172a' }}>{clientName} ({segmentName})</strong></div>
+                    <div><span style={{ color: '#64748b' }}>Nível de Urgência:</span> <strong style={{ color: urgencyStr === 'Crítica' || urgencyStr === 'Alta' ? '#dc2626' : '#2563eb' }}>{urgencyStr}</strong></div>
+                  </div>
 
-                {/* 4. Plano de Ação (Confirmados) */}
-                <div style={{ marginBottom: '1.75rem' }}>
-                  <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#059669', borderBottom: '2px solid #d1fae5', paddingBottom: '4px', marginBottom: '10px' }}>
-                    4. Plano de Ação & Prazos Operacionais (Confirmados)
-                  </h3>
-                  {confirmedTasks.length > 0 ? (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                      <thead>
-                        <tr style={{ background: '#0f172a', color: '#ffffff', textAlign: 'left' }}>
-                          <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Responsável</th>
-                          <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Ação Operacional</th>
-                          <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Prazo</th>
-                          <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {confirmedTasks.map((t, idx) => (
-                          <tr key={idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontWeight: 600 }}>{t.responsavel || 'Não identificado'}</td>
-                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{t.tarefa}</td>
-                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{t.prazo || 'Não mencionado'}</td>
-                            <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                borderRadius: '3px',
-                                background: t.status === 'Concluído' ? '#dcfce7' : t.status === 'Em Andamento' ? '#fef3c7' : '#f1f5f9',
-                                color: t.status === 'Concluído' ? '#166534' : t.status === 'Em Andamento' ? '#92400e' : '#475569',
-                                fontWeight: 600,
-                              }}>
-                                {t.status || 'Não Inicializado'}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
-                      • Nenhuma ação operacional confirmada identificada na transcrição.
-                    </div>
-                  )}
-                </div>
-
-                {/* 4.1 Itens Pendentes de Validação Humana */}
-                {pendingTasks.length > 0 && (
-                  <div style={{ marginBottom: '1.75rem' }}>
-                    <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#d97706', borderBottom: '2px solid #fde68a', paddingBottom: '4px', marginBottom: '8px' }}>
-                      4.1 Itens Pendentes de Validação Humana (Escopo Resumido / Contingência)
-                    </h4>
-                    <p style={{ fontSize: '11px', color: '#78350f', margin: '0 0 8px 0' }}>
-                      * Estas ações foram extraídas com escopo resumido e requerem validação humana prévia.
+                  {/* 1. Resumo para Tomada de Decisão */}
+                  <div style={{ marginBottom: '1.5rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderLeft: '4px solid #16a34a', padding: '14px 16px', borderRadius: '4px' }}>
+                    <h3 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#166534', margin: '0 0 6px 0', fontWeight: 700 }}>
+                      1. Resumo para Tomada de Decisão
+                    </h3>
+                    <p style={{ fontSize: '12.5px', color: '#14532d', margin: 0, lineHeight: '1.6' }}>
+                      {execSummary.summary_for_decision || 'A sessão deliberou sobre os direcionamentos estratégicos e alinhamentos operacionais prioritários.'}
                     </p>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
-                      <thead>
-                        <tr style={{ background: '#d97706', color: '#ffffff', textAlign: 'left' }}>
-                          <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Responsável Sugerido</th>
-                          <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Ação / Sugestão</th>
-                          <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Prazo Sugerido</th>
-                          <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Validação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pendingTasks.map((t, idx) => (
-                          <tr key={idx} style={{ background: idx % 2 === 0 ? '#fffbeb' : '#ffffff' }}>
-                            <td style={{ padding: '5px 8px', border: '1px solid #fef3c7' }}>{t.responsavel || 'Não identificado'}</td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #fef3c7' }}>{t.tarefa}</td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #fef3c7' }}>{t.prazo || 'Não mencionado'}</td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #fef3c7', color: '#b45309', fontWeight: 600 }}>Pendente de Revisão</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
                   </div>
-                )}
 
-                {/* 5. Recomendações TOTVS */}
-                <div style={{ marginBottom: '1.75rem' }}>
-                  <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#0284c7', borderBottom: '2px solid #e0f2fe', paddingBottom: '4px', marginBottom: '10px' }}>
-                    5. Recomendações TOTVS & Ecossistema
-                  </h3>
-                  {recs.length > 0 ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '10px' }}>
-                      {recs.map((r, idx) => (
-                        <div key={idx} style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '4px', padding: '10px 12px', fontSize: '12px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                            <strong style={{ color: '#0369a1' }}>{r.product_name || 'TOTVS'}</strong>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7' }}>
-                              {Math.round((r.fit_score || 0) * 100)}% Match
-                            </span>
+                  {/* 2 & 3: Situação Atual e Impacto para o Negócio (2 Colunas) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '1.5rem' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 14px', borderRadius: '6px' }}>
+                      <h4 style={{ fontSize: '12.5px', textTransform: 'uppercase', color: '#334155', margin: '0 0 6px 0', fontWeight: 700 }}>
+                        2. Situação Atual
+                      </h4>
+                      <p style={{ fontSize: '12px', color: '#475569', margin: 0 }}>
+                        {execSummary.current_situation || 'Operação em andamento regular sem ocorrências de bloqueios críticos na sessão.'}
+                      </p>
+                    </div>
+
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 14px', borderRadius: '6px' }}>
+                      <h4 style={{ fontSize: '12.5px', textTransform: 'uppercase', color: '#334155', margin: '0 0 6px 0', fontWeight: 700 }}>
+                        3. Impacto para o Negócio
+                      </h4>
+                      <p style={{ fontSize: '12px', color: '#475569', margin: 0 }}>
+                        {execSummary.business_impact || 'Impacto operacional controlado dentro dos parâmetros regulares da operação.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* 4. Riscos Principais */}
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#b91c1c', borderBottom: '2px solid #fee2e2', paddingBottom: '4px', marginBottom: '10px', fontWeight: 700 }}>
+                      4. Riscos Principais & Pontos Críticos
+                    </h3>
+                    {mainRisks.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {mainRisks.map((r, idx) => (
+                          <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '8px 12px', fontSize: '12px' }}>
+                            <div style={{ color: '#991b1b', flex: 1, paddingRight: '10px' }}>
+                              • {r.text}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 6px', borderRadius: '3px', background: r.severity === 'Crítica' || r.severity === 'Alta' ? '#fee2e2' : '#f1f5f9', color: r.severity === 'Crítica' || r.severity === 'Alta' ? '#991b1b' : '#475569' }}>
+                                {r.severity}
+                              </span>
+                              {r.source_refs?.length > 0 && (
+                                <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>[{r.source_refs.join(', ')}]</span>
+                              )}
+                            </div>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#475569' }}>{r.why_recommended}</div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                        • Nenhum risco crítico identificado na sessão.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 5 & 6: Decisões Tomadas vs Decisões Necessárias (2 Colunas) */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px', marginBottom: '1.5rem' }}>
+                    {/* 5. Decisões Tomadas */}
+                    <div style={{ background: '#f0fdf4', border: '1px solid #dcfce7', padding: '12px 14px', borderRadius: '6px' }}>
+                      <h4 style={{ fontSize: '12px', textTransform: 'uppercase', color: '#166534', margin: '0 0 8px 0', fontWeight: 700 }}>
+                        5. Decisões Tomadas na Sessão
+                      </h4>
+                      {decisionsMade.length > 0 ? (
+                        <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#14532d' }}>
+                          {decisionsMade.map((d, idx) => (
+                            <li key={idx} style={{ marginBottom: '4px' }}>{d.text}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div style={{ fontSize: '11.5px', color: '#64748b', fontStyle: 'italic' }}>
+                          Nenhuma decisão final formalizada na sessão.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 6. Decisões Necessárias da Liderança */}
+                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', padding: '12px 14px', borderRadius: '6px' }}>
+                      <h4 style={{ fontSize: '12px', textTransform: 'uppercase', color: '#92400e', margin: '0 0 8px 0', fontWeight: 700 }}>
+                        6. Decisões Necessárias da Liderança
+                      </h4>
+                      {decisionsRequired.length > 0 ? (
+                        <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '12px', color: '#78350f' }}>
+                          {decisionsRequired.map((dr, idx) => (
+                            <li key={idx} style={{ marginBottom: '6px' }}>
+                              <strong>[{dr.owner_level || 'Liderança'}]:</strong> {dr.text}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div style={{ fontSize: '11.5px', color: '#64748b', fontStyle: 'italic' }}>
+                          Nenhuma decisão pendente de escalonamento.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 7. Próximos Passos Estratégicos */}
+                  <div style={{ marginBottom: '1.5rem' }}>
+                    <h3 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#0284c7', borderBottom: '2px solid #e0f2fe', paddingBottom: '4px', marginBottom: '10px', fontWeight: 700 }}>
+                      7. Próximos Passos Estratégicos
+                    </h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {strategicNextSteps.map((sns, idx) => (
+                        <div key={idx} style={{ fontSize: '12px', color: '#0369a1', background: '#f0f9ff', padding: '7px 12px', borderRadius: '4px', border: '1px solid #bae6fd' }}>
+                          <strong>{idx + 1}.</strong> {sns.text}
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
-                      • Nenhuma recomendação específica mapeada para esta reunião.
+                  </div>
+
+                  {/* 8. Recomendação TOTVS & Ecossistema */}
+                  {execRec && (
+                    <div style={{ marginBottom: '1.5rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <h4 style={{ fontSize: '12.5px', textTransform: 'uppercase', color: '#0f172a', margin: 0, fontWeight: 700 }}>
+                          8. Recomendação TOTVS: {execRec.product_name}
+                        </h4>
+                        <span style={{ fontSize: '10.5px', fontWeight: 600, padding: '2px 8px', borderRadius: '4px', background: execRec.status.includes('Confirmado') ? '#dcfce7' : '#fef3c7', color: execRec.status.includes('Confirmado') ? '#166534' : '#92400e' }}>
+                          {execRec.status}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: '12px', color: '#475569', margin: '0 0 6px 0' }}>{execRec.reason}</p>
+                      {execRec.expected_benefits?.length > 0 && (
+                        <div style={{ fontSize: '11.5px', color: '#334155' }}>
+                          <strong>Benefícios esperados:</strong> {execRec.expected_benefits.join(' • ')}
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
 
-                {/* 6. Qualidade & Parâmetros */}
-                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px 16px', fontSize: '11.5px', color: '#475569' }}>
-                  <div style={{ fontWeight: 600, color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
-                    6. Parâmetros de Auditoria & Qualidade da IA
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
-                    <div><strong>Método:</strong> {isFallback ? 'Fallback determinístico' : 'Ollama / Llama 3'}</div>
-                    <div><strong>Modelo:</strong> {meta.model_name || meta.model || (isFallback ? 'Regras Determinísticas' : 'llama3:latest')}</div>
-                    <div><strong>Confiança Semântica:</strong> {meta.semantic_confidence || (isFallback ? 'Média (65%)' : 'Alta (85%)')}</div>
-                    <div><strong>Ações Mapeadas:</strong> {confirmedTasks.length} confirmada(s) {pendingTasks.length > 0 ? `+ ${pendingTasks.length} pendente(s)` : ''}</div>
-                  </div>
-                </div>
+                  {/* 9. Informações Faltantes / Pendências */}
+                  {missingInfo.length > 0 && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fee2e2', borderRadius: '4px', padding: '8px 12px', fontSize: '11px', color: '#991b1b', marginBottom: '1.5rem' }}>
+                      <strong>Pontos Não Identificados na Sessão:</strong> {missingInfo.join(' • ')}
+                    </div>
+                  )}
 
-                {/* Footer disclaimer */}
-                <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0', fontSize: '10.5px', color: '#94a3b8', textAlign: 'center' }}>
-                  Documento gerado pelo Proton Flow v2.1 • TOTVS Reuniões Inteligentes
+                  {/* Traceability Footer */}
+                  <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0', fontSize: '11px', color: '#64748b', textAlign: 'center' }}>
+                    Documento gerado pelo Proton Flow v2.1 • O plano operacional detalhado com todas as tarefas, prazos e evidências técnicas está disponível na <strong>Ata Operacional</strong>.
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* ==================== 2. ATA OPERACIONAL (EXECUÇÃO) ==================== */
+                <div
+                  style={{
+                    maxWidth: '850px',
+                    width: '100%',
+                    background: '#ffffff',
+                    color: '#1e293b',
+                    padding: '3rem 3.5rem',
+                    borderRadius: '6px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                    fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    lineHeight: '1.6',
+                  }}
+                >
+                  {/* Header Banner */}
+                  <div style={{ background: '#0f172a', color: '#ffffff', padding: '1.25rem 1.5rem', borderRadius: '6px', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em', color: '#ffffff' }}>
+                        ATA OPERACIONAL DE REUNIÃO
+                      </h2>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '3px' }}>
+                        Proton Flow v2.1 • Detalhamento Operacional, Tarefas & Ecossistema TOTVS
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '11px', color: '#cbd5e1' }}>
+                      <div><strong>ID:</strong> #{meeting.ID_MEETING}</div>
+                      <div>{dateStr}</div>
+                    </div>
+                  </div>
+
+                  {isFallback && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderLeft: '4px solid #f59e0b', padding: '10px 14px', borderRadius: '4px', marginBottom: '1.5rem', fontSize: '12px', color: '#92400e' }}>
+                      <strong>MODO CONTINGÊNCIA ATIVO:</strong> Esta análise foi processada por regras determinísticas de contingência. As ações identificadas requerem validação humana obrigatória.
+                    </div>
+                  )}
+
+                  {/* 1. Metadados */}
+                  <div style={{ marginBottom: '1.75rem' }}>
+                    <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#0f172a', borderBottom: '2px solid #e2e8f0', paddingBottom: '4px', marginBottom: '10px' }}>
+                      1. Metadados da Sessão
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: '12.5px' }}>
+                      <div><strong>Tema Principal:</strong> {analysisData.tema || 'Alinhamento Geral'}</div>
+                      <div><strong>Responsável Geral:</strong> {respStr}</div>
+                      <div><strong>Cliente:</strong> {clientName}</div>
+                      <div><strong>Segmento:</strong> {segmentName}</div>
+                      <div><strong>Nível de Urgência:</strong> <span style={{ color: urgencyStr === 'Crítica' || urgencyStr === 'Alta' ? '#dc2626' : '#2563eb', fontWeight: 600 }}>{urgencyStr}</span></div>
+                      <div><strong>Data da Reunião:</strong> {dateStr}</div>
+                    </div>
+                  </div>
+
+                  {/* 2. Resumo Executivo & Contexto */}
+                  <div style={{ marginBottom: '1.75rem' }}>
+                    <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#0f172a', borderBottom: '2px solid #e2e8f0', paddingBottom: '4px', marginBottom: '10px' }}>
+                      2. Contexto Operacional da Sessão
+                    </h3>
+                    {analysisData.contexto ? (
+                      <div style={{ fontSize: '12.5px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {analysisData.contexto.problema && (
+                          <div><strong>Problema Discutido:</strong> {analysisData.contexto.problema}</div>
+                        )}
+                        {analysisData.contexto.decisao && (
+                          <div><strong>Decisões / Encaminhamentos:</strong> {analysisData.contexto.decisao}</div>
+                        )}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12.5px', color: '#64748b', fontStyle: 'italic' }}>
+                        Resumo da sessão consolidado nos tópicos e ações operacionais abaixo.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Dores Identificadas */}
+                  <div style={{ marginBottom: '1.75rem' }}>
+                    <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#ef4444', borderBottom: '2px solid #fee2e2', paddingBottom: '4px', marginBottom: '10px' }}>
+                      3. Mapeamento de Dores & Gargalos Operacionais
+                    </h3>
+                    {dores.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {dores.map((d, idx) => {
+                          const isObj = typeof d === 'object' && d !== null;
+                          const label = isObj ? (d.label || d.categoria) : d;
+                          const sev = isObj ? (d.severidade || 'Média') : 'Média';
+                          const trecho = isObj ? (d.trecho || d.descricao || '') : '';
+                          return (
+                            <div key={idx} style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '4px', padding: '8px 12px', fontSize: '12px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                                <strong style={{ color: '#991b1b' }}>{label}</strong>
+                                <span style={{ fontSize: '10px', background: '#fee2e2', color: '#b91c1c', padding: '1px 6px', borderRadius: '3px', fontWeight: 600 }}>
+                                  Severidade: {sev}
+                                </span>
+                              </div>
+                              {trecho && <div style={{ color: '#475569', fontStyle: 'italic' }}>"{trecho}"</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                        • Nenhuma dor ou gargalo operacional crítico identificado na transcrição.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4. Plano de Ação (Confirmados) */}
+                  <div style={{ marginBottom: '1.75rem' }}>
+                    <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#059669', borderBottom: '2px solid #d1fae5', paddingBottom: '4px', marginBottom: '10px' }}>
+                      4. Plano de Ação & Prazos Operacionais (Confirmados)
+                    </h3>
+                    {confirmedTasks.length > 0 ? (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                        <thead>
+                          <tr style={{ background: '#0f172a', color: '#ffffff', textAlign: 'left' }}>
+                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Responsável</th>
+                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Ação Operacional</th>
+                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Prazo</th>
+                            <th style={{ padding: '6px 8px', border: '1px solid #cbd5e1' }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {confirmedTasks.map((t, idx) => (
+                            <tr key={idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                              <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0', fontWeight: 600 }}>{t.responsavel || 'Não identificado'}</td>
+                              <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{t.tarefa}</td>
+                              <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>{t.prazo || 'Não mencionado'}</td>
+                              <td style={{ padding: '6px 8px', border: '1px solid #e2e8f0' }}>
+                                <span style={{
+                                  fontSize: '10px',
+                                  padding: '2px 6px',
+                                  borderRadius: '3px',
+                                  background: t.status === 'Concluído' ? '#dcfce7' : t.status === 'Em Andamento' ? '#fef3c7' : '#f1f5f9',
+                                  color: t.status === 'Concluído' ? '#166534' : t.status === 'Em Andamento' ? '#92400e' : '#475569',
+                                  fontWeight: 600,
+                                }}>
+                                  {t.status || 'Não Inicializado'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                        • Nenhuma ação operacional confirmada identificada na transcrição.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 4.1 Itens Pendentes de Validação Humana */}
+                  {pendingTasks.length > 0 && (
+                    <div style={{ marginBottom: '1.75rem' }}>
+                      <h4 style={{ fontSize: '13px', textTransform: 'uppercase', color: '#d97706', borderBottom: '2px solid #fde68a', paddingBottom: '4px', marginBottom: '8px' }}>
+                        4.1 Itens Pendentes de Validação Humana (Escopo Resumido / Contingência)
+                      </h4>
+                      <p style={{ fontSize: '11px', color: '#78350f', margin: '0 0 8px 0' }}>
+                        * Estas ações foram extraídas com escopo resumido e requerem validação humana prévia.
+                      </p>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11.5px' }}>
+                        <thead>
+                          <tr style={{ background: '#d97706', color: '#ffffff', textAlign: 'left' }}>
+                            <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Responsável Sugerido</th>
+                            <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Ação / Sugestão</th>
+                            <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Prazo Sugerido</th>
+                            <th style={{ padding: '5px 8px', border: '1px solid #fde68a' }}>Validação</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pendingTasks.map((t, idx) => (
+                            <tr key={idx} style={{ background: idx % 2 === 0 ? '#fffbeb' : '#ffffff' }}>
+                              <td style={{ padding: '5px 8px', border: '1px solid #fef3c7' }}>{t.responsavel || 'Não identificado'}</td>
+                              <td style={{ padding: '5px 8px', border: '1px solid #fef3c7' }}>{t.tarefa}</td>
+                              <td style={{ padding: '5px 8px', border: '1px solid #fef3c7' }}>{t.prazo || 'Não mencionado'}</td>
+                              <td style={{ padding: '5px 8px', border: '1px solid #fef3c7', color: '#b45309', fontWeight: 600 }}>Pendente de Revisão</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* 5. Recomendações TOTVS */}
+                  <div style={{ marginBottom: '1.75rem' }}>
+                    <h3 style={{ fontSize: '14px', textTransform: 'uppercase', color: '#0284c7', borderBottom: '2px solid #e0f2fe', paddingBottom: '4px', marginBottom: '10px' }}>
+                      5. Recomendações TOTVS & Ecossistema
+                    </h3>
+                    {recs.length > 0 ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '10px' }}>
+                        {recs.map((r, idx) => (
+                          <div key={idx} style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '4px', padding: '10px 12px', fontSize: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                              <strong style={{ color: '#0369a1' }}>{r.product_name || 'TOTVS'}</strong>
+                              <span style={{ fontSize: '11px', fontWeight: 700, color: '#0284c7' }}>
+                                {Math.round((r.fit_score || 0) * 100)}% Match
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#475569' }}>{r.why_recommended}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                        • Nenhuma recomendação específica mapeada para esta reunião.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 6. Qualidade & Parâmetros */}
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '12px 16px', fontSize: '11.5px', color: '#475569' }}>
+                    <div style={{ fontWeight: 600, color: '#334155', marginBottom: '6px', textTransform: 'uppercase' }}>
+                      6. Parâmetros de Auditoria & Qualidade da IA
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' }}>
+                      <div><strong>Método:</strong> {isFallback ? 'Fallback determinístico' : 'Ollama / Llama 3'}</div>
+                      <div><strong>Modelo:</strong> {meta.model_name || meta.model || (isFallback ? 'Regras Determinísticas' : 'llama3:latest')}</div>
+                      <div><strong>Confiança Semântica:</strong> {meta.semantic_confidence || (isFallback ? 'Média (65%)' : 'Alta (85%)')}</div>
+                      <div><strong>Ações Mapeadas:</strong> {confirmedTasks.length} confirmada(s) {pendingTasks.length > 0 ? `+ ${pendingTasks.length} pendente(s)` : ''}</div>
+                    </div>
+                  </div>
+
+                  {/* Footer disclaimer */}
+                  <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0', fontSize: '10.5px', color: '#94a3b8', textAlign: 'center' }}>
+                    Documento gerado pelo Proton Flow v2.1 • TOTVS Reuniões Inteligentes (Ata Operacional)
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

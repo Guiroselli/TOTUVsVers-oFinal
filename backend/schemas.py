@@ -150,6 +150,59 @@ class AnalysisMetadata(BaseModel):
     parsing_error: Optional[str] = None
 
 
+class ExecutiveRiskItem(BaseModel):
+    text: str
+    severity: str = "Média"
+    source_refs: List[str] = Field(default_factory=list)
+
+
+class ExecutiveDecisionItem(BaseModel):
+    text: str
+    source_refs: List[str] = Field(default_factory=list)
+
+
+class ExecutiveDecisionRequiredItem(BaseModel):
+    text: str
+    owner_level: str = "Liderança operacional"
+    source_refs: List[str] = Field(default_factory=list)
+
+
+class ExecutiveNextStepItem(BaseModel):
+    text: str
+    source_refs: List[str] = Field(default_factory=list)
+
+
+class ExecutiveRecommendationItem(BaseModel):
+    product_name: str
+    reason: str
+    status: str = "Preliminar — requer validação humana"
+    expected_benefits: List[str] = Field(default_factory=list)
+    source_refs: List[str] = Field(default_factory=list)
+
+
+class ExecutiveSummarySchema(BaseModel):
+    version: str = "executive_v1"
+    status: str = "generated"  # "not_generated" | "generated" | "pending_review" | "reviewed" | "approved" | "insufficient_data" | "fallback_generated"
+    generated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
+    source_analysis_id: Optional[str] = None
+    summary_for_decision: str = ""
+    current_situation: str = ""
+    business_impact: str = ""
+    main_risks: List[ExecutiveRiskItem] = Field(default_factory=list)
+    decisions_made: List[ExecutiveDecisionItem] = Field(default_factory=list)
+    decisions_required: List[ExecutiveDecisionRequiredItem] = Field(default_factory=list)
+    strategic_next_steps: List[ExecutiveNextStepItem] = Field(default_factory=list)
+    executive_recommendation: Optional[ExecutiveRecommendationItem] = None
+    urgency: str = "Média"
+    confidence: str = "Média (65%)"
+    review_status: str = "pending_review"  # "pending_review" | "reviewed" | "approved"
+    source_refs: List[str] = Field(default_factory=list)
+    missing_information: List[str] = Field(default_factory=list)
+    generation_method: str = "deterministic_executive_template"  # "deterministic_executive_template" | "llama_executive_synthesis" | "insufficient_data"
+    prompt_version: Optional[str] = "2.1.0"
+    model_version: Optional[str] = None
+
+
 class MeetingAnalysisResult(BaseModel):
     tema: str = "Reunião Geral"
     contexto: Optional[ContextoSchema] = ContextoSchema()
@@ -167,6 +220,7 @@ class MeetingAnalysisResult(BaseModel):
     analise_metadados: Optional[AnalysisMetadata] = None
     perfil_cliente: Optional[Dict[str, Any]] = None
     codigo_cliente: Optional[str] = None
+    resumo_executivo: Optional[ExecutiveSummarySchema] = None
 
 
 class MeetingSchema(BaseModel):
@@ -188,11 +242,27 @@ class MeetingSchema(BaseModel):
     RESPONSAVEL_REUNIAO: Optional[str] = ""
     TEM_PDF: Optional[bool] = False
     RESUMO_IA: Optional[Union[MeetingAnalysisResult, Dict[str, Any]]] = None
+    RESUMO_EXECUTIVO: Optional[Union[ExecutiveSummarySchema, Dict[str, Any]]] = None
     field_suggestions: Optional[Dict[str, FieldSuggestion]] = None
     recomendacoes_totvs: Optional[List[TOTVSProductRecommendation]] = None
 
 
 # Requests
+class GenerateExecutiveSummaryRequest(BaseModel):
+    meeting_id: Optional[str] = None
+    force_regenerate: bool = False
+    use_llm: bool = False
+
+
+class ExecutiveStatusUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    review_status: Optional[str] = None
+
+    @property
+    def effective_status(self) -> str:
+        return self.status or self.review_status or "pending_review"
+
+
 class TranscriptionRequest(BaseModel):
     text: str
     meeting_id: Optional[str] = None

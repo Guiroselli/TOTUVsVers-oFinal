@@ -13,7 +13,10 @@ from schemas import (
     SaveMeetingRequest,
     UrgencyRequest,
     ResponsibleRequest,
-    TaskStatusRequest
+    TaskStatusRequest,
+    ExecutiveSummarySchema,
+    GenerateExecutiveSummaryRequest,
+    ExecutiveStatusUpdateRequest
 )
 from normalization import normalize_client_code, normalize_urgency
 from analysis_service import AnalysisService
@@ -172,6 +175,106 @@ def analyze_existing_meeting(meeting_id: str):
     except Exception as e:
         repo.update_metadata(meeting_id, {"STATUS_MEETING": "analise_com_erro", "STATUS_ANALISE": "analise_com_erro"}, author="system")
         raise HTTPException(status_code=500, detail=f"Erro ao processar análise da reunião: {str(e)}")
+
+
+@router.get("/meetings/{meeting_id}/executive-summary")
+def get_meeting_executive_summary(meeting_id: str):
+    """
+    Retorna a Ata Executiva oficial persistida da reunião.
+    Se não existir mas a reunião tiver análise estruturada, gera e persiste deterministicamente.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada")
+
+    resumo_ia = meeting.get("RESUMO_IA")
+    if not resumo_ia or not isinstance(resumo_ia, dict):
+        return {
+            "status": "not_generated",
+            "message": "Esta reunião ainda não possui análise estruturada. Execute a análise antes de obter a ata executiva.",
+            "meeting_id": meeting_id,
+            "executive_summary": None
+        }
+
+    exec_summary = repo.get_executive_summary(meeting_id)
+    return {
+        "status": "success",
+        "meeting_id": meeting_id,
+        "executive_summary": exec_summary
+    }
+
+
+@router.post("/meetings/{meeting_id}/executive-summary/generate")
+def generate_meeting_executive_summary(
+    meeting_id: str,
+    req: Optional[GenerateExecutiveSummaryRequest] = None
+):
+    """
+    Gera ou regenera a Ata Executiva da reunião a partir dos dados já persistidos.
+    Operação explícita, idempotente e auditada.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada")
+
+    resumo_ia = meeting.get("RESUMO_IA")
+    if not resumo_ia or not isinstance(resumo_ia, dict):
+        raise HTTPException(status_code=400, detail="Esta reunião precisa ser analisada antes de gerar a ata executiva.")
+
+    force = req.force_regenerate if req else False
+    use_llm = req.use_llm if req else False
+
+    existing_exec = meeting.get("RESUMO_EXECUTIVO")
+    if existing_exec and not force:
+        return {
+            "status": "success",
+            "message": "Ata executiva persistida recuperada com sucesso.",
+            "meeting_id": meeting_id,
+            "executive_summary": existing_exec
+        }
+
+    exec_summary = analysis_service.build_executive_summary(
+        analysis_data=resumo_ia,
+        meeting_metadata={
+            "meeting_id": str(meeting_id),
+            "client_code": meeting.get("NOME_SEGMENTO"),
+            "segment": meeting.get("segment"),
+            "meeting_date": meeting.get("DT_MEETING")
+        },
+        use_llm=use_llm
+    )
+    repo.save_executive_summary(meeting_id, exec_summary, author="user")
+
+    return {
+        "status": "success",
+        "message": "Ata executiva gerada e persistida com sucesso.",
+        "meeting_id": meeting_id,
+        "executive_summary": exec_summary
+    }
+
+
+@router.patch("/meetings/{meeting_id}/executive-summary/status")
+def update_meeting_executive_status(
+    meeting_id: str,
+    req: ExecutiveStatusUpdateRequest
+):
+    """
+    Atualiza o status de revisão humana da Ata Executiva ('pending_review' | 'reviewed' | 'approved').
+    """
+    target_status = req.effective_status
+    if target_status not in ["pending_review", "reviewed", "approved"]:
+        raise HTTPException(status_code=400, detail="Status inválido. Use 'pending_review', 'reviewed' ou 'approved'.")
+
+    updated = repo.update_executive_summary_status(meeting_id, target_status, author="user")
+    if not updated:
+        raise HTTPException(status_code=404, detail="Reunião ou ata executiva não encontrada.")
+
+    return {
+        "status": "success",
+        "message": f"Status da ata executiva atualizado para '{target_status}' com sucesso.",
+        "meeting_id": meeting_id,
+        "review_status": target_status
+    }
 
 
 @router.post("/meetings/reset_analyses")
