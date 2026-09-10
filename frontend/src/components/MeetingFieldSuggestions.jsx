@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Check, X, Pencil, Zap } from 'lucide-react';
 
 export default function MeetingFieldSuggestions({
   meetingId,
@@ -46,11 +47,12 @@ export default function MeetingFieldSuggestions({
 
   return (
     <div className="ai-suggestions-panel" style={{
-      background: 'linear-gradient(135deg, rgba(14, 165, 233, 0.05), rgba(15, 23, 42, 0.6))',
-      border: '1px solid rgba(14, 165, 233, 0.3)',
-      borderRadius: '10px',
+      background: 'var(--panel-bg)',
+      border: '1px solid var(--border-color)',
+      borderRadius: '8px',
       padding: '1.25rem',
       marginBottom: '1.5rem',
+      boxShadow: 'var(--glass-shadow)'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -58,13 +60,13 @@ export default function MeetingFieldSuggestions({
             width: '24px',
             height: '24px',
             borderRadius: '50%',
-            background: 'rgba(14, 165, 233, 0.2)',
+            background: 'rgba(2, 132, 199, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--primary-color)'
+            color: 'var(--primary-light)'
           }}>
-            ⚡
+            <Zap size={13} />
           </div>
           <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)', fontWeight: 600 }}>
             Campos e Sugestões Identificados pela IA
@@ -122,7 +124,7 @@ export default function MeetingFieldSuggestions({
                     background: status === 'confirmed' ? 'rgba(16, 185, 129, 0.15)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
                     color: status === 'confirmed' ? 'var(--success)' : status === 'rejected' ? 'var(--danger)' : 'var(--warning)',
                   }}>
-                    {status === 'confirmed' ? '✓ Confirmado' : status === 'rejected' ? '✗ Rejeitado' : 'Pendente'}
+                    {status === 'confirmed' ? 'Confirmado' : status === 'rejected' ? 'Rejeitado' : 'Pendente'}
                   </span>
                 </div>
 
@@ -130,17 +132,12 @@ export default function MeetingFieldSuggestions({
                   <div style={{ marginBottom: '8px' }}>
                     <input
                       type="text"
+                      className="input-pf"
                       value={editValue}
                       onChange={(e) => setEditValue(e.target.value)}
                       style={{
                         width: '100%',
-                        padding: '6px 8px',
-                        borderRadius: '4px',
-                        background: 'var(--bg-main)',
-                        border: '1px solid var(--primary-color)',
-                        color: 'var(--text-main)',
                         fontSize: '13px',
-                        outline: 'none',
                         marginBottom: '6px'
                       }}
                       autoFocus
@@ -148,15 +145,17 @@ export default function MeetingFieldSuggestions({
                     <div style={{ display: 'flex', gap: '6px' }}>
                       <button
                         onClick={() => handleSaveEdit(fieldName)}
-                        style={{ padding: '4px 10px', borderRadius: '4px', background: 'var(--primary-color)', color: '#000', border: 'none', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+                        className="btn-pf btn-pf-primary btn-pf-sm"
                       >
-                        Salvar
+                        <Check size={12} />
+                        <span>Salvar</span>
                       </button>
                       <button
                         onClick={handleCancelEdit}
-                        style={{ padding: '4px 10px', borderRadius: '4px', background: 'var(--panel-bg)', color: 'var(--text-muted)', border: '1px solid var(--border-color)', fontSize: '11px', cursor: 'pointer' }}
+                        className="btn-pf btn-pf-secondary btn-pf-sm"
                       >
-                        Cancelar
+                        <X size={12} />
+                        <span>Cancelar</span>
                       </button>
                     </div>
                   </div>
@@ -183,10 +182,11 @@ export default function MeetingFieldSuggestions({
                     fontSize: '11px',
                     color: 'var(--text-muted)',
                     fontStyle: 'italic',
-                    background: 'rgba(0, 0, 0, 0.2)',
+                    background: 'var(--panel-hover)',
                     padding: '6px 8px',
                     borderRadius: '4px',
-                    borderLeft: '2px solid var(--primary-color)',
+                    border: '1px solid var(--border-color)',
+                    borderLeft: '3px solid var(--primary-color)',
                     marginBottom: '8px',
                     maxHeight: '65px',
                     overflowY: 'auto'
@@ -198,8 +198,8 @@ export default function MeetingFieldSuggestions({
                 {/* Lista de Múltiplos Candidatos (Seção 2) */}
                 {candidates && candidates.length > 1 && status !== 'confirmed' && (
                   <div style={{
-                    background: 'rgba(0, 210, 255, 0.05)',
-                    border: '1px dashed rgba(0, 210, 255, 0.25)',
+                    background: 'rgba(2, 132, 199, 0.08)',
+                    border: '1px dashed rgba(56, 189, 248, 0.3)',
                     borderRadius: '6px',
                     padding: '6px 8px',
                     marginBottom: '8px'
@@ -229,15 +229,9 @@ export default function MeetingFieldSuggestions({
                           </div>
                           <button
                             onClick={() => handlePickCandidate(fieldName, c.name)}
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: '3px',
-                              background: 'rgba(0, 210, 255, 0.15)',
-                              border: '1px solid var(--primary-color)',
-                              color: 'var(--primary-color)',
-                              fontSize: '10px',
-                              cursor: 'pointer'
-                            }}
+                            className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                            style={{ padding: '2px 8px', fontSize: '10px', height: '22px' }}
+                            title={`Selecionar candidato ${c.name}`}
                           >
                             Selecionar
                           </button>
@@ -254,58 +248,34 @@ export default function MeetingFieldSuggestions({
                   <button
                     onClick={() => onConfirmSuggestion && onConfirmSuggestion(meetingId, fieldName, 'confirm')}
                     disabled={loadingAction}
-                    style={{
-                      flex: 1,
-                      padding: '5px 8px',
-                      borderRadius: '4px',
-                      background: status === 'confirmed' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(16, 185, 129, 0.1)',
-                      border: '1px solid var(--success)',
-                      color: 'var(--success)',
-                      fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '4px'
-                    }}
+                    className="btn-pf btn-pf-primary btn-pf-sm"
+                    style={{ flex: 1, padding: '5px 8px', fontSize: '11px', fontWeight: 600 }}
                     title="Aceitar a sugestão da IA e gravar no registro oficial"
                   >
-                    ✓ Confirmar
+                    <Check size={12} />
+                    <span>Confirmar</span>
                   </button>
 
                   <button
                     onClick={() => handleStartEdit(fieldName, status === 'confirmed' ? sug.confirmed_value : sug.suggested_value)}
                     disabled={loadingAction}
-                    style={{
-                      padding: '5px 10px',
-                      borderRadius: '4px',
-                      background: 'var(--panel-bg)',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-main)',
-                      fontSize: '11px',
-                      cursor: 'pointer'
-                    }}
+                    className="btn-pf btn-pf-secondary btn-pf-sm"
+                    style={{ padding: '5px 10px', fontSize: '11px' }}
                     title="Editar manualmente o valor"
                   >
-                    ✎ Editar
+                    <Pencil size={12} />
+                    <span>Editar</span>
                   </button>
 
                   <button
                     onClick={() => onConfirmSuggestion && onConfirmSuggestion(meetingId, fieldName, 'reject')}
                     disabled={loadingAction}
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: '4px',
-                      background: status === 'rejected' ? 'rgba(239, 68, 68, 0.2)' : 'transparent',
-                      border: '1px solid rgba(239, 68, 68, 0.4)',
-                      color: 'var(--danger)',
-                      fontSize: '11px',
-                      cursor: 'pointer'
-                    }}
+                    className="btn-pf btn-pf-danger btn-pf-sm"
+                    style={{ padding: '5px 8px', fontSize: '11px' }}
                     title="Rejeitar a sugestão automática"
                   >
-                    ✕ Ignorar
+                    <X size={12} />
+                    <span>Ignorar</span>
                   </button>
                 </div>
               )}

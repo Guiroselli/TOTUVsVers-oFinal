@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FileText, FileSpreadsheet, FileDown, FileCode, Download, ExternalLink, Printer, X } from 'lucide-react';
 
 export default function DocumentViewerModal({
   isOpen,
@@ -143,18 +144,22 @@ export default function DocumentViewerModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span
                 style={{
-                  background: docType === 'executive' ? 'rgba(0, 210, 255, 0.18)' : 'rgba(16, 185, 129, 0.18)',
-                  color: docType === 'executive' ? 'var(--primary-color)' : 'var(--success)',
+                  background: docType === 'executive' ? 'rgba(2, 132, 199, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                  color: docType === 'executive' ? 'var(--primary-light)' : 'var(--success)',
                   fontSize: '11px',
                   fontWeight: 700,
                   padding: '3px 8px',
                   borderRadius: '4px',
                   textTransform: 'uppercase',
                   letterSpacing: '0.05em',
-                  border: `1px solid ${docType === 'executive' ? 'rgba(0,210,255,0.3)' : 'rgba(16,185,129,0.3)'}`
+                  border: `1px solid ${docType === 'executive' ? 'rgba(56, 189, 248, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
                 }}
               >
-                {docType === 'executive' ? '👔 ATA EXECUTIVA' : '📋 ATA OPERACIONAL'}
+                {docType === 'executive' ? <FileText size={12} /> : <FileSpreadsheet size={12} />}
+                <span>{docType === 'executive' ? 'ATA EXECUTIVA' : 'ATA OPERACIONAL'}</span>
               </span>
               <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)', fontWeight: 600 }}>
                 Reunião #{meeting.ID_MEETING} — {analysisData.tema || 'Alinhamento Estratégico'}
@@ -171,51 +176,28 @@ export default function DocumentViewerModal({
             <div
               style={{
                 display: 'flex',
-                background: 'var(--panel-bg)',
+                background: '#09090b',
                 padding: '3px',
                 borderRadius: '8px',
-                border: '1px solid var(--border-color)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                gap: '2px'
               }}
             >
               <button
                 onClick={() => handleDocTypeToggle('executive')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: docType === 'executive' ? 'var(--primary-color)' : 'transparent',
-                  color: docType === 'executive' ? '#000' : 'var(--text-main)',
-                  fontWeight: docType === 'executive' ? 700 : 500,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`btn-pf btn-pf-sm ${docType === 'executive' ? 'btn-pf-primary' : 'btn-pf-ghost'}`}
                 title="Ata Executiva: Síntese de 1-2 páginas para tomada de decisão da liderança"
               >
-                👔 Ata Executiva
+                <FileText size={13} />
+                <span>Ata Executiva</span>
               </button>
               <button
                 onClick={() => handleDocTypeToggle('operational')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: docType === 'operational' ? 'var(--success)' : 'transparent',
-                  color: docType === 'operational' ? '#fff' : 'var(--text-main)',
-                  fontWeight: docType === 'operational' ? 700 : 500,
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className={`btn-pf btn-pf-sm ${docType === 'operational' ? 'btn-pf-primary' : 'btn-pf-ghost'}`}
                 title="Ata Operacional: Detalhamento completo de tarefas, evidências e catálogo"
               >
-                📋 Ata Operacional
+                <FileSpreadsheet size={13} />
+                <span>Ata Operacional</span>
               </button>
             </div>
 
@@ -223,47 +205,28 @@ export default function DocumentViewerModal({
             <div
               style={{
                 display: 'flex',
-                background: 'var(--panel-bg)',
+                background: '#09090b',
                 padding: '3px',
                 borderRadius: '8px',
-                border: '1px solid var(--border-color)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                gap: '2px'
               }}
             >
               <button
                 onClick={() => handleFormatToggle('pdf')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: format === 'pdf' ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  color: 'var(--text-main)',
-                  fontWeight: format === 'pdf' ? 700 : 400,
-                  fontSize: '11.5px',
-                  cursor: 'pointer',
-                }}
+                className={`btn-pf btn-pf-sm ${format === 'pdf' ? 'btn-pf-secondary' : 'btn-pf-ghost'}`}
+                style={{ fontWeight: format === 'pdf' ? 700 : 400 }}
               >
-                📄 PDF
+                <FileDown size={13} />
+                <span>PDF</span>
               </button>
               <button
                 onClick={() => handleFormatToggle('docx')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  background: format === 'docx' ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  color: 'var(--text-main)',
-                  fontWeight: format === 'docx' ? 700 : 400,
-                  fontSize: '11.5px',
-                  cursor: 'pointer',
-                }}
+                className={`btn-pf btn-pf-sm ${format === 'docx' ? 'btn-pf-secondary' : 'btn-pf-ghost'}`}
+                style={{ fontWeight: format === 'docx' ? 700 : 400 }}
               >
-                📝 DOCX / HTML
+                <FileCode size={13} />
+                <span>DOCX</span>
               </button>
             </div>
           </div>
@@ -274,139 +237,67 @@ export default function DocumentViewerModal({
               <>
                 <button
                   onClick={() => onDownloadExecutivePdf && onDownloadExecutivePdf(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '6px 11px',
-                    borderRadius: '6px',
-                    background: 'rgba(0, 210, 255, 0.15)',
-                    color: 'var(--primary-color)',
-                    border: '1px solid rgba(0, 210, 255, 0.35)',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
+                  className="btn-pf btn-pf-primary btn-pf-sm"
                   title="Baixar PDF da Ata Executiva"
                 >
-                  📥 Baixar PDF Executivo
+                  <Download size={13} />
+                  <span>Baixar PDF</span>
                 </button>
                 <button
                   onClick={() => onDownloadExecutiveDocx && onDownloadExecutiveDocx(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '6px 11px',
-                    borderRadius: '6px',
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    color: '#3b82f6',
-                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
+                  className="btn-pf btn-pf-secondary btn-pf-sm"
                   title="Baixar DOCX da Ata Executiva"
                 >
-                  📥 Baixar DOCX Executivo
+                  <Download size={13} />
+                  <span>Baixar DOCX</span>
                 </button>
               </>
             ) : (
               <>
                 <button
                   onClick={() => onDownloadOperationalPdf && onDownloadOperationalPdf(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '6px 11px',
-                    borderRadius: '6px',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    color: '#ef4444',
-                    border: '1px solid rgba(239, 68, 68, 0.35)',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
+                  className="btn-pf btn-pf-primary btn-pf-sm"
                   title="Baixar PDF da Ata Operacional"
                 >
-                  📥 Baixar PDF Operacional
+                  <Download size={13} />
+                  <span>Baixar PDF</span>
                 </button>
                 <button
                   onClick={() => onDownloadOperationalDocx && onDownloadOperationalDocx(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '6px 11px',
-                    borderRadius: '6px',
-                    background: 'rgba(16, 185, 129, 0.15)',
-                    color: '#10b981',
-                    border: '1px solid rgba(16, 185, 129, 0.35)',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
+                  className="btn-pf btn-pf-secondary btn-pf-sm"
                   title="Baixar DOCX da Ata Operacional"
                 >
-                  📥 Baixar DOCX Operacional
+                  <Download size={13} />
+                  <span>Baixar DOCX</span>
                 </button>
               </>
             )}
 
             <button
               onClick={handleOpenNewTab}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 9px',
-                borderRadius: '6px',
-                background: 'var(--panel-bg)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-color)',
-                fontSize: '11.5px',
-                cursor: 'pointer',
-              }}
+              className="btn-pf btn-pf-secondary btn-pf-sm"
               title="Abrir documento em nova aba"
             >
-              ↗️ Nova Aba
+              <ExternalLink size={13} />
+              <span>Nova Aba</span>
             </button>
 
             <button
               onClick={handlePrint}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '6px 9px',
-                borderRadius: '6px',
-                background: 'var(--panel-bg)',
-                color: 'var(--text-main)',
-                border: '1px solid var(--border-color)',
-                fontSize: '11.5px',
-                cursor: 'pointer',
-              }}
+              className="btn-pf btn-pf-secondary btn-pf-sm"
+              style={{ width: '32px', height: '28px', padding: 0 }}
               title="Imprimir"
             >
-              🖨️
+              <Printer size={14} />
             </button>
 
             <button
               onClick={onClose}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '18px',
-                cursor: 'pointer',
-                padding: '4px 8px',
-                borderRadius: '4px',
-                marginLeft: '4px',
-              }}
+              className="btn-pf btn-pf-ghost btn-pf-sm"
+              style={{ width: '32px', height: '28px', padding: 0 }}
               title="Fechar"
             >
-              ✕
+              <X size={16} />
             </button>
           </div>
         </div>
@@ -882,7 +773,7 @@ export default function DocumentViewerModal({
                   </div>
 
                   {/* Footer disclaimer */}
-                  <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0', fontSize: '10.5px', color: '#94a3b8', textAlign: 'center' }}>
+                  <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0', fontSize: '10.5px', color: '#64748b', textAlign: 'center' }}>
                     Documento gerado pelo Proton Flow v2.1 • TOTVS Reuniões Inteligentes (Ata Operacional)
                   </div>
                 </div>

@@ -1,17 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import TotvsProductRecommendations from './TotvsProductRecommendations';
+import { Calendar, AlertCircle, Clock } from 'lucide-react';
 
 export default function ActionPlanTable({
   meetingId,
   tarefas = [],
   _dores = [],
-  recomendacoes = [],
-  sistemasTotvs = {},
-  enviosPorReuniao = {},
-  onTaskStatusChange,
-  onConfirmRecommendation,
-  onEnviarIntegracao,
-  onOpenConfig
+  onTaskStatusChange
 }) {
   const [sortField, setSortField] = useState('prazo');
   const [sortAsc, setSortAsc] = useState(true);
@@ -89,28 +83,48 @@ export default function ActionPlanTable({
                   style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}
                   title="Ordenar por responsável"
                 >
-                  Responsável {sortField === 'responsavel' && (sortAsc ? '▲' : '▼')}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    Responsável
+                    {sortField === 'responsavel' && (
+                      <span style={{ color: 'var(--primary-color)', fontSize: '10px', fontWeight: 700 }}>{sortAsc ? '▲' : '▼'}</span>
+                    )}
+                  </span>
                 </th>
                 <th
                   onClick={() => handleSort('prazo')}
                   style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}
                   title="Ordenar por prazo"
                 >
-                  Prazo & SLA {sortField === 'prazo' && (sortAsc ? '▲' : '▼')}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    Prazo & SLA
+                    {sortField === 'prazo' && (
+                      <span style={{ color: 'var(--primary-color)', fontSize: '10px', fontWeight: 700 }}>{sortAsc ? '▲' : '▼'}</span>
+                    )}
+                  </span>
                 </th>
                 <th
                   onClick={() => handleSort('prioridade')}
                   style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}
                   title="Ordenar por prioridade"
                 >
-                  Prioridade {sortField === 'prioridade' && (sortAsc ? '▲' : '▼')}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    Prioridade
+                    {sortField === 'prioridade' && (
+                      <span style={{ color: 'var(--primary-color)', fontSize: '10px', fontWeight: 700 }}>{sortAsc ? '▲' : '▼'}</span>
+                    )}
+                  </span>
                 </th>
                 <th
                   onClick={() => handleSort('status')}
                   style={{ padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}
                   title="Ordenar por status"
                 >
-                  Status {sortField === 'status' && (sortAsc ? '▲' : '▼')}
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    Status
+                    {sortField === 'status' && (
+                      <span style={{ color: 'var(--primary-color)', fontSize: '10px', fontWeight: 700 }}>{sortAsc ? '▲' : '▼'}</span>
+                    )}
+                  </span>
                 </th>
               </tr>
             </thead>
@@ -140,9 +154,13 @@ export default function ActionPlanTable({
                             borderRadius: '4px',
                             background: 'rgba(245, 158, 11, 0.15)',
                             color: 'var(--warning)',
-                            border: '1px solid rgba(245, 158, 11, 0.3)'
+                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
                           }} title="Sugestão pendente de revisão humana (não confirmada)">
-                            ⏳ Sugestão pendente
+                            <Clock size={10} />
+                            <span>Sugestão pendente</span>
                           </span>
                         )}
                       </div>
@@ -155,7 +173,10 @@ export default function ActionPlanTable({
 
                     <td style={{ padding: '10px 12px', color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                       {tarefa.responsavel === 'Não identificado' ? (
-                        <span style={{ color: 'var(--warning)', fontSize: '12px' }}>⚠️ Não identificado</span>
+                        <span style={{ color: 'var(--warning)', fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <AlertCircle size={12} />
+                          <span>Não identificado</span>
+                        </span>
                       ) : (
                         tarefa.responsavel || 'Não identificado'
                       )}
@@ -191,13 +212,15 @@ export default function ActionPlanTable({
                           color: isOverdue ? 'var(--danger)' : 'var(--success)',
                           marginTop: '2px'
                         }}>
-                          📅 {prazoIso}
+                          <Calendar size={10} />
+                          <span>{prazoIso}</span>
                         </div>
                       )}
                       {parseStatus === 'ambiguous' && !prazoIso && (
                         <div style={{
                           display: 'inline-flex',
                           alignItems: 'center',
+                          gap: '4px',
                           fontSize: '10px',
                           padding: '1px 6px',
                           borderRadius: '4px',
@@ -205,7 +228,8 @@ export default function ActionPlanTable({
                           color: 'var(--warning)',
                           marginTop: '2px'
                         }}>
-                          ⚠️ Prazo textual relativo
+                          <AlertCircle size={10} />
+                          <span>Prazo textual relativo</span>
                         </div>
                       )}
                     </td>
@@ -216,7 +240,8 @@ export default function ActionPlanTable({
                         fontWeight: 600,
                         padding: '2px 6px',
                         borderRadius: '4px',
-                        background: prioridade === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : prioridade === 'Alta' ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                        background: prioridade === 'Crítica' ? 'rgba(239, 68, 68, 0.15)' : prioridade === 'Alta' ? 'rgba(245, 158, 11, 0.15)' : 'var(--panel-hover)',
+                        border: `1px solid ${prioridade === 'Crítica' ? 'rgba(239, 68, 68, 0.3)' : prioridade === 'Alta' ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-color)'}`,
                         color: prioridade === 'Crítica' ? 'var(--danger)' : prioridade === 'Alta' ? 'var(--warning)' : 'var(--text-main)'
                       }}>
                         {prioridade}
@@ -225,22 +250,18 @@ export default function ActionPlanTable({
 
                     <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                       <select
+                        className={`table-select-pf ${
+                          tarefa.status === 'Concluído' ? 'task-concluido' :
+                          tarefa.status === 'Em Andamento' ? 'task-andamento' :
+                          'task-pendente'
+                        }`}
                         value={tarefa.status || 'Não Inicializado'}
                         onChange={(e) => onTaskStatusChange && onTaskStatusChange(meetingId, tIndex, e.target.value)}
-                        style={{
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          background: 'var(--bg-main)',
-                          color: tarefa.status === 'Concluído' ? 'var(--success)' : (isOverdue ? 'var(--danger)' : 'var(--text-main)'),
-                          border: `1px solid ${tarefa.status === 'Concluído' ? 'rgba(16, 185, 129, 0.4)' : (isOverdue ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-color)')}`,
-                          outline: 'none',
-                          fontSize: '12px',
-                          cursor: 'pointer'
-                        }}
+                        title="Alterar status da tarefa"
                       >
                         <option value="Não Inicializado">Não Inicializado</option>
                         <option value="Em Andamento">Em Andamento</option>
-                        <option value="Concluído">✓ Concluído</option>
+                        <option value="Concluído">Concluído</option>
                       </select>
                     </td>
                   </tr>
@@ -254,18 +275,6 @@ export default function ActionPlanTable({
           Nenhuma tarefa gerada para este plano de ação.
         </p>
       )}
-
-      {/* Recomendações TOTVS */}
-      <TotvsProductRecommendations
-        meetingId={meetingId}
-        recommendations={recomendacoes}
-        sistemasTotvs={sistemasTotvs}
-        enviosPorReuniao={enviosPorReuniao}
-        onConfirmRecommendation={onConfirmRecommendation}
-        onEnviarIntegracao={onEnviarIntegracao}
-        onOpenConfig={onOpenConfig}
-        tarefas={tarefas}
-      />
     </div>
   );
 }

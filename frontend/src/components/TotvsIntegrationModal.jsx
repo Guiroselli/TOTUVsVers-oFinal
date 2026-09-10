@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { X, Check, Trash2, RotateCcw } from 'lucide-react';
 
 export default function TotvsIntegrationModal({
   isOpen,
   onClose,
   sistemasTotvs = {},
   onSaveWebhook,
-  onDeleteWebhook
+  onDeleteWebhook,
+  onResetAllAnalyses
 }) {
   const [inputs, setInputs] = useState({});
 
@@ -69,9 +71,11 @@ export default function TotvsIntegrationModal({
           </h3>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+            className="btn-pf btn-pf-ghost btn-pf-sm"
+            style={{ width: '32px', height: '32px', padding: 0 }}
+            title="Fechar"
           >
-            ✕
+            <X size={16} />
           </button>
         </div>
 
@@ -97,86 +101,93 @@ export default function TotvsIntegrationModal({
               <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
                 {info.nome}
               </label>
-              {info.configurado ? (
-                <span style={{ fontSize: '11px', color: 'var(--success)', fontWeight: 600 }}>✓ Configurado</span>
-              ) : (
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Modo Simulado</span>
-              )}
+              <span
+                style={{
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color: info.configurado ? 'var(--primary-light)' : 'var(--text-muted)'
+                }}
+              >
+                {info.configurado ? 'Conectado' : 'Não configurado'}
+              </span>
             </div>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px' }}>{info.uso}</p>
-            {info.configurado && info.webhook_url && (
-              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '6px', background: 'rgba(0,0,0,0.2)', padding: '4px 8px', borderRadius: '4px' }}>
-                URL mascarada: <code style={{ color: 'var(--primary-color)' }}>{info.webhook_url}</code>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: '6px' }}>
+
+            <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+              {info.uso}
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="text"
-                placeholder={info.configurado ? "Substituir URL do webhook..." : "URL do webhook / endpoint..."}
+                className="input-pf"
+                style={{ flex: 1, fontSize: '12px' }}
+                placeholder={info.configurado ? 'Webhook configurado (cole nova URL para alterar)' : 'URL do Webhook / API REST'}
                 value={inputs[chave] || ''}
-                onChange={(e) => setInputs(prev => ({ ...prev, [chave]: e.target.value }))}
-                style={{
-                  flex: 1,
-                  padding: '7px 10px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-main)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  outline: 'none',
-                  fontSize: '12px'
-                }}
+                onChange={(e) => setInputs({ ...inputs, [chave]: e.target.value })}
               />
               <button
                 onClick={() => handleSave(chave)}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: '6px',
-                  background: 'var(--primary-color)',
-                  color: '#000',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                  fontWeight: 600
-                }}
+                className="btn-pf btn-pf-primary btn-pf-sm"
+                style={{ padding: '0 12px', fontSize: '12px' }}
+                title="Salvar integração"
               >
-                Salvar
+                <Check size={12} />
+                <span>Salvar</span>
               </button>
               {info.configurado && (
                 <button
                   onClick={() => handleDelete(chave)}
-                  style={{
-                    padding: '7px 10px',
-                    borderRadius: '6px',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    color: 'var(--danger)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
-                  title="Remover configuração do webhook"
+                  className="btn-pf btn-pf-danger btn-pf-sm"
+                  style={{ padding: '0 8px' }}
+                  title="Desconectar sistema"
                 >
-                  Remover
+                  <Trash2 size={12} />
+                  <span>Remover</span>
                 </button>
               )}
             </div>
           </div>
         ))}
 
+        {onResetAllAnalyses && (
+          <div style={{
+            marginTop: '1.25rem',
+            paddingTop: '1rem',
+            borderTop: '1px solid var(--border-color)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            <div>
+              <div style={{ fontSize: '12.5px', fontWeight: 600, color: 'var(--text-main)' }}>Manutenção da Base</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Resetar status de análise para reprocessar reuniões pela IA</div>
+            </div>
+            <button
+              onClick={onResetAllAnalyses}
+              className="btn-pf btn-pf-danger btn-pf-sm"
+              style={{ padding: '6px 12px', fontSize: '11.5px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+              title="Resetar todas as análises para novo processamento"
+            >
+              <RotateCcw size={13} />
+              <span>Resetar Análises</span>
+            </button>
+          </div>
+        )}
+
         <button
           onClick={onClose}
+          className="btn-pf btn-pf-secondary"
           style={{
-            marginTop: '10px',
+            marginTop: '14px',
             width: '100%',
             padding: '9px',
-            borderRadius: '6px',
-            background: 'var(--panel-bg)',
-            color: 'var(--text-muted)',
-            border: '1px solid var(--border-color)',
-            cursor: 'pointer',
             fontSize: '13px'
           }}
         >
-          Fechar
+          <Check size={14} />
+          <span>Fechar</span>
         </button>
       </div>
     </div>

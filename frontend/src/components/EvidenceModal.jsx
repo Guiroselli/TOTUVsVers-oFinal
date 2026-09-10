@@ -1,4 +1,5 @@
 import React from 'react';
+import { X, Check, ArrowRight, Calendar } from 'lucide-react';
 
 export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMeeting }) {
   if (!isOpen || !drilldownData) return null;
@@ -64,17 +65,11 @@ export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMe
 
           <button
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '20px',
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: '4px',
-            }}
+            className="btn-pf btn-pf-ghost btn-pf-sm"
+            style={{ fontSize: '16px', width: '32px', height: '32px', padding: 0 }}
+            title="Fechar"
           >
-            ✕
+            <X size={16} />
           </button>
         </div>
 
@@ -99,8 +94,9 @@ export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMe
                     <span className="badge" style={{ fontSize: '10px' }}>
                       {item.cliente || 'Geral'}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      📅 {item.data || 'Data não informada'}
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Calendar size={12} />
+                      <span>{item.data || 'Data não informada'}</span>
                     </span>
                   </div>
 
@@ -119,20 +115,15 @@ export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMe
                       {onOpenMeeting && (
                         <button
                           onClick={() => {
-                            onOpenMeeting(item.meeting_id);
                             onClose();
+                            onOpenMeeting(item.id_meeting);
                           }}
-                          style={{
-                            padding: '3px 8px',
-                            borderRadius: '4px',
-                            background: 'transparent',
-                            border: '1px solid var(--primary-color)',
-                            color: 'var(--primary-color)',
-                            fontSize: '11px',
-                            cursor: 'pointer'
-                          }}
+                          className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                          style={{ padding: '2px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="Abrir detalhes completos desta reunião no Histórico"
                         >
-                          Ver no Histórico →
+                          <span>Ver no Histórico</span>
+                          <ArrowRight size={11} />
                         </button>
                       )}
                     </div>
@@ -182,10 +173,11 @@ export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMe
         }}>
           <button
             onClick={onClose}
-            className="btn-primary"
+            className="btn-pf btn-pf-primary"
             style={{ padding: '7px 18px', fontSize: '13px' }}
           >
-            Fechar Visualização
+            <Check size={14} />
+            <span>Fechar Visualização</span>
           </button>
         </div>
       </div>

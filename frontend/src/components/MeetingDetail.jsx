@@ -1,7 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import ActionPlanTable from './ActionPlanTable';
 import TotvsProductRecommendations from './TotvsProductRecommendations';
 import MeetingFieldSuggestions from './MeetingFieldSuggestions';
+import {
+  FileText,
+  FileSpreadsheet,
+  Eye,
+  FileDown,
+  Download,
+  CheckSquare,
+  Layers,
+  AlertTriangle,
+  Zap,
+  User
+} from 'lucide-react';
 
 export default function MeetingDetail({
   meeting,
@@ -18,241 +30,268 @@ export default function MeetingDetail({
   onDownloadExecutivePdf,
   onDownloadExecutiveDocx
 }) {
+  const [activeSubTab, setActiveSubTab] = useState('resumo');
+
   if (!meeting) return null;
 
   const resumo = meeting.RESUMO_IA;
   const _execSummary = meeting.RESUMO_EXECUTIVO || (resumo && resumo.resumo_executivo) || {};
   const suggestions = meeting.field_suggestions || (resumo && resumo.field_suggestions) || {};
+  const recomendacoes = meeting.recomendacoes_totvs || resumo?.recomendacoes_totvs || [];
+  const tarefas = resumo?.tarefas || [];
+  const dores = resumo?.dores || [];
+
+  const tarefasCount = tarefas.length;
+  const totvsCount = recomendacoes.length;
+  const doresCount = dores.length;
+  const sugestoesCount = Object.keys(suggestions).length;
 
   return (
-    <div style={{ background: 'var(--panel-bg)', borderRadius: '8px', padding: '1.5rem', border: '1px solid var(--border-color)' }}>
+    <div style={{ background: 'var(--panel-bg)', borderRadius: '8px', padding: '1.25rem', border: '1px solid var(--border-color)' }}>
       {resumo ? (
         <>
-          {/* Barra de Ações de Documentos (Executiva vs Operacional) */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))',
-            gap: '12px',
-            marginBottom: '1.5rem'
-          }}>
-            {/* Card 1: Ata Executiva */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(0, 210, 255, 0.08), rgba(0, 210, 255, 0.02))',
-              border: '1px solid rgba(0, 210, 255, 0.3)',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              gap: '10px'
-            }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '15px' }}>👔</span>
-                    <strong style={{ fontSize: '13px', color: 'var(--primary-color)' }}>Ata Executiva de Reunião</strong>
-                  </div>
-                  <span style={{ fontSize: '10.5px', background: 'rgba(0, 210, 255, 0.15)', color: 'var(--primary-color)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                    1-2 Páginas • Liderança
-                  </span>
-                </div>
-                <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                  Síntese de alto nível para tomada de decisão: situação, impacto, riscos, decisões e próximos passos.
-                </p>
-              </div>
+          {/* Barra de Sub-Navegação por Abas Executivas (Progressive Disclosure) */}
+          <div className="subtabs-bar">
+            <button
+              onClick={() => setActiveSubTab('resumo')}
+              className={`subtab-pill ${activeSubTab === 'resumo' ? 'active' : ''}`}
+              title="Atas de Reunião e Síntese Executiva"
+            >
+              <FileText size={13} />
+              <span>Atas & Resumo</span>
+            </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'executive', 'pdf')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    background: 'var(--primary-color)',
-                    color: '#000',
-                    border: 'none',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  👁️ Abrir Executiva
-                </button>
-                <button
-                  onClick={() => onDownloadExecutivePdf && onDownloadExecutivePdf(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: 'rgba(0, 210, 255, 0.15)',
-                    border: '1px solid rgba(0, 210, 255, 0.35)',
-                    color: 'var(--primary-color)',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  📥 PDF
-                </button>
-                <button
-                  onClick={() => onDownloadExecutiveDocx && onDownloadExecutiveDocx(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                    color: '#3b82f6',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  📥 DOCX
-                </button>
-              </div>
-            </div>
+            {tarefasCount > 0 && (
+              <button
+                onClick={() => setActiveSubTab('tarefas')}
+                className={`subtab-pill ${activeSubTab === 'tarefas' ? 'active' : ''}`}
+                title="Plano de Ação Operacional"
+              >
+                <CheckSquare size={13} />
+                <span>Plano de Ação</span>
+                <span className="subtab-badge">{tarefasCount}</span>
+              </button>
+            )}
 
-            {/* Card 2: Ata Operacional */}
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(16, 185, 129, 0.02))',
-              border: '1px solid rgba(16, 185, 129, 0.3)',
-              borderRadius: '8px',
-              padding: '12px 16px',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              gap: '10px'
-            }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '15px' }}>📋</span>
-                    <strong style={{ fontSize: '13px', color: 'var(--success)' }}>Ata Operacional Detalhada</strong>
-                  </div>
-                  <span style={{ fontSize: '10.5px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
-                    Completa • Execução
-                  </span>
-                </div>
-                <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                  Detalhamento técnico com tarefas, responsáveis, prazos, evidências literais e catálogo TOTVS.
-                </p>
-              </div>
+            {totvsCount > 0 && (
+              <button
+                onClick={() => setActiveSubTab('totvs')}
+                className={`subtab-pill ${activeSubTab === 'totvs' ? 'active' : ''}`}
+                title="Recomendações e Integrações TOTVS"
+              >
+                <Layers size={13} />
+                <span>Produtos TOTVS</span>
+                <span className="subtab-badge">{totvsCount}</span>
+              </button>
+            )}
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'operational', 'pdf')}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    background: 'var(--success)',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '6px 12px',
-                    borderRadius: '6px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer'
-                  }}
-                >
-                  👁️ Abrir Operacional
-                </button>
-                <button
-                  onClick={() => onDownloadOperationalPdf && onDownloadOperationalPdf(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: 'rgba(239, 68, 68, 0.15)',
-                    border: '1px solid rgba(239, 68, 68, 0.35)',
-                    color: '#ef4444',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  📥 PDF
-                </button>
-                <button
-                  onClick={() => onDownloadOperationalDocx && onDownloadOperationalDocx(meeting)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: 'rgba(16, 185, 129, 0.15)',
-                    border: '1px solid rgba(16, 185, 129, 0.35)',
-                    color: '#10b981',
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11.5px',
-                    fontWeight: 600,
-                    cursor: 'pointer'
-                  }}
-                >
-                  📥 DOCX
-                </button>
-              </div>
-            </div>
+            {doresCount > 0 && (
+              <button
+                onClick={() => setActiveSubTab('dores')}
+                className={`subtab-pill ${activeSubTab === 'dores' ? 'active' : ''}`}
+                title="Gargalos e Dores Mapeadas pela IA"
+              >
+                <AlertTriangle size={13} />
+                <span>Dores & Gargalos</span>
+                <span className="subtab-badge">{doresCount}</span>
+              </button>
+            )}
+
+            {sugestoesCount > 0 && (
+              <button
+                onClick={() => setActiveSubTab('sugestoes')}
+                className={`subtab-pill ${activeSubTab === 'sugestoes' ? 'active' : ''}`}
+                title="Sugestões de Campos e Metadados Inteligentes"
+              >
+                <Zap size={13} />
+                <span>Metadados IA</span>
+                <span className="subtab-badge">{sugestoesCount}</span>
+              </button>
+            )}
           </div>
 
-          {/* SLIDE 11 — Perfil do Cliente */}
-          {resumo.perfil_cliente && resumo.perfil_cliente.reunioes?.length > 0 && (
-            <div style={{
-              background: 'linear-gradient(135deg, rgba(0,210,255,0.08), rgba(0,210,255,0.02))',
-              border: '1px solid rgba(0,210,255,0.25)',
-              borderRadius: '8px',
-              padding: '1.2rem',
-              marginBottom: '1.5rem'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" strokeWidth="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                <h4 style={{ margin: 0, color: 'var(--primary-color)', fontSize: '0.95rem' }}>
-                  Perfil do Cliente — Histórico e Contexto (Slide 11)
-                </h4>
+          {/* ABA 1: ATAS & RESUMO */}
+          {activeSubTab === 'resumo' && (
+            <div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+                gap: '12px',
+                marginBottom: resumo.perfil_cliente ? '1.25rem' : '0'
+              }}>
+                {/* Card 1: Ata Executiva */}
+                <div style={{
+                  background: 'var(--panel-bg)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '14px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  boxShadow: 'var(--glass-shadow)'
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FileText size={16} color="var(--primary-color)" />
+                        <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>Ata Executiva de Reunião</strong>
+                      </div>
+                      <span style={{ fontSize: '10.5px', background: 'rgba(2, 132, 199, 0.12)', color: 'var(--primary-light)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, border: '1px solid var(--primary-color)' }}>
+                        1-2 Páginas • Liderança
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      Síntese de alto nível para tomada de decisão: situação, impacto, riscos, decisões e próximos passos.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'executive', 'pdf')}
+                      className="btn-pf btn-pf-primary btn-pf-sm"
+                      title="Abrir Ata Executiva no visualizador integrado"
+                    >
+                      <Eye size={13} />
+                      <span>Abrir Executiva</span>
+                    </button>
+                    <button
+                      onClick={() => onDownloadExecutivePdf && onDownloadExecutivePdf(meeting)}
+                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      title="Baixar arquivo PDF da Ata Executiva"
+                    >
+                      <FileDown size={13} />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      onClick={() => onDownloadExecutiveDocx && onDownloadExecutiveDocx(meeting)}
+                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      title="Baixar arquivo Word (DOCX) da Ata Executiva"
+                    >
+                      <Download size={13} />
+                      <span>DOCX</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Card 2: Ata Operacional */}
+                <div style={{
+                  background: 'var(--panel-bg)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '14px 16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  boxShadow: 'var(--glass-shadow)'
+                }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FileSpreadsheet size={16} color="var(--text-secondary)" />
+                        <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>Ata Operacional Detalhada</strong>
+                      </div>
+                      <span style={{ fontSize: '10.5px', background: 'rgba(100, 116, 139, 0.15)', color: 'var(--text-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, border: '1px solid var(--border-color)' }}>
+                        Completa • Execução
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                      Detalhamento técnico com tarefas, responsáveis, prazos, evidências literais e catálogo TOTVS.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'operational', 'pdf')}
+                      className="btn-pf btn-pf-executive btn-pf-sm"
+                      title="Abrir Ata Operacional no visualizador integrado"
+                    >
+                      <Eye size={13} />
+                      <span>Abrir Operacional</span>
+                    </button>
+                    <button
+                      onClick={() => onDownloadOperationalPdf && onDownloadOperationalPdf(meeting)}
+                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      title="Baixar arquivo PDF da Ata Operacional"
+                    >
+                      <FileDown size={13} />
+                      <span>PDF</span>
+                    </button>
+                    <button
+                      onClick={() => onDownloadOperationalDocx && onDownloadOperationalDocx(meeting)}
+                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      title="Baixar arquivo Word (DOCX) da Ata Operacional"
+                    >
+                      <Download size={13} />
+                      <span>DOCX</span>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                <span>Reuniões Anteriores: <strong style={{ color: 'var(--text-main)' }}>{resumo.perfil_cliente.total_reunioes || 0}</strong></span>
-                <span>Dores Recorrentes: <strong style={{ color: 'var(--text-main)' }}>{Object.keys(resumo.perfil_cliente.dores_recorrentes || {}).length} mapeadas</strong></span>
-              </div>
+
+              {/* Perfil do Cliente */}
+              {resumo.perfil_cliente && resumo.perfil_cliente.reunioes?.length > 0 && (
+                <div style={{
+                  background: 'var(--panel-bg)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '8px',
+                  padding: '1.2rem',
+                  boxShadow: 'var(--glass-shadow)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                    <User size={18} color="var(--primary-color)" />
+                    <h4 style={{ margin: 0, color: 'var(--primary-color)', fontSize: '0.95rem' }}>
+                      Perfil do Cliente — Histórico e Contexto
+                    </h4>
+                  </div>
+                  <div style={{ display: 'flex', gap: '20px', fontSize: '0.85rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                    <span>Reuniões Anteriores: <strong style={{ color: 'var(--text-main)' }}>{resumo.perfil_cliente.total_reunioes || 0}</strong></span>
+                    <span>Dores Recorrentes: <strong style={{ color: 'var(--text-main)' }}>{Object.keys(resumo.perfil_cliente.dores_recorrentes || {}).length} mapeadas</strong></span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* SLIDE 1 — Sugestões de Campos Inteligentes */}
-          {Object.keys(suggestions).length > 0 && (
-            <MeetingFieldSuggestions
-              meetingId={meeting.ID_MEETING}
-              suggestions={suggestions}
-              onConfirmSuggestion={onConfirmSuggestion}
-            />
+          {/* ABA 2: PLANO DE AÇÃO */}
+          {activeSubTab === 'tarefas' && (
+            <div>
+              <ActionPlanTable
+                meetingId={meeting.ID_MEETING}
+                tarefas={tarefas}
+                onTaskStatusChange={onTaskStatusChange}
+              />
+            </div>
           )}
 
-          {/* SLIDE 12 — Mapeamento de Dores Estruturadas */}
-          {resumo.dores && resumo.dores.length > 0 && (
-            <div style={{ marginBottom: '1.5rem' }}>
+          {/* ABA 3: PRODUTOS TOTVS */}
+          {activeSubTab === 'totvs' && (
+            <div>
+              <TotvsProductRecommendations
+                meetingId={meeting.ID_MEETING}
+                recommendations={recomendacoes}
+                sistemasTotvs={sistemasTotvs}
+                enviosPorReuniao={enviosPorReuniao}
+                onConfirmRecommendation={onConfirmRecommendation}
+                onEnviarIntegracao={onEnviarIntegracao}
+                onOpenConfig={onOpenConfig}
+                tarefas={tarefas}
+              />
+            </div>
+          )}
+
+          {/* ABA 4: DORES & GARGALOS */}
+          {activeSubTab === 'dores' && (
+            <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.8rem' }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                  <line x1="12" y1="9" x2="12" y2="13"></line>
-                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                </svg>
-                <h4 style={{ margin: 0, color: '#ef4444', fontSize: '0.95rem' }}>
-                  Gargalos e Dores Mapeadas pela IA (Slide 12)
+                <AlertTriangle size={18} color="var(--danger)" />
+                <h4 style={{ margin: 0, color: 'var(--danger)', fontSize: '0.95rem' }}>
+                  Gargalos e Dores Mapeadas pela IA ({doresCount})
                 </h4>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {resumo.dores.map((d, idx) => {
+                {dores.map((d, idx) => {
                   const isObj = typeof d === 'object' && d !== null;
                   const label = isObj ? (d.label || d.categoria) : d;
                   const trecho = isObj ? (d.trecho || d.descricao || '') : '';
@@ -266,7 +305,7 @@ export default function MeetingDetail({
                       fontSize: '0.85rem'
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <strong style={{ color: '#ef4444' }}>{label}</strong>
+                        <strong style={{ color: 'var(--danger)' }}>{label}</strong>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Severidade: {sev}</span>
                       </div>
                       {trecho && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>"{trecho}"</div>}
@@ -277,33 +316,20 @@ export default function MeetingDetail({
             </div>
           )}
 
-          {/* SLIDE 4 & 5 — Plano de Ação Operacional */}
-          {resumo.tarefas && resumo.tarefas.length > 0 && (
-            <div style={{ marginBottom: '1.5rem' }}>
-              <ActionPlanTable
+          {/* ABA 5: METADADOS IA */}
+          {activeSubTab === 'sugestoes' && (
+            <div>
+              <MeetingFieldSuggestions
                 meetingId={meeting.ID_MEETING}
-                tarefas={resumo.tarefas}
-                onTaskStatusChange={onTaskStatusChange}
+                suggestions={suggestions}
+                onConfirmSuggestion={onConfirmSuggestion}
               />
             </div>
           )}
-
-          {/* SLIDE 13, 8, 9 & 10 — Recomendações e Integrações TOTVS */}
-          <div style={{ marginTop: '1.5rem' }}>
-            <TotvsProductRecommendations
-              meetingId={meeting.ID_MEETING}
-              recommendations={meeting.recomendacoes_totvs || resumo.recomendacoes_totvs || []}
-              sistemasTotvs={sistemasTotvs}
-              enviosPorReuniao={enviosPorReuniao}
-              onConfirmRecommendation={onConfirmRecommendation}
-              onEnviarIntegracao={onEnviarIntegracao}
-              onOpenConfig={onOpenConfig}
-            />
-          </div>
         </>
       ) : (
         <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Esta reunião ainda não foi analisada. Clique em "⚡ Analisar" na tabela para processar com IA.
+          Esta reunião ainda não foi analisada. Clique no botão Analisar na tabela acima para processar com IA.
         </div>
       )}
     </div>

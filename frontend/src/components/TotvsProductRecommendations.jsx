@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Settings, ChevronDown, ChevronUp, Check, X, RotateCcw, Send, Info, AlertTriangle, Search } from 'lucide-react';
 
 export default function TotvsProductRecommendations({
   meetingId,
@@ -22,9 +23,13 @@ export default function TotvsProductRecommendations({
         borderRadius: '8px',
         border: '1px solid var(--border-color)',
         color: 'var(--text-muted)',
-        fontSize: '13px'
+        fontSize: '13px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
       }}>
-        ℹ️ Nenhuma recomendação TOTVS com evidência suficiente encontrada para esta reunião.
+        <Info size={16} color="var(--primary-light)" style={{ flexShrink: 0 }} />
+        <span>Nenhuma recomendação TOTVS com evidência suficiente encontrada para esta reunião.</span>
       </div>
     );
   }
@@ -48,9 +53,9 @@ export default function TotvsProductRecommendations({
               fontSize: '10px',
               padding: '1px 6px',
               borderRadius: '4px',
-              background: 'rgba(0, 210, 255, 0.1)',
-              color: 'var(--primary-color)',
-              border: '1px solid rgba(0, 210, 255, 0.2)'
+              background: 'rgba(2, 132, 199, 0.15)',
+              color: 'var(--primary-light)',
+              border: '1px solid rgba(56, 189, 248, 0.3)'
             }}>
               v2.1
             </span>
@@ -62,20 +67,11 @@ export default function TotvsProductRecommendations({
 
         <button
           onClick={onOpenConfig}
-          style={{
-            padding: '5px 12px',
-            borderRadius: '6px',
-            background: 'var(--bg-main)',
-            border: '1px solid var(--border-color)',
-            color: 'var(--primary-color)',
-            fontSize: '11px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
+          className="btn-pf btn-pf-outline-blue btn-pf-sm"
+          title="Configurar Webhooks e integrações com o ecossistema TOTVS"
         >
-          <span>⚙️</span> Configurar Webhooks TOTVS
+          <Settings size={13} />
+          <span>Configurar Webhooks TOTVS</span>
         </button>
       </div>
 
@@ -132,9 +128,9 @@ export default function TotvsProductRecommendations({
                       fontWeight: 700,
                       padding: '2px 8px',
                       borderRadius: '12px',
-                      background: fitPercent >= 60 ? 'rgba(0, 210, 255, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                      color: fitPercent >= 60 ? 'var(--primary-color)' : 'var(--warning)',
-                      border: `1px solid ${fitPercent >= 60 ? 'var(--primary-color)' : 'var(--warning)'}`
+                      background: fitPercent >= 60 ? 'rgba(2, 132, 199, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      color: fitPercent >= 60 ? 'var(--primary-light)' : 'var(--warning)',
+                      border: `1px solid ${fitPercent >= 60 ? 'rgba(56, 189, 248, 0.35)' : 'rgba(245, 158, 11, 0.3)'}`
                     }}>
                       Adequação ao caso: {fitPercent}%
                     </span>
@@ -155,10 +151,11 @@ export default function TotvsProductRecommendations({
                       padding: '2px 6px',
                       borderRadius: '10px',
                       fontWeight: 600,
-                      background: status === 'confirmed' ? 'rgba(16, 185, 129, 0.2)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                      background: status === 'confirmed' ? 'rgba(16, 185, 129, 0.2)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.2)' : 'var(--panel-hover)',
+                      border: `1px solid ${status === 'confirmed' ? 'rgba(16, 185, 129, 0.4)' : status === 'rejected' ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-color)'}`,
                       color: status === 'confirmed' ? 'var(--success)' : status === 'rejected' ? 'var(--danger)' : 'var(--text-muted)'
                     }}>
-                      {status === 'confirmed' ? '✓ Confirmada' : status === 'rejected' ? '✗ Rejeitada' : 'Revisão Pendente'}
+                      {status === 'confirmed' ? 'Confirmada' : status === 'rejected' ? 'Rejeitada' : 'Revisão Pendente'}
                     </span>
                   </div>
                 </div>
@@ -172,9 +169,12 @@ export default function TotvsProductRecommendations({
                       borderRadius: '4px',
                       background: 'rgba(245, 158, 11, 0.15)',
                       color: 'var(--warning)',
-                      display: 'inline-block'
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
                     }}>
-                      ⚠️ Evidência insuficiente para recomendar com segurança ({confPercent}%)
+                      <AlertTriangle size={11} />
+                      <span>Evidência insuficiente para recomendar com segurança ({confPercent}%)</span>
                     </span>
                   ) : (
                     <span style={{
@@ -221,10 +221,14 @@ export default function TotvsProductRecommendations({
                         fontSize: '11px',
                         cursor: 'pointer',
                         padding: 0,
-                        textDecoration: 'underline'
+                        textDecoration: 'underline',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
                       }}
                     >
-                      🔍 Ver todas as evidências ({totalDoresCount + totalTarefasCount})
+                      <Search size={11} />
+                      <span>Ver todas as evidências ({totalDoresCount + totalTarefasCount})</span>
                     </button>
                   )}
                 </div>
@@ -235,7 +239,7 @@ export default function TotvsProductRecommendations({
                     fontSize: '11px',
                     padding: '6px 8px',
                     borderRadius: '4px',
-                    background: 'rgba(0, 210, 255, 0.05)',
+                    background: 'rgba(2, 132, 199, 0.08)',
                     borderLeft: '2px solid var(--primary-color)',
                     color: 'var(--text-main)',
                     margin: '8px 0'
@@ -278,7 +282,7 @@ export default function TotvsProductRecommendations({
                     )}
 
                     {rec.score_breakdown && (
-                      <div style={{ background: 'rgba(0,0,0,0.2)', padding: '6px', borderRadius: '4px' }}>
+                      <div style={{ background: 'var(--panel-hover)', border: '1px solid var(--border-color)', padding: '6px', borderRadius: '4px' }}>
                         <strong>Fatores da Pontuação (Score Breakdown):</strong>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', marginTop: '4px', color: 'var(--text-muted)' }}>
                           <span>Dores (35%): {Math.round((rec.score_breakdown.pain_coverage || 0) * 100)}%</span>
@@ -304,71 +308,43 @@ export default function TotvsProductRecommendations({
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     onClick={() => toggleDetails(key)}
-                    style={{
-                      padding: '5px 8px',
-                      borderRadius: '4px',
-                      background: 'transparent',
-                      border: '1px solid var(--border-color)',
-                      color: 'var(--text-muted)',
-                      fontSize: '11px',
-                      cursor: 'pointer'
-                    }}
+                    className="btn-pf btn-pf-secondary btn-pf-sm"
+                    title={isExpanded ? 'Ocultar detalhes técnicos' : 'Ver detalhes técnicos e regras'}
                   >
-                    {isExpanded ? '▲ Menos detalhes' : '▼ Ver detalhes'}
+                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    <span>{isExpanded ? 'Menos detalhes' : 'Ver detalhes'}</span>
                   </button>
 
                   {status !== 'confirmed' && (
                     <button
                       onClick={() => onConfirmRecommendation && onConfirmRecommendation(meetingId, key, 'confirm')}
-                      style={{
-                        padding: '5px 10px',
-                        borderRadius: '4px',
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        border: '1px solid var(--success)',
-                        color: 'var(--success)',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                      title="Confirmar recomendação"
+                      className="btn-pf btn-pf-primary btn-pf-sm"
+                      title="Confirmar recomendação do produto TOTVS"
                     >
-                      ✓ Confirmar
+                      <Check size={12} />
+                      <span>Confirmar</span>
                     </button>
                   )}
 
                   {status === 'confirmed' && (
                     <button
                       onClick={() => onConfirmRecommendation && onConfirmRecommendation(meetingId, key, 'reject')}
-                      style={{
-                        padding: '5px 8px',
-                        borderRadius: '4px',
-                        background: 'transparent',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        color: 'var(--text-muted)',
-                        fontSize: '10px',
-                        cursor: 'pointer'
-                      }}
+                      className="btn-pf btn-pf-secondary btn-pf-sm"
                       title="Desfazer confirmação"
                     >
-                      Desfazer
+                      <RotateCcw size={12} />
+                      <span>Desfazer</span>
                     </button>
                   )}
 
                   {status !== 'rejected' && status !== 'confirmed' && (
                     <button
                       onClick={() => onConfirmRecommendation && onConfirmRecommendation(meetingId, key, 'reject')}
-                      style={{
-                        padding: '5px 8px',
-                        borderRadius: '4px',
-                        background: 'transparent',
-                        border: '1px solid rgba(239, 68, 68, 0.3)',
-                        color: 'var(--danger)',
-                        fontSize: '11px',
-                        cursor: 'pointer'
-                      }}
+                      className="btn-pf btn-pf-danger btn-pf-sm"
                       title="Rejeitar recomendação"
                     >
-                      ✕ Rejeitar
+                      <X size={12} />
+                      <span>Rejeitar</span>
                     </button>
                   )}
 
@@ -376,28 +352,47 @@ export default function TotvsProductRecommendations({
                   <button
                     onClick={() => onEnviarIntegracao && onEnviarIntegracao(meetingId, key, tarefas, !isConfigurado, rec.id)}
                     disabled={status !== 'confirmed' || envioStatus === 'enviando'}
+                    className={`btn-pf btn-pf-sm ${status !== 'confirmed' ? 'btn-pf-secondary' : 'btn-pf-primary'}`}
                     style={{
                       flex: 1,
-                      minWidth: '130px',
-                      padding: '5px 10px',
-                      borderRadius: '4px',
-                      background: status !== 'confirmed'
-                        ? 'rgba(255, 255, 255, 0.05)'
-                        : envioStatus?.startsWith('ok') ? 'rgba(16, 185, 129, 0.2)' : 'var(--primary-color)',
-                      border: 'none',
-                      color: status !== 'confirmed' ? 'var(--text-muted)' : (envioStatus?.startsWith('ok') ? 'var(--success)' : '#000'),
+                      minWidth: '135px',
+                      padding: '5px 12px',
                       fontSize: '11px',
-                      fontWeight: 600,
-                      cursor: status !== 'confirmed' ? 'not-allowed' : 'pointer',
-                      transition: 'all 0.2s ease'
+                      fontWeight: 600
                     }}
                     title={status !== 'confirmed' ? 'Envio bloqueado: Confirme a recomendação acima antes de enviar tarefas' : 'Enviar tarefas para integração'}
                   >
-                    {envioStatus === 'enviando' ? 'Enviando...' :
-                     envioStatus === 'ok_simulado' ? '✓ Simulado' :
-                     envioStatus === 'ok_real' ? '✓ Enviado Real' :
-                     envioStatus === 'erro' ? '✗ Falha no Envio' :
-                     (isConfigurado ? '🚀 Enviar Tarefas' : '🧪 Enviar (Simulado)')}
+                    {envioStatus === 'enviando' ? (
+                      <>
+                        <span className="loader" style={{ width: '12px', height: '12px', borderWidth: '2px' }}></span>
+                        <span>Enviando...</span>
+                      </>
+                    ) : envioStatus === 'ok_simulado' ? (
+                      <>
+                        <Check size={12} />
+                        <span>Simulado</span>
+                      </>
+                    ) : envioStatus === 'ok_real' ? (
+                      <>
+                        <Check size={12} />
+                        <span>Enviado Real</span>
+                      </>
+                    ) : envioStatus === 'erro' ? (
+                      <>
+                        <X size={12} />
+                        <span>Falha no Envio</span>
+                      </>
+                    ) : isConfigurado ? (
+                      <>
+                        <Send size={12} />
+                        <span>Enviar Tarefas</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send size={12} />
+                        <span>Enviar (Simulado)</span>
+                      </>
+                    )}
                   </button>
                 </div>
 
@@ -447,11 +442,14 @@ export default function TotvsProductRecommendations({
                   background: 'transparent',
                   border: 'none',
                   color: 'var(--text-muted)',
-                  fontSize: '18px',
-                  cursor: 'pointer'
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '4px'
                 }}
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -461,7 +459,7 @@ export default function TotvsProductRecommendations({
                 {activeModalRec.trigger_pains?.length > 0 ? (
                   <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {activeModalRec.trigger_pains.map((p, i) => (
-                      <div key={i} style={{ padding: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
+                      <div key={i} style={{ padding: '8px', background: 'var(--panel-hover)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{p.label || p.categoria}</div>
                         {p.evidence && (
                           <div style={{ fontStyle: 'italic', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -481,7 +479,7 @@ export default function TotvsProductRecommendations({
                 {activeModalRec.trigger_tasks?.length > 0 ? (
                   <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {activeModalRec.trigger_tasks.map((t, i) => (
-                      <div key={i} style={{ padding: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '4px' }}>
+                      <div key={i} style={{ padding: '8px', background: 'var(--panel-hover)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
                         <div style={{ color: 'var(--text-main)' }}>{t.task}</div>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
                           Responsável: {t.responsible} | Prazo: {t.due_date}
@@ -503,7 +501,7 @@ export default function TotvsProductRecommendations({
                   borderRadius: '4px',
                   background: 'var(--primary-color)',
                   border: 'none',
-                  color: '#000',
+                  color: '#ffffff',
                   fontWeight: 600,
                   fontSize: '12px',
                   cursor: 'pointer'

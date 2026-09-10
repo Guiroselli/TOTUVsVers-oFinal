@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import MeetingHistoryTable from './components/MeetingHistoryTable';
 import TotvsIntegrationModal from './components/TotvsIntegrationModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
+import { BarChart3, RotateCcw, Radio, Search, Sun, Moon, Building2, ArrowRight } from 'lucide-react';
 
 // Code Splitting / Lazy Loading de páginas pesadas
 const QuarterlyAnalyticsPage = lazy(() => import('./components/QuarterlyAnalyticsPage'));
@@ -13,6 +14,20 @@ const LiveMeetingPage = lazy(() => import('./components/LiveMeetingPage'));
 export default function MeetingApp() {
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'analytics' | 'meeting'
   
+  // Theme State (Dark / Light) com persistência em localStorage
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('totvs_pf_theme') || 'dark';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('totvs_pf_theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   // States for Meeting List / History
   const [meetings, setMeetings] = useState([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
@@ -1808,6 +1823,8 @@ export default function MeetingApp() {
         currentView={currentView}
         onSelectView={(view) => setCurrentView(view)}
         onOpenConfig={() => setShowConfigModal(true)}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
 
       {/* Main View Area */}
@@ -1820,123 +1837,131 @@ export default function MeetingApp() {
                 Consulte, filtre e gerencie as atas das reuniões corporativas da TOTVS.
               </p>
             </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                className="btn-primary"
-                style={{ background: 'var(--panel-bg)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}
-                onClick={() => setCurrentView('analytics')}
-              >
-                📊 Visão Executiva
-              </button>
-              <button
-                className="btn-primary"
-                style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.4)' }}
-                onClick={handleResetAllAnalyses}
-                title="Resetar todas as reuniões para permitir analisar novamente pela IA"
-              >
-                🔄 Resetar Análises
-              </button>
-              <button className="btn-primary" onClick={() => setCurrentView('meeting')}>
-                + Iniciar Reunião Ao Vivo
-              </button>
-            </div>
           </header>
 
           <div style={{ padding: '2rem 3rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Executive Banner: Área Empresarial em Destaque */}
+            <div className="executive-banner">
+              <div style={{ position: 'relative', zIndex: 1, maxWidth: '640px' }}>
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  background: 'rgba(2, 132, 199, 0.2)',
+                  border: '1px solid rgba(2, 132, 199, 0.4)',
+                  color: '#38bdf8',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  marginBottom: '8px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em'
+                }}>
+                  <Building2 size={13} />
+                  <span>Gestão Estratégica TOTVS</span>
+                </div>
+                <h3 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 6px 0', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
+                  Área Empresarial & Inteligência Corporativa
+                </h3>
+                <p style={{ margin: '0 0 14px 0', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+                  Acesse o painel executivo consolidado: matriz de risco por cliente, análise trimestral de gargalos, comparativo de SLA e exportação de relatórios gerenciais para diretoria.
+                </p>
+                <div className="executive-banner-kpis">
+                  <div className="executive-banner-kpi">
+                    <span className="executive-banner-kpi-val">{pagination.total || meetings.length}</span>
+                    <span className="executive-banner-kpi-label">Reuniões Registradas</span>
+                  </div>
+                  <div className="executive-banner-kpi">
+                    <span className="executive-banner-kpi-val" style={{ color: '#22c55e' }}>100%</span>
+                    <span className="executive-banner-kpi-label">IA Local Llama 3</span>
+                  </div>
+                  <div className="executive-banner-kpi">
+                    <span className="executive-banner-kpi-val" style={{ color: '#38bdf8' }}>TOTVS Hub</span>
+                    <span className="executive-banner-kpi-label">Fluig • Protheus • RM</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center' }}>
+                <button
+                  className="btn-pf btn-pf-executive"
+                  onClick={() => setCurrentView('analytics')}
+                  style={{
+                    padding: '10px 18px',
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.25)'
+                  }}
+                >
+                  <Building2 size={17} />
+                  <span>Acessar Área Empresarial</span>
+                  <ArrowRight size={16} />
+                </button>
+              </div>
+            </div>
+
             {/* Quick Filters */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '1rem',
-              background: 'var(--panel-bg)',
-              padding: '0.8rem 1rem',
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)',
-              flexWrap: 'wrap'
-            }}>
-              <div style={{ flex: 1, minWidth: '200px' }}>
+            <div className="filter-bar-pf">
+              <div style={{ flex: 1, minWidth: '220px', position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <Search size={14} style={{ position: 'absolute', left: '12px', color: '#64748b', pointerEvents: 'none' }} />
                 <input
                   type="text"
-                  placeholder="🔍 Buscar por transcrição, tema ou facilitador..."
+                  className="input-pf"
+                  placeholder="Buscar por transcrição, tema ou facilitador..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '7px 12px',
-                    borderRadius: '6px',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-main)',
-                    border: '1px solid var(--border-color)',
-                    outline: 'none',
-                    fontSize: '13px'
+                    paddingLeft: '34px'
                   }}
                 />
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Cliente:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="filter-label-pf">Cliente:</span>
                 <input
                   type="text"
+                  className="input-pf"
                   placeholder="Ex: T27261"
                   value={clientFilter}
                   onChange={(e) => setClientFilter(e.target.value)}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-main)',
-                    border: '1px solid var(--border-color)',
-                    outline: 'none',
-                    fontSize: '12px',
-                    width: '110px'
-                  }}
+                  style={{ width: '110px' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Segmento:</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="filter-label-pf">Segmento:</span>
                 <input
                   type="text"
+                  className="input-pf"
                   placeholder="Ex: Serviços"
                   value={segmentFilter}
                   onChange={(e) => setSegmentFilter(e.target.value)}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    background: 'var(--bg-main)',
-                    color: 'var(--text-main)',
-                    border: '1px solid var(--border-color)',
-                    outline: 'none',
-                    fontSize: '12px',
-                    width: '110px'
-                  }}
+                  style={{ width: '120px' }}
                 />
               </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--text-main)', cursor: 'pointer', userSelect: 'none' }}>
                 <input
                   type="checkbox"
+                  className="checkbox-pf"
                   checked={onlyUnanalyzed}
                   onChange={(e) => setOnlyUnanalyzed(e.target.checked)}
                 />
-                Somente sem análise
+                <span>Somente sem análise</span>
               </label>
 
               <button
                 onClick={() => loadMeetings(1, pagination.page_size)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '6px',
-                  background: 'var(--primary-color)',
-                  color: '#000',
-                  border: 'none',
-                  fontWeight: 600,
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
+                className="btn-pf btn-pf-primary btn-pf-sm"
+                title="Aplicar filtros de busca"
               >
-                Filtrar
+                <Search size={13} />
+                <span>Filtrar</span>
               </button>
             </div>
 
@@ -2007,6 +2032,7 @@ export default function MeetingApp() {
         sistemasTotvs={sistemasTotvs}
         onSaveWebhook={handleSalvarWebhook}
         onDeleteWebhook={handleDeleteWebhook}
+        onResetAllAnalyses={handleResetAllAnalyses}
       />
 
       {/* Modal de Visualização de Documentos (PDF e DOCX no Frontend) */}

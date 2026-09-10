@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MicOff, AlertTriangle } from 'lucide-react';
 
 export default function LiveMeetingPage({ onLeaveMeeting }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -169,8 +170,13 @@ export default function LiveMeetingPage({ onLeaveMeeting }) {
             </div>
           )}
 
-          <div className="video-overlay-name">
-            Você (Apresentador TOTVS) {isMuted ? '🔇 Mutado' : ''}
+          <div className="video-overlay-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span>Você (Apresentador TOTVS)</span>
+            {isMuted && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 4px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                <MicOff size={11} color="#f87171" />
+              </span>
+            )}
           </div>
         </div>
 
@@ -180,11 +186,15 @@ export default function LiveMeetingPage({ onLeaveMeeting }) {
             id="mute-btn"
             className={`control-btn ${isMuted ? 'active' : ''}`}
             onClick={toggleMute}
+            title={isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}
           >
-            <div className="icon-circle" style={{ background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'transparent' }}>
+            <div className="icon-circle" style={{
+              background: isMuted ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              border: `1px solid ${isMuted ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.15)'}`
+            }}>
               <span id="mute-text">
                 {isMuted ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2">
                     <line x1="1" y1="1" x2="23" y2="23"></line>
                     <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
                     <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
@@ -208,11 +218,15 @@ export default function LiveMeetingPage({ onLeaveMeeting }) {
             id="cam-btn"
             className={`control-btn ${isCamOff ? 'active' : ''}`}
             onClick={toggleCamera}
+            title={isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}
           >
-            <div className="icon-circle" style={{ background: isCamOff ? 'rgba(239, 68, 68, 0.2)' : 'transparent' }}>
+            <div className="icon-circle" style={{
+              background: isCamOff ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+              border: `1px solid ${isCamOff ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255, 255, 255, 0.15)'}`
+            }}>
               <span id="cam-text">
                 {isCamOff ? (
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2">
                     <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10"></path>
                     <line x1="1" y1="1" x2="23" y2="23"></line>
                   </svg>
@@ -227,14 +241,22 @@ export default function LiveMeetingPage({ onLeaveMeeting }) {
             <span>{isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}</span>
           </button>
 
-          <button className="control-btn danger" onClick={handleLeave}>
-            <div className="icon-circle" style={{ background: 'var(--danger)' }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <button
+            className="control-btn"
+            style={{ color: '#ffffff' }}
+            onClick={handleLeave}
+            title="Encerrar reunião e sintetizar plano de ação e ata com IA"
+          >
+            <div className="icon-circle" style={{
+              background: '#dc2626',
+              border: '1px solid #ef4444'
+            }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="2.2">
                 <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"></path>
                 <line x1="23" y1="1" x2="1" y2="23"></line>
               </svg>
             </div>
-            Sair e Gerar Resumo IA
+            <span style={{ fontWeight: 600 }}>Sair e Gerar Resumo IA</span>
           </button>
         </div>
       </div>
@@ -270,8 +292,9 @@ export default function LiveMeetingPage({ onLeaveMeeting }) {
 
         <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {error && (
-            <div style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', borderRadius: '6px', fontSize: '12px', marginBottom: '10px' }}>
-              ⚠️ {error}
+            <div style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', borderRadius: '6px', fontSize: '12px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+              <span>{error}</span>
             </div>
           )}
 

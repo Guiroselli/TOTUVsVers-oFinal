@@ -10,10 +10,12 @@ import {
 } from 'recharts';
 import api from '../api/client';
 import EvidenceModal from './EvidenceModal';
+import { BarChart3, Activity, Scale, RefreshCw, Filter, ChevronDown, ChevronUp, Search, User, Sliders, ArrowRightLeft, Check, X, AlertTriangle, AlertCircle, Calendar, Info, Layers } from 'lucide-react';
 
 export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
   // Navigation Tabs
   const [activeTab, setActiveTab] = useState('visao_geral'); // 'visao_geral' | 'comparacao' | 'ciclo_vida_dores'
+  const [overviewView, setOverviewView] = useState('indicadores'); // 'indicadores' | 'clientes' | 'segmentos'
 
   // Filter States
   const [mode] = useState('preset'); // 'preset' | 'custom'
@@ -215,41 +217,22 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button
             onClick={handleGenerateSummary}
-            style={{
-              padding: '8px 14px',
-              borderRadius: '6px',
-              background: 'linear-gradient(135deg, var(--primary-color), #3b82f6)',
-              border: 'none',
-              color: '#000',
-              fontWeight: 600,
-              fontSize: '12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
+            className="btn-pf btn-pf-executive btn-pf-sm"
           >
-            <span>📊</span> Gerar Resumo Executivo
+            <BarChart3 size={14} />
+            <span>Gerar Resumo Executivo</span>
           </button>
         </div>
       </div>
 
       {/* Navegação entre Abas Principais */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', flexWrap: 'wrap' }}>
         <button
           onClick={() => setActiveTab('visao_geral')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            background: activeTab === 'visao_geral' ? 'var(--primary-color)' : 'transparent',
-            color: activeTab === 'visao_geral' ? '#000' : 'var(--text-muted)',
-            fontWeight: 600,
-            border: 'none',
-            fontSize: '13px',
-            cursor: 'pointer'
-          }}
+          className={`btn-pf btn-pf-sm ${activeTab === 'visao_geral' ? 'btn-pf-primary' : 'btn-pf-secondary'}`}
         >
-          📈 Visão Geral & Indicadores
+          <Activity size={14} />
+          <span>Visão Geral & Indicadores</span>
         </button>
 
         <button
@@ -257,18 +240,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             setActiveTab('comparacao');
             if (!compareData) loadComparison();
           }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            background: activeTab === 'comparacao' ? 'var(--primary-color)' : 'transparent',
-            color: activeTab === 'comparacao' ? '#000' : 'var(--text-muted)',
-            fontWeight: 600,
-            border: 'none',
-            fontSize: '13px',
-            cursor: 'pointer'
-          }}
+          className={`btn-pf btn-pf-sm ${activeTab === 'comparacao' ? 'btn-pf-primary' : 'btn-pf-secondary'}`}
         >
-          ⚖️ Comparação entre Períodos
+          <Scale size={14} />
+          <span>Comparação entre Períodos</span>
         </button>
 
         <button
@@ -276,43 +251,24 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             setActiveTab('ciclo_vida_dores');
             if (!lifecycleData) loadPainsLifecycle();
           }}
-          style={{
-            padding: '8px 16px',
-            borderRadius: '6px',
-            background: activeTab === 'ciclo_vida_dores' ? 'var(--primary-color)' : 'transparent',
-            color: activeTab === 'ciclo_vida_dores' ? '#000' : 'var(--text-muted)',
-            fontWeight: 600,
-            border: 'none',
-            fontSize: '13px',
-            cursor: 'pointer'
-          }}
+          className={`btn-pf btn-pf-sm ${activeTab === 'ciclo_vida_dores' ? 'btn-pf-primary' : 'btn-pf-secondary'}`}
         >
-          🔄 Resolução e Ciclo de Vida das Dores
+          <RefreshCw size={14} />
+          <span>Resolução e Ciclo de Vida das Dores</span>
         </button>
       </div>
 
       {/* Barra de Filtros (Quando na Visão Geral) */}
       {activeTab === 'visao_geral' && (
-        <div style={{
-          background: 'var(--panel-bg)',
-          border: '1px solid var(--border-color)',
-          borderRadius: '8px',
-          padding: '1rem',
-          marginBottom: '1.5rem',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          alignItems: 'center',
-          fontSize: '13px'
-        }}>
+        <div className="filter-bar-pf" style={{ marginBottom: '1.5rem' }}>
           <div>
-            <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '4px', fontSize: '11px' }}>
+            <label className="filter-label-pf">
               Ano
             </label>
             <select
+              className="select-pf"
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
             >
               <option value={2026}>2026</option>
               <option value={2025}>2025</option>
@@ -321,13 +277,13 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '4px', fontSize: '11px' }}>
+            <label className="filter-label-pf">
               Período
             </label>
             <select
+              className="select-pf"
               value={selectedPeriod}
               onChange={(e) => setSelectedPeriod(e.target.value)}
-              style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px' }}
             >
               <option value="year">Ano Completo</option>
               <option value="sem1">1º Semestre (Jan-Jun)</option>
@@ -340,32 +296,27 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
           </div>
 
           <div>
-            <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '4px', fontSize: '11px' }}>
+            <label className="filter-label-pf">
               Cliente / Segmento
             </label>
             <input
               type="text"
+              className="input-pf"
               placeholder="Ex: T27261"
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
-              style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', width: '130px' }}
+              style={{ width: '140px' }}
             />
           </div>
 
           <button
             onClick={loadAnalytics}
-            style={{
-              marginTop: '18px',
-              padding: '6px 14px',
-              background: 'var(--primary-color)',
-              color: '#000',
-              fontWeight: 600,
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
+            className="btn-pf btn-pf-primary btn-pf-sm"
+            style={{ alignSelf: 'flex-end', height: '34px' }}
+            title="Filtrar análises trimestrais"
           >
-            Filtrar
+            <Filter size={13} />
+            <span>Filtrar</span>
           </button>
         </div>
       )}
@@ -373,7 +324,46 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
       {/* ABA 1: VISÃO GERAL */}
       {activeTab === 'visao_geral' && (
         <>
-          {/* Nível 2: Alertas Gerenciais Hierarquizados (Crítico > Atenção > Informativo) */}
+          {/* Sub-Navegação Direcionada da Visão Geral (Progressive Disclosure) */}
+          <div className="subtabs-bar" style={{ marginTop: '0.25rem', marginBottom: '1.25rem' }}>
+            <button
+              onClick={() => setOverviewView('indicadores')}
+              className={`subtab-pill ${overviewView === 'indicadores' ? 'active' : ''}`}
+              title="Métricas, Alertas e Gráficos de Tendências"
+            >
+              <BarChart3 size={13} />
+              <span>Indicadores & Gráficos</span>
+            </button>
+
+            {analyticsData?.clients_at_risk?.length > 0 && (
+              <button
+                onClick={() => setOverviewView('clientes')}
+                className={`subtab-pill ${overviewView === 'clientes' ? 'active' : ''}`}
+                title="Clientes com Dores Recorrentes ou Urgência Crítica"
+              >
+                <User size={13} />
+                <span>Clientes Prioritários</span>
+                <span className="subtab-badge">{analyticsData.clients_at_risk.length}</span>
+              </button>
+            )}
+
+            {analyticsData?.segments_unidentified?.length > 0 && (
+              <button
+                onClick={() => setOverviewView('segmentos')}
+                className={`subtab-pill ${overviewView === 'segmentos' ? 'active' : ''}`}
+                title="Segmentos Econômicos e Reuniões Gerais"
+              >
+                <Layers size={13} />
+                <span>Segmentos de Mercado</span>
+                <span className="subtab-badge">{analyticsData.segments_unidentified.length}</span>
+              </button>
+            )}
+          </div>
+
+          {/* VISÃO: INDICADORES & GRÁFICOS */}
+          {overviewView === 'indicadores' && (
+            <>
+              {/* Nível 2: Alertas Gerenciais Hierarquizados (Crítico > Atenção > Informativo) */}
           {analyticsData?.managerial_alerts && analyticsData.managerial_alerts.length > 0 && (
             <div style={{
               background: 'var(--panel-bg)',
@@ -385,7 +375,8 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <h4 style={{ margin: 0, color: 'var(--warning)', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                    <span>⚠️</span> Alertas Gerenciais Corporativos ({analyticsData.managerial_alerts.length})
+                    <AlertTriangle size={16} color="var(--warning)" style={{ flexShrink: 0 }} />
+                    <span>Alertas Gerenciais Corporativos ({analyticsData.managerial_alerts.length})</span>
                   </h4>
                   <span style={{
                     fontSize: '11px',
@@ -402,18 +393,11 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                 {analyticsData.managerial_alerts.length > 4 && (
                   <button
                     onClick={() => setShowAllAlerts(!showAllAlerts)}
-                    style={{
-                      background: 'rgba(0, 210, 255, 0.1)',
-                      border: '1px solid var(--primary-color)',
-                      color: 'var(--primary-color)',
-                      padding: '4px 10px',
-                      borderRadius: '4px',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      fontWeight: 600
-                    }}
+                    className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                    style={{ fontSize: '11px', padding: '4px 10px' }}
                   >
-                    {showAllAlerts ? '▲ Recolher Alertas' : `▼ Ver Todos os ${analyticsData.managerial_alerts.length} Alertas`}
+                    {showAllAlerts ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    <span>{showAllAlerts ? 'Recolher Alertas' : `Ver Todos os ${analyticsData.managerial_alerts.length} Alertas`}</span>
                   </button>
                 )}
               </div>
@@ -422,16 +406,15 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                 {(showAllAlerts ? analyticsData.managerial_alerts : analyticsData.managerial_alerts.slice(0, 4)).map((al) => {
                   const isCrit = al.severity === 'critical' || al.severity === 'danger';
                   const isWarn = al.severity === 'warning';
-                  const borderColor = isCrit ? 'var(--danger)' : (isWarn ? 'var(--warning)' : '#3b82f6');
-                  const badgeBg = isCrit ? 'rgba(239, 68, 68, 0.15)' : (isWarn ? 'rgba(245, 158, 11, 0.15)' : 'rgba(59, 130, 246, 0.15)');
-                  const badgeColor = isCrit ? 'var(--danger)' : (isWarn ? 'var(--warning)' : '#60a5fa');
-                  const icon = isCrit ? '🚨' : (isWarn ? '⚠️' : 'ℹ️');
+                  const borderColor = isCrit ? 'var(--danger)' : (isWarn ? 'var(--warning)' : 'var(--primary-color)');
+                  const badgeBg = isCrit ? 'rgba(239, 68, 68, 0.15)' : (isWarn ? 'rgba(245, 158, 11, 0.15)' : 'rgba(2, 132, 199, 0.15)');
+                  const badgeColor = isCrit ? 'var(--danger)' : (isWarn ? 'var(--warning)' : 'var(--primary-color)');
 
                   return (
                     <div
                       key={al.id}
                       style={{
-                        background: 'rgba(0,0,0,0.2)',
+                        background: 'var(--panel-hover)',
                         borderLeft: `4px solid ${borderColor}`,
                         borderTop: '1px solid var(--border-color)',
                         borderRight: '1px solid var(--border-color)',
@@ -446,8 +429,9 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                     >
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px' }}>
-                            {icon} {al.title}
+                          <span style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {isCrit ? <AlertCircle size={14} color="var(--danger)" style={{ flexShrink: 0 }} /> : isWarn ? <AlertTriangle size={14} color="var(--warning)" style={{ flexShrink: 0 }} /> : <Info size={14} color="var(--primary-color)" style={{ flexShrink: 0 }} />}
+                            <span>{al.title}</span>
                           </span>
                           <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: badgeBg, color: badgeColor, fontWeight: 700 }}>
                             {isCrit ? 'CRÍTICO' : (isWarn ? 'ATENÇÃO' : 'INFORMATIVO')}
@@ -462,33 +446,21 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                         {al.metric_key && (
                           <button
                             onClick={() => handleOpenDrilldown('pain', al.metric_key)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: 'var(--primary-color)',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                              padding: 0,
-                              textDecoration: 'underline'
-                            }}
+                            className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                            style={{ fontSize: '11px', padding: '3px 8px' }}
                           >
-                            🔍 Ver reuniões afetadas ({al.count})
+                            <Search size={11} />
+                            <span>Ver reuniões ({al.count})</span>
                           </button>
                         )}
                         {al.client_code && (
                           <button
                             onClick={() => handleOpenClientTimeline(al.client_code)}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: 'var(--primary-color)',
-                              fontSize: '11px',
-                              cursor: 'pointer',
-                              padding: 0,
-                              textDecoration: 'underline'
-                            }}
+                            className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                            style={{ fontSize: '11px', padding: '3px 8px' }}
                           >
-                            👤 Ver timeline do cliente
+                            <User size={11} />
+                            <span>Timeline do cliente</span>
                           </button>
                         )}
                       </div>
@@ -545,17 +517,11 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Qualidade Geral</div>
                   <button
                     onClick={() => setIsDataQualityModalOpen(true)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: 'var(--primary-color)',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      padding: 0,
-                      textDecoration: 'underline'
-                    }}
+                    className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                    style={{ fontSize: '11px', padding: '2px 8px' }}
                   >
-                    Detalhar
+                    <Sliders size={11} />
+                    <span>Detalhar</span>
                   </button>
                 </div>
                 <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
@@ -579,10 +545,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                 <div style={{ height: '240px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={(analyticsData.top_topics || []).slice(0, 6)} layout="vertical" margin={{ left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                       <XAxis type="number" stroke="var(--text-muted)" fontSize={11} />
                       <YAxis type="category" dataKey="label" stroke="var(--text-muted)" fontSize={11} width={130} />
-                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', fontSize: '12px' }} />
+                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px' }} />
                       <Bar dataKey="reunioes_com_tema" name="Reuniões" fill="var(--primary-color)" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -597,10 +563,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                 <div style={{ height: '240px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={(analyticsData.recurring_pains || []).slice(0, 6)} layout="vertical" margin={{ left: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                       <XAxis type="number" stroke="var(--text-muted)" fontSize={11} />
                       <YAxis type="category" dataKey="label" stroke="var(--text-muted)" fontSize={11} width={130} />
-                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', fontSize: '12px' }} />
+                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px' }} />
                       <Bar dataKey="reunioes_afetadas" name="Reuniões Afetadas" fill="var(--warning)" radius={[0, 4, 4, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -608,128 +574,136 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               </div>
             </div>
           )}
+        </>
+      )}
 
-          {/* Nível 4: Clientes que Exigem Acompanhamento Prioritário (Apenas clientes válidos) */}
-          {analyticsData?.clients_at_risk && analyticsData.clients_at_risk.length > 0 && (
-            <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>
-                  Clientes que Exigem Acompanhamento Prioritário
-                </h4>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Clientes identificados com dores críticas ou reuniões recorrentes
-                </span>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '8px' }}>Código do Cliente</th>
-                      <th style={{ padding: '8px' }}>Reuniões</th>
-                      <th style={{ padding: '8px' }}>Total de Dores</th>
-                      <th style={{ padding: '8px' }}>Dores Principais</th>
-                      <th style={{ padding: '8px' }}>Urgência Máxima</th>
-                      <th style={{ padding: '8px' }}>Ações Pendentes</th>
-                      <th style={{ padding: '8px' }}>Ação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analyticsData.clients_at_risk.map((cli, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '8px', fontWeight: 600, color: 'var(--primary-color)' }}>
-                          {cli.codigo_cliente}
-                        </td>
-                        <td style={{ padding: '8px' }}>{cli.total_reunioes}</td>
-                        <td style={{ padding: '8px', color: 'var(--warning)', fontWeight: 600 }}>{cli.total_dores}</td>
-                        <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{cli.dores_principais?.join(', ') || '-'}</td>
-                        <td style={{ padding: '8px' }}>
-                          <span style={{
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: cli.urgencia_maxima === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                            color: cli.urgencia_maxima === 'Crítica' ? 'var(--danger)' : 'var(--warning)'
-                          }}>
-                            {cli.urgencia_maxima}
-                          </span>
-                        </td>
-                        <td style={{ padding: '8px' }}>{cli.acoes_pendentes}</td>
-                        <td style={{ padding: '8px' }}>
-                          <button
-                            onClick={() => handleOpenClientTimeline(cli.codigo_cliente)}
-                            style={{
-                              padding: '3px 8px',
-                              borderRadius: '4px',
-                              background: 'rgba(0, 210, 255, 0.1)',
-                              border: '1px solid var(--primary-color)',
-                              color: 'var(--primary-color)',
-                              fontSize: '11px',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Ver Timeline
-                          </button>
-                        </td>
+          {/* Nível 4: Clientes que Exigem Acompanhamento Prioritário */}
+          {overviewView === 'clientes' && (
+            analyticsData?.clients_at_risk && analyticsData.clients_at_risk.length > 0 ? (
+              <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>
+                    Clientes que Exigem Acompanhamento Prioritário
+                  </h4>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Clientes identificados com dores críticas ou reuniões recorrentes
+                  </span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '8px' }}>Código do Cliente</th>
+                        <th style={{ padding: '8px' }}>Reuniões</th>
+                        <th style={{ padding: '8px' }}>Total de Dores</th>
+                        <th style={{ padding: '8px' }}>Dores Principais</th>
+                        <th style={{ padding: '8px' }}>Urgência Máxima</th>
+                        <th style={{ padding: '8px' }}>Ações Pendentes</th>
+                        <th style={{ padding: '8px' }}>Ação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {analyticsData.clients_at_risk.map((cli, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '8px', fontWeight: 600, color: 'var(--primary-color)' }}>
+                            {cli.codigo_cliente}
+                          </td>
+                          <td style={{ padding: '8px' }}>{cli.total_reunioes}</td>
+                          <td style={{ padding: '8px', color: 'var(--warning)', fontWeight: 600 }}>{cli.total_dores}</td>
+                          <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{cli.dores_principais?.join(', ') || '-'}</td>
+                          <td style={{ padding: '8px' }}>
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              background: cli.urgencia_maxima === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                              color: cli.urgencia_maxima === 'Crítica' ? 'var(--danger)' : 'var(--warning)'
+                            }}>
+                              {cli.urgencia_maxima}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px' }}>{cli.acoes_pendentes}</td>
+                          <td style={{ padding: '8px' }}>
+                            <button
+                              onClick={() => handleOpenClientTimeline(cli.codigo_cliente)}
+                              className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                              style={{ fontSize: '11px', padding: '3px 8px' }}
+                            >
+                              <User size={11} />
+                              <span>Ver Timeline</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ background: 'var(--panel-bg)', padding: '2rem', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                Nenhum cliente prioritário identificado com os filtros atuais.
+              </div>
+            )
           )}
 
           {/* Nível 5: Segmentos e Reuniões sem Cliente Identificado */}
-          {analyticsData?.segments_unidentified && analyticsData.segments_unidentified.length > 0 && (
-            <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>
-                  Segmentos e Reuniões sem Cliente Específico Identificado
-                </h4>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Reuniões gerais, institucionais ou vinculadas apenas ao segmento econômico
-                </span>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                      <th style={{ padding: '8px' }}>Segmento / Origem</th>
-                      <th style={{ padding: '8px' }}>Total de Reuniões</th>
-                      <th style={{ padding: '8px' }}>Total de Dores</th>
-                      <th style={{ padding: '8px' }}>Dores Mapeadas</th>
-                      <th style={{ padding: '8px' }}>Urgência Máxima</th>
-                      <th style={{ padding: '8px' }}>Ações Pendentes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analyticsData.segments_unidentified.map((seg, idx) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '8px', fontWeight: 600, color: 'var(--text-main)' }}>
-                          <span className="badge" style={{ fontSize: '11px' }}>{seg.segment_or_source}</span>
-                        </td>
-                        <td style={{ padding: '8px' }}>{seg.total_reunioes}</td>
-                        <td style={{ padding: '8px', color: 'var(--warning)', fontWeight: 600 }}>{seg.total_dores}</td>
-                        <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{seg.dores_principais?.join(', ') || '-'}</td>
-                        <td style={{ padding: '8px' }}>
-                          <span style={{
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            background: seg.urgencia_maxima === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                            color: seg.urgencia_maxima === 'Crítica' ? 'var(--danger)' : 'var(--warning)'
-                          }}>
-                            {seg.urgencia_maxima}
-                          </span>
-                        </td>
-                        <td style={{ padding: '8px' }}>{seg.acoes_pendentes}</td>
+          {overviewView === 'segmentos' && (
+            analyticsData?.segments_unidentified && analyticsData.segments_unidentified.length > 0 ? (
+              <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <h4 style={{ margin: 0, fontSize: '14px', color: 'var(--text-main)' }}>
+                    Segmentos e Reuniões sem Cliente Específico Identificado
+                  </h4>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Reuniões gerais, institucionais ou vinculadas apenas ao segmento econômico
+                  </span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '8px' }}>Segmento / Origem</th>
+                        <th style={{ padding: '8px' }}>Total de Reuniões</th>
+                        <th style={{ padding: '8px' }}>Total de Dores</th>
+                        <th style={{ padding: '8px' }}>Dores Mapeadas</th>
+                        <th style={{ padding: '8px' }}>Urgência Máxima</th>
+                        <th style={{ padding: '8px' }}>Ações Pendentes</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {analyticsData.segments_unidentified.map((seg, idx) => (
+                        <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                          <td style={{ padding: '8px', fontWeight: 600, color: 'var(--text-main)' }}>
+                            <span className="badge" style={{ fontSize: '11px' }}>{seg.segment_or_source}</span>
+                          </td>
+                          <td style={{ padding: '8px' }}>{seg.total_reunioes}</td>
+                          <td style={{ padding: '8px', color: 'var(--warning)', fontWeight: 600 }}>{seg.total_dores}</td>
+                          <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{seg.dores_principais?.join(', ') || '-'}</td>
+                          <td style={{ padding: '8px' }}>
+                            <span style={{
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              background: seg.urgencia_maxima === 'Crítica' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                              color: seg.urgencia_maxima === 'Crítica' ? 'var(--danger)' : 'var(--warning)'
+                            }}>
+                              {seg.urgencia_maxima}
+                            </span>
+                          </td>
+                          <td style={{ padding: '8px' }}>{seg.acoes_pendentes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ background: 'var(--panel-bg)', padding: '2rem', borderRadius: '8px', border: '1px solid var(--border-color)', textAlign: 'center', color: 'var(--text-muted)' }}>
+                Nenhum segmento geral ou institucional mapeado para este período.
+              </div>
+            )
           )}
         </>
       )}
@@ -749,11 +723,12 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '4px' }}>Base:</span>
+                <span className="filter-label-pf" style={{ display: 'inline-block', marginRight: '6px' }}>Base:</span>
                 <select
+                  className="select-pf"
                   value={baseQ}
                   onChange={(e) => setBaseQ(e.target.value)}
-                  style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '12px' }}
+                  style={{ fontSize: '12px' }}
                 >
                   <option value="2026-01-01:2026-03-31">1º Tri 2026 (Jan-Mar)</option>
                   <option value="2026-04-01:2026-06-30">2º Tri 2026 (Abr-Jun)</option>
@@ -762,11 +737,12 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               </div>
 
               <div>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginRight: '4px' }}>vs Comparado:</span>
+                <span className="filter-label-pf" style={{ display: 'inline-block', marginRight: '6px' }}>vs Comparado:</span>
                 <select
+                  className="select-pf"
                   value={compQ}
                   onChange={(e) => setCompQ(e.target.value)}
-                  style={{ padding: '6px 10px', background: 'var(--bg-main)', color: 'var(--text-main)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '12px' }}
+                  style={{ fontSize: '12px' }}
                 >
                   <option value="2025-10-01:2025-12-31">4º Tri 2025 (Out-Dez)</option>
                   <option value="2025-07-01:2025-09-30">3º Tri 2025 (Jul-Set)</option>
@@ -777,18 +753,11 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               <button
                 onClick={loadComparison}
                 disabled={compareLoading}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '4px',
-                  background: 'var(--primary-color)',
-                  color: '#000',
-                  fontWeight: 600,
-                  border: 'none',
-                  fontSize: '12px',
-                  cursor: 'pointer'
-                }}
+                className="btn-pf btn-pf-primary btn-pf-sm"
+                style={{ opacity: compareLoading ? 0.7 : 1 }}
               >
-                {compareLoading ? 'Calculando...' : 'Comparar'}
+                <ArrowRightLeft size={13} />
+                <span>{compareLoading ? 'Calculando...' : 'Comparar'}</span>
               </button>
             </div>
           </div>
@@ -852,7 +821,8 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                             borderRadius: '4px',
                             fontSize: '11px',
                             fontWeight: 600,
-                            background: top.trend === 'aumentou' ? 'rgba(245, 158, 11, 0.15)' : (top.trend === 'diminuiu' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)'),
+                            background: top.trend === 'aumentou' ? 'rgba(245, 158, 11, 0.15)' : (top.trend === 'diminuiu' ? 'rgba(16, 185, 129, 0.15)' : 'var(--panel-hover)'),
+                            border: top.trend === 'aumentou' || top.trend === 'diminuiu' ? 'none' : '1px solid var(--border-color)',
                             color: top.trend === 'aumentou' ? 'var(--warning)' : (top.trend === 'diminuiu' ? 'var(--success)' : 'var(--text-muted)')
                           }}>
                             {top.trend === 'aumentou' ? '▲ Aumentou' : (top.trend === 'diminuiu' ? '▼ Diminuiu' : '― Estável')}
@@ -906,8 +876,9 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                           {item.label}
                         </div>
                         {item.has_unresolved_alert && (
-                          <span style={{ fontSize: '10px', color: 'var(--danger)', display: 'block', marginTop: '2px' }}>
-                            ⚠️ Recorrente em 3+ reuniões sem resolução
+                          <span style={{ fontSize: '10px', color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                            <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+                            <span>Recorrente em 3+ reuniões sem resolução</span>
                           </span>
                         )}
                       </td>
@@ -931,7 +902,8 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                           borderRadius: '4px',
                           fontSize: '11px',
                           fontWeight: 600,
-                          background: item.trend === 'aumentando' ? 'rgba(239, 68, 68, 0.15)' : (item.trend === 'reduzindo' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)'),
+                          background: item.trend === 'aumentando' ? 'rgba(239, 68, 68, 0.15)' : (item.trend === 'reduzindo' ? 'rgba(16, 185, 129, 0.15)' : 'var(--panel-hover)'),
+                          border: item.trend === 'aumentando' || item.trend === 'reduzindo' ? 'none' : '1px solid var(--border-color)',
                           color: item.trend === 'aumentando' ? 'var(--danger)' : (item.trend === 'reduzindo' ? 'var(--success)' : 'var(--text-muted)')
                         }}>
                           {item.trend === 'aumentando' ? '▲ Aumentando' : (item.trend === 'reduzindo' ? '▼ Reduzindo' : '― Estável')}
@@ -992,9 +964,11 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               </div>
               <button
                 onClick={() => setSelectedClientTimeline(null)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+                className="btn-pf btn-pf-ghost"
+                style={{ width: '32px', height: '32px', padding: 0, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Fechar"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -1008,8 +982,9 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                     position: 'relative'
                   }}
                 >
-                  <div style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600 }}>
-                    📅 {item.date || 'Data não informada'}
+                  <div style={{ fontSize: '11px', color: 'var(--primary-color)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Calendar size={12} style={{ flexShrink: 0 }} />
+                    <span>{item.date || 'Data não informada'}</span>
                   </div>
                   <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-main)', margin: '2px 0' }}>
                     {item.tema}
@@ -1036,17 +1011,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
               <button
                 onClick={() => setSelectedClientTimeline(null)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '4px',
-                  background: 'var(--primary-color)',
-                  color: '#000',
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'pointer'
-                }}
+                className="btn-pf btn-pf-primary btn-pf-sm"
               >
-                Fechar
+                <Check size={13} />
+                <span>Fechar</span>
               </button>
             </div>
           </div>
@@ -1084,9 +1052,11 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               </h3>
               <button
                 onClick={() => setIsSummaryModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+                className="btn-pf btn-pf-ghost"
+                style={{ width: '32px', height: '32px', padding: 0, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Fechar"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -1094,7 +1064,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               <p style={{ color: 'var(--text-muted)' }}>Consolidando dados executivos...</p>
             ) : executiveSummary ? (
               <div style={{ fontSize: '13px', lineHeight: '1.5', color: 'var(--text-main)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <div style={{ padding: '10px', background: 'rgba(0, 210, 255, 0.05)', borderRadius: '6px', borderLeft: '3px solid var(--primary-color)' }}>
+                <div style={{ padding: '10px', background: 'rgba(2, 132, 199, 0.08)', borderRadius: '6px', borderLeft: '3px solid var(--primary-color)' }}>
                   {executiveSummary.resumo_executivo_texto}
                 </div>
 
@@ -1132,17 +1102,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
               <button
                 onClick={() => setIsSummaryModalOpen(false)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '4px',
-                  background: 'var(--primary-color)',
-                  color: '#000',
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'pointer'
-                }}
+                className="btn-pf btn-pf-primary btn-pf-sm"
               >
-                Concluído
+                <Check size={13} />
+                <span>Concluído</span>
               </button>
             </div>
           </div>
@@ -1180,9 +1143,11 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               </h3>
               <button
                 onClick={() => setIsDataQualityModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '20px', cursor: 'pointer' }}
+                className="btn-pf btn-pf-ghost"
+                style={{ width: '32px', height: '32px', padding: 0, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Fechar"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
@@ -1287,17 +1252,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
               <button
                 onClick={() => setIsDataQualityModalOpen(false)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: '4px',
-                  background: 'var(--primary-color)',
-                  color: '#000',
-                  fontWeight: 600,
-                  border: 'none',
-                  cursor: 'pointer'
-                }}
+                className="btn-pf btn-pf-primary btn-pf-sm"
               >
-                Fechar
+                <Check size={13} />
+                <span>Fechar</span>
               </button>
             </div>
           </div>
