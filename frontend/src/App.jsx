@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react';
 
 import api from './api/client';
 import Sidebar from './components/Sidebar';
 import MeetingHistoryTable from './components/MeetingHistoryTable';
 import TotvsIntegrationModal from './components/TotvsIntegrationModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
-import { BarChart3, RotateCcw, Radio, Search, Sun, Moon, Building2, ArrowRight } from 'lucide-react';
+import { BarChart3, RotateCcw, Radio, Search, Sun, Moon, Building2, ArrowRight, X } from 'lucide-react';
 
 // Code Splitting / Lazy Loading de páginas pesadas
 const QuarterlyAnalyticsPage = lazy(() => import('./components/QuarterlyAnalyticsPage'));
@@ -13,7 +13,7 @@ const LiveMeetingPage = lazy(() => import('./components/LiveMeetingPage'));
 
 export default function MeetingApp() {
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'analytics' | 'meeting'
-  
+
   // Theme State (Dark / Light) com persistência em localStorage
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('totvs_pf_theme') || 'dark';
@@ -36,9 +36,13 @@ export default function MeetingApp() {
 
   // Search & Filter state for History
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [clientFilter, setClientFilter] = useState('');
   const [segmentFilter, setSegmentFilter] = useState('');
   const [onlyUnanalyzed, setOnlyUnanalyzed] = useState(false);
+
+  // Prevenção de race condition entre requisições assíncronas concorrentes
+  const latestRequestIdRef = useRef(0);
 
   // TOTVS Systems State
   const [sistemasTotvs, setSistemasTotvs] = useState({});
@@ -69,42 +73,112 @@ export default function MeetingApp() {
     }
   };
 
-  // 2. Carrega lista paginada de reuniões
-  const loadMeetings = useCallback(async (page = 1, pageSize = 10) => {
+  // 2. Carrega lista paginada de reuniões (com proteção contra stale responses)
+  const loadMeetings = useCallback(async (page = 1, pageSize = 10, filterOverrides = null) => {
     setLoadingMeetings(true);
+    const reqId = ++latestRequestIdRef.current;
+
+    const searchVal = filterOverrides?.search !== undefined ? filterOverrides.search : searchQuery;
+    const clientVal = filterOverrides?.client_code !== undefined ? filterOverrides.client_code : clientFilter;
+    const segVal = filterOverrides?.segment !== undefined ? filterOverrides.segment : segmentFilter;
+    const unanalyzedVal = filterOverrides?.only_unanalyzed !== undefined ? filterOverrides.only_unanalyzed : onlyUnanalyzed;
+
     try {
       const res = await api.getMeetings({
         page,
         page_size: pageSize,
-        search: searchQuery,
-        client_code: clientFilter,
-        segment: segmentFilter,
-        only_unanalyzed: onlyUnanalyzed,
+        search: (searchVal || '').trim(),
+        client_code: (clientVal || '').trim(),
+        segment: (segVal || '').trim(),
+        only_unanalyzed: Boolean(unanalyzedVal),
         status: '',
       });
-      setMeetings(res.items || []);
-      setPagination({
-        page: res.page,
-        page_size: res.page_size,
-        total: res.total,
-        total_pages: res.total_pages
-      });
+
+      // Só atualiza o estado se for a resposta da requisição mais recente
+      if (reqId === latestRequestIdRef.current) {
+        setMeetings(res.items || []);
+        setPagination({
+          page: res.page,
+          page_size: res.page_size,
+          total: res.total,
+          total_pages: res.total_pages
+        });
+      }
     } catch (err) {
-      console.error('Erro ao carregar histórico:', err);
+      console.error('Erro ao carregar histórico de reuniões:', err);
     } finally {
-      setLoadingMeetings(false);
+      if (reqId === latestRequestIdRef.current) {
+        setLoadingMeetings(false);
+      }
     }
   }, [searchQuery, clientFilter, segmentFilter, onlyUnanalyzed]);
 
+  // Carregamento inicial do dashboard e sistemas TOTVS
   useEffect(() => {
     loadSistemasTotvs();
+    loadMeetings(1, 10);
   }, []);
 
+  // Debounce suave (350ms): pesquisa automaticamente ao pausar a digitação na barra de busca
   useEffect(() => {
-    if (currentView === 'dashboard') {
-      loadMeetings(pagination.page, pagination.page_size);
-    }
-  }, [currentView, loadMeetings, pagination.page, pagination.page_size]);
+    const timer = setTimeout(() => {
+      if (searchQuery !== debouncedSearch) {
+        setDebouncedSearch(searchQuery);
+        loadMeetings(1, pagination.page_size, { search: searchQuery });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery, debouncedSearch, pagination.page_size, loadMeetings]);
+
+  // Handler de acionamento imediato ao teclar Enter ou clicar no botão Filtrar
+  const handleApplyFilter = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setDebouncedSearch(searchQuery);
+    loadMeetings(1, pagination.page_size, {
+      search: searchQuery,
+      client_code: clientFilter,
+      segment: segmentFilter,
+      only_unanalyzed: onlyUnanalyzed
+    });
+  };
+
+  // Handler de alternância do filtro "Somente sem análise"
+  const handleToggleUnanalyzed = (checked) => {
+    setOnlyUnanalyzed(checked);
+    loadMeetings(1, pagination.page_size, {
+      search: searchQuery,
+      client_code: clientFilter,
+      segment: segmentFilter,
+      only_unanalyzed: checked
+    });
+  };
+
+  // Handler de limpeza rápida de filtros
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setDebouncedSearch('');
+    setClientFilter('');
+    setSegmentFilter('');
+    setOnlyUnanalyzed(false);
+    loadMeetings(1, pagination.page_size, {
+      search: '',
+      client_code: '',
+      segment: '',
+      only_unanalyzed: false
+    });
+  };
+
+  // Handler para limpar apenas o campo de busca textual
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setDebouncedSearch('');
+    loadMeetings(1, pagination.page_size, {
+      search: '',
+      client_code: clientFilter,
+      segment: segmentFilter,
+      only_unanalyzed: onlyUnanalyzed
+    });
+  };
 
   // Handler de mudança de responsável
   const handleResponsibleChange = async (meetingId, newResponsible) => {
@@ -154,7 +228,7 @@ export default function MeetingApp() {
             const existingSuggestions = m.field_suggestions || m.RESUMO_IA?.field_suggestions;
             const updatedSuggestions = existingSuggestions ? { ...existingSuggestions } : {};
             updatedSuggestions[fieldName] = res.suggestion;
-            
+
             const updatedMeeting = { ...m, field_suggestions: updatedSuggestions };
             if (res.suggestion.review_status === 'confirmed') {
               if (fieldName === 'responsavel_reuniao') {
@@ -613,7 +687,7 @@ export default function MeetingApp() {
         doc.setTextColor(30, 41, 59);
         const summaryText = execSummary.summary_for_decision || (analysisData.tema ? `A sessão deliberou sobre ${analysisData.tema}.` : 'Alinhamento geral sobre direcionamento operacional.');
         const splitSummary = doc.splitTextToSize(summaryText, 180);
-        
+
         doc.setFillColor(240, 253, 244);
         doc.setDrawColor(187, 247, 208);
         doc.setLineWidth(0.3);
@@ -1176,11 +1250,11 @@ export default function MeetingApp() {
 
       const analysisData = existingData;
       const doc = new jsPDF();
-      
+
       // Cabeçalho TOTVS Azul Escuro Corporativo
       doc.setFillColor(15, 23, 42);
       doc.rect(0, 0, 210, 36, 'F');
-      
+
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
@@ -1188,7 +1262,7 @@ export default function MeetingApp() {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.text('Inteligência Estruturante de Reuniões & Ecossistema TOTVS', 15, 27);
-      
+
       doc.setTextColor(30, 41, 59);
 
       // Identidade e Metadados Estruturados
@@ -1366,14 +1440,14 @@ export default function MeetingApp() {
         doc.setFontSize(8.5);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(51, 65, 85);
-        
+
         const probText = analysisData.contexto?.problema || 'Não identificado';
         const decText = analysisData.contexto?.decisao || 'Não mencionado';
-        
+
         const splitProb = doc.splitTextToSize(`Problema/Pauta: ${probText}`, 180);
         doc.text(splitProb, 15, currentY);
         currentY += (splitProb.length * 4.0) + 2;
-        
+
         const splitDec = doc.splitTextToSize(`Decisões Registradas: ${decText}`, 180);
         doc.text(splitDec, 15, currentY);
         currentY += (splitDec.length * 4.0) + 4;
@@ -1611,7 +1685,7 @@ export default function MeetingApp() {
         const descartadosRuido = meta.items_discarded_noise || 0;
         const confTecnica = isFallbackPdf ? 'Execução determinística de contingência' : 'Processamento concluído com sucesso';
         const confSemantica = isInsufficient ? 'Dados insuficientes / Baixa' : (isFallbackPdf ? (totalConfirmed > 0 || totalPending > 0 ? 'Média (65%) — Palavras-chave' : 'Dados insuficientes / Baixa') : (totalTemas === 0 ? 'Parcial (55%) — Pendente de validação' : 'Alta (85%) — Evidências mapeadas'));
-        
+
         let diagnostico = 'Análise estruturada completa realizada com sucesso.';
         if (isInsufficient) {
           diagnostico = 'Nenhuma informação estruturada foi extraída com segurança (revisão humana necessária).';
@@ -1684,7 +1758,7 @@ export default function MeetingApp() {
         const formData = new FormData();
         formData.append('meeting_id', String(meetingId));
         formData.append('file', pdfBlob, `meeting_${meetingId}.pdf`);
-        
+
         try {
           await api.uploadPdf(formData);
           setMeetings(prev => prev.map(m => m.ID_MEETING === meetingId ? { ...m, TEM_PDF: true, RESUMO_IA: analysisData } : m));
@@ -1905,7 +1979,7 @@ export default function MeetingApp() {
             </div>
 
             {/* Quick Filters */}
-            <div className="filter-bar-pf">
+            <form className="filter-bar-pf" onSubmit={handleApplyFilter}>
               <div style={{ flex: 1, minWidth: '220px', position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <Search size={14} style={{ position: 'absolute', left: '12px', color: '#64748b', pointerEvents: 'none' }} />
                 <input
@@ -1916,9 +1990,31 @@ export default function MeetingApp() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
                     width: '100%',
-                    paddingLeft: '34px'
+                    paddingLeft: '34px',
+                    paddingRight: searchQuery ? '30px' : '12px'
                   }}
                 />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    style={{
+                      position: 'absolute',
+                      right: '8px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Limpar busca"
+                  >
+                    <X size={13} />
+                  </button>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1950,20 +2046,32 @@ export default function MeetingApp() {
                   type="checkbox"
                   className="checkbox-pf"
                   checked={onlyUnanalyzed}
-                  onChange={(e) => setOnlyUnanalyzed(e.target.checked)}
+                  onChange={(e) => handleToggleUnanalyzed(e.target.checked)}
                 />
                 <span>Somente sem análise</span>
               </label>
 
               <button
-                onClick={() => loadMeetings(1, pagination.page_size)}
+                type="submit"
                 className="btn-pf btn-pf-primary btn-pf-sm"
                 title="Aplicar filtros de busca"
               >
                 <Search size={13} />
                 <span>Filtrar</span>
               </button>
-            </div>
+
+              {(searchQuery || clientFilter || segmentFilter || onlyUnanalyzed) && (
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="btn-pf btn-pf-secondary btn-pf-sm"
+                  title="Limpar todos os filtros"
+                >
+                  <X size={13} />
+                  <span>Limpar</span>
+                </button>
+              )}
+            </form>
 
             {/* Table */}
             <MeetingHistoryTable

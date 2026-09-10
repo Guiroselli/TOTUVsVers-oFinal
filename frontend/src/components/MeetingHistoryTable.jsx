@@ -140,7 +140,7 @@ export default function MeetingHistoryTable({
         </div>
       </div>
 
-      {loading ? (
+      {loading && (!meetings || meetings.length === 0) ? (
         <div style={{ padding: '4rem 2rem', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
           <div style={{
             width: '32px',
@@ -153,13 +153,15 @@ export default function MeetingHistoryTable({
           }}></div>
           Carregando reuniões da base de dados...
         </div>
-      ) : meetings && meetings.length === 0 ? (
+      ) : !loading && (!meetings || meetings.length === 0) ? (
         <div style={{ padding: '3.5rem 2rem', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--panel-bg)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
           Nenhuma reunião encontrada com os filtros selecionados.
         </div>
-      ) : viewMode === 'cards' ? (
-        /* ================= MODO CARDS EXECUTIVOS ================= */
-        <div className="meeting-cards-grid">
+      ) : (
+        <div style={{ position: 'relative', opacity: loading ? 0.6 : 1, transition: 'opacity 0.2s ease', pointerEvents: loading ? 'none' : 'auto' }}>
+          {viewMode === 'cards' ? (
+            /* ================= MODO CARDS EXECUTIVOS ================= */
+            <div className="meeting-cards-grid">
           {meetings.map((item) => {
             const isExpanded = expandedMeetingId === item.ID_MEETING;
             const hasAnalysis = Boolean(item.RESUMO_IA && (item.RESUMO_IA.tema || (item.RESUMO_IA.dores && item.RESUMO_IA.dores.length > 0) || (item.RESUMO_IA.tarefas && item.RESUMO_IA.tarefas.length > 0)));
@@ -537,6 +539,8 @@ export default function MeetingHistoryTable({
               })}
             </tbody>
           </table>
+        </div>
+      )}
         </div>
       )}
 
