@@ -59,7 +59,7 @@ export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMe
               </h3>
             </div>
             <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
-              Encontradas <strong>{drilldownData.total}</strong> reunião(ões) com evidências deste indicador.
+              {drilldownData.total === 1 ? 'Encontrada' : 'Encontradas'} <strong>{drilldownData.total}</strong> {drilldownData.total === 1 ? 'reunião' : 'reuniões'} com evidências deste indicador.
             </p>
           </div>
 

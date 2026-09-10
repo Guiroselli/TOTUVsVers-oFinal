@@ -103,9 +103,9 @@ async def analyze_text(request: TranscriptionRequest):
                     dores_rec = perfil.get("dores_recorrentes", {})
                     top_dores = sorted(dores_rec.items(), key=lambda x: -x[1])[:3]
                     dores_txt = ", ".join(f"{k} ({v}x)" for k, v in top_dores) or "nenhuma"
-                    ultimas = "; ".join(r.get("tema", "") for r in perfil.get("reunioes", [])[:3] if r.get("tema"))
+                    reunioes_perfil_str = "1 reunião anterior" if n_reunioes == 1 else f"{n_reunioes} reuniões anteriores"
                     contexto_perfil = (
-                        f"PERFIL DO CLIENTE {codigo_cliente} — {n_reunioes} reunião(ões) anteriores no histórico. "
+                        f"PERFIL DO CLIENTE {codigo_cliente} — {reunioes_perfil_str} no histórico. "
                         f"Dores recorrentes: {dores_txt}. Temas recentes: {ultimas or 'nenhum registrado'}."
                     )
 

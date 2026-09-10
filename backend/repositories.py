@@ -645,6 +645,7 @@ class MeetingRepository:
                     datas_origem = sorted(list(dict.fromkeys(item["meeting_date"] for item in grupo_itens if item["meeting_date"])))
                     has_pending = any(item["status"] != "Concluído" for item in grupo_itens)
                     
+                    reunioes_dist_str = "1 reunião distinta" if len(reunioes_origem) == 1 else f"{len(reunioes_origem)} reuniões distintas"
                     grupos.append({
                         "id": f"group_{uuid.uuid4().hex[:8]}",
                         "tarefa_normalizada": grupo_itens[0]["tarefa"],
@@ -653,7 +654,7 @@ class MeetingRepository:
                         "primeira_ocorrencia": datas_origem[0] if datas_origem else None,
                         "ultima_ocorrencia": datas_origem[-1] if datas_origem else None,
                         "ocorrencias": grupo_itens,
-                        "motivo_similaridade": f"Tarefa repetida em {len(reunioes_origem)} reunião(ões) distintas ({'com pendências ativas' if has_pending else 'todas concluídas'}).",
+                        "motivo_similaridade": f"Tarefa repetida em {reunioes_dist_str} ({'com pendências ativas' if has_pending else 'todas concluídas'}).",
                         "is_duplicate": True,
                         "has_pending_actions": has_pending
                     })

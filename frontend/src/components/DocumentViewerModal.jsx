@@ -768,7 +768,7 @@ export default function DocumentViewerModal({
                       <div><strong>Método:</strong> {isFallback ? 'Fallback determinístico' : 'Ollama / Llama 3'}</div>
                       <div><strong>Modelo:</strong> {meta.model_name || meta.model || (isFallback ? 'Regras Determinísticas' : 'llama3:latest')}</div>
                       <div><strong>Confiança Semântica:</strong> {meta.semantic_confidence || (isFallback ? 'Média (65%)' : 'Alta (85%)')}</div>
-                      <div><strong>Ações Mapeadas:</strong> {confirmedTasks.length} confirmada(s) {pendingTasks.length > 0 ? `+ ${pendingTasks.length} pendente(s)` : ''}</div>
+                      <div><strong>Ações Mapeadas:</strong> {confirmedTasks.length} {confirmedTasks.length === 1 ? 'confirmada' : 'confirmadas'}{pendingTasks.length > 0 ? ` + ${pendingTasks.length} ${pendingTasks.length === 1 ? 'pendente' : 'pendentes'}` : ''}</div>
                     </div>
                   </div>
 

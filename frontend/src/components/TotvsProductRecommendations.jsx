@@ -205,7 +205,7 @@ export default function TotvsProductRecommendations({
                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                       <strong style={{ color: 'var(--primary-color)' }}>Tarefas compatíveis ({totalTarefasCount}):</strong>{' '}
                       {rec.trigger_tasks[0]?.task}
-                      {totalTarefasCount > 1 && ` (+${totalTarefasCount - 1} outra(s))`}
+                      {totalTarefasCount > 1 && ` (+${totalTarefasCount - 1} ${totalTarefasCount - 1 === 1 ? 'outra' : 'outras'})`}
                     </div>
                   )}
 

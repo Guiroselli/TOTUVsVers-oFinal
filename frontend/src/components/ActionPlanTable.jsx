@@ -60,7 +60,7 @@ export default function ActionPlanTable({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '8px' }}>
         <h4 style={{ margin: 0, color: 'var(--primary-color)' }}>Plano de Ação e Tarefas</h4>
         <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          {tarefas.length} ação(ões) mapeada(s)
+          {tarefas.length} {tarefas.length === 1 ? 'ação mapeada' : 'ações mapeadas'}
         </div>
       </div>
 

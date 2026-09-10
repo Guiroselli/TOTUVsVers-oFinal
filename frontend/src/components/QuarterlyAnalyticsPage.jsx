@@ -885,7 +885,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                       <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{item.first_seen_date || '-'}</td>
                       <td style={{ padding: '8px', color: 'var(--text-muted)' }}>{item.last_seen_date || '-'}</td>
                       <td style={{ padding: '8px', fontWeight: 600 }}>{item.meetings_count}</td>
-                      <td style={{ padding: '8px' }}>{item.affected_clients_count} cliente(s)</td>
+                      <td style={{ padding: '8px' }}>{item.affected_clients_count} {item.affected_clients_count === 1 ? 'cliente' : 'clientes'}</td>
                       <td style={{ padding: '8px' }}>
                         <span style={{ color: item.completed_tasks_count > 0 ? 'var(--success)' : 'var(--warning)' }}>
                           {item.completed_tasks_count} / {item.related_tasks_count}
@@ -959,7 +959,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                   }}>
                     {selectedClientTimeline.relationship_health}
                   </strong>{' '}
-                  | {selectedClientTimeline.total_meetings} reunião(ões)
+                  | {selectedClientTimeline.total_meetings} {selectedClientTimeline.total_meetings === 1 ? 'reunião' : 'reuniões'}
                 </span>
               </div>
               <button
@@ -1244,7 +1244,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                   Ausência de Falhas Técnicas ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.ausencia_falhas?.peso || 40}%):
                 </span>
                 <strong style={{ color: analyticsData.data_quality.falhas_ia > 0 ? 'var(--danger)' : 'var(--success)' }}>
-                  {analyticsData.data_quality.falhas_ia || 0} falha(s) registrada(s) ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.ausencia_falhas?.valor_percentual || 100}%)
+                  {(analyticsData.data_quality.falhas_ia || 0) === 1 ? '1 falha registrada' : `${analyticsData.data_quality.falhas_ia || 0} falhas registradas`} ({analyticsData.data_quality.calculation_breakdown?.pesos_ia?.ausencia_falhas?.valor_percentual || 100}%)
                 </strong>
               </div>
             </div>

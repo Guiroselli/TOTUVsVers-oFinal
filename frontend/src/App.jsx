@@ -1192,8 +1192,10 @@ export default function MeetingApp() {
 
         children.push(new Paragraph(`- Método de Síntese: ${isFallback ? 'Fallback determinístico de contingência' : 'Ollama / Llama (Inteligência Artificial)'}`));
         children.push(new Paragraph(`- Modelo / Versão: ${meta.model_name || meta.model || (isFallback ? 'Regras Determinísticas' : 'llama3:latest')} (Prompt v${meta.prompt_version || '2.1.0'})`));
-        children.push(new Paragraph(`- Confiança Técnica: ${confTecnica} | Confiança Semântica: ${confSemantica}`));
-        children.push(new Paragraph(`- Mapeamento Quantitativo: ${totalTemas} tema(s) | ${totalDores} dor(es) | ${totalTarefas} tarefa(s)`));
+        const temaTxt = totalTemas === 1 ? '1 tema' : `${totalTemas} temas`;
+        const dorTxt = totalDores === 1 ? '1 dor' : `${totalDores} dores`;
+        const tarefaTxt = totalTarefas === 1 ? '1 tarefa' : `${totalTarefas} tarefas`;
+        children.push(new Paragraph(`- Mapeamento Quantitativo: ${temaTxt} | ${dorTxt} | ${tarefaTxt}`));
         children.push(new Paragraph(`- Diagnóstico de Qualidade: ${diagnostico}`));
         children.push(new Paragraph(''));
       }
@@ -1706,7 +1708,7 @@ export default function MeetingApp() {
             `Confiança Semântica: ${confSemantica}`
           ],
           [
-            `Mapeamento: ${totalTemas} tema(s) | ${totalDores} dor(es) | ${totalConfirmed} tarefa(s) confirmada(s)${totalPending > 0 ? ` + ${totalPending} pendente(s)` : ''}${descartadosRuido > 0 ? ` (${descartadosRuido} descartado(s))` : ''}`,
+            `Mapeamento: ${totalTemas === 1 ? '1 tema' : `${totalTemas} temas`} | ${totalDores === 1 ? '1 dor' : `${totalDores} dores`} | ${totalConfirmed === 1 ? '1 tarefa confirmada' : `${totalConfirmed} tarefas confirmadas`}${totalPending > 0 ? ` + ${totalPending === 1 ? '1 pendente' : `${totalPending} pendentes`}` : ''}${descartadosRuido > 0 ? ` (${descartadosRuido === 1 ? '1 descartado' : `${descartadosRuido} descartados`})` : ''}`,
             `Status de Revisão Humana: ${reviewStatusDisplay}`
           ],
           [

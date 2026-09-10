@@ -526,11 +526,13 @@ class AnalyticsService:
                 pct = round((len(meeting_ids) / total_m_safe) * 100, 1)
                 clients_affected = list(pains_clients_map.get(cat, []))
                 sample_ev = pains_evidence_sample.get(cat)
+                reunioes_str = "1 reunião" if len(meeting_ids) == 1 else f"{len(meeting_ids)} reuniões"
+                clientes_str = "1 cliente" if len(clients_affected) == 1 else f"{len(clients_affected)} clientes"
                 managerial_alerts.append(ManagerialAlert(
                     id=f"alert-dor-recorrente-{cat}",
                     type="dor_recorrente",
                     title=f"Dor Recorrente: {meta['label']}",
-                    description=f"A dor '{meta['label']}' foi citada em {len(meeting_ids)} reuniões ({pct}% do período) afetando {len(clients_affected)} cliente(s). O módulo TOTVS {meta['sistema_totvs'].upper()} pode apoiar na mitigação dos gargalos relatados (requer validação técnica).",
+                    description=f"A dor '{meta['label']}' foi citada em {reunioes_str} ({pct}% do período) afetando {clientes_str}. O módulo TOTVS {meta['sistema_totvs'].upper()} pode apoiar na mitigação dos gargalos relatados (requer validação técnica).",
                     severity="critical" if meta["severidade_padrao"] in ["Crítica", "Alta"] else "warning",
                     metric_key=cat,
                     count=len(meeting_ids),
@@ -545,11 +547,12 @@ class AnalyticsService:
             meta = get_pain_metadata(cat)
             if meta["severidade_padrao"] in ["Crítica", "Alta"] and len(meeting_ids) < 3:
                 sample_ev = pains_evidence_sample.get(cat)
+                reunioes_str = "1 reunião" if len(meeting_ids) == 1 else f"{len(meeting_ids)} reuniões"
                 managerial_alerts.append(ManagerialAlert(
                     id=f"alert-dor-severa-{cat}",
                     type="dor_alta_severidade",
                     title=f"Dor de Alta Severidade: {meta['label']}",
-                    description=f"Identificado ponto crítico de severidade {meta['severidade_padrao']} em {len(meeting_ids)} reunião(ões). Há aderência preliminar com soluções TOTVS {meta['sistema_totvs'].upper()}.",
+                    description=f"Identificado ponto crítico de severidade {meta['severidade_padrao']} em {reunioes_str}. Há aderência preliminar com soluções TOTVS {meta['sistema_totvs'].upper()}.",
                     severity="critical" if meta["severidade_padrao"] == "Crítica" else "warning",
                     metric_key=cat,
                     count=len(meeting_ids),
@@ -560,11 +563,13 @@ class AnalyticsService:
 
         # 3. Alerta: Tarefas vencidas com pendência ativa (Critério de Prazo)
         if overdue_actions > 0:
+            tarefas_venc_title = "1 Tarefa Vencida" if overdue_actions == 1 else f"{overdue_actions} Tarefas Vencidas"
+            tarefas_desc = "Existe 1 ação operacional com prazo limite ultrapassado aguardando conclusão." if overdue_actions == 1 else f"Existem {overdue_actions} ações operacionais com prazo limite ultrapassado aguardando conclusão."
             managerial_alerts.append(ManagerialAlert(
                 id="alert-overdue-tasks",
                 type="tarefa_vencida",
-                title=f"{overdue_actions} Tarefa(s) Vencida(s) no Período",
-                description=f"Existem {overdue_actions} ações operacionais com prazo limite ultrapassado aguardando conclusão.",
+                title=f"{tarefas_venc_title} no Período",
+                description=tarefas_desc,
                 severity="critical" if overdue_actions >= 3 else "warning",
                 count=overdue_actions,
                 action_type="view_tasks"
@@ -582,11 +587,12 @@ class AnalyticsService:
                         if dias_restantes is not None and 0 <= dias_restantes <= 3:
                             proximas_vencimento_count += 1
         if proximas_vencimento_count > 0:
+            tarefas_prox_title = "1 Tarefa Próxima" if proximas_vencimento_count == 1 else f"{proximas_vencimento_count} Tarefas Próximas"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-near-due-tasks",
                 type="tarefa_proxima_vencimento",
-                title=f"{proximas_vencimento_count} Tarefa(s) Próxima(s) do Vencimento",
-                description=f"Ações com prazo nos próximos 3 dias exigem acompanhamento de SLA.",
+                title=f"{tarefas_prox_title} do Vencimento",
+                description="Ações com prazo nos próximos 3 dias exigem acompanhamento de SLA.",
                 severity="warning",
                 count=proximas_vencimento_count,
                 action_type="view_tasks"
@@ -596,11 +602,12 @@ class AnalyticsService:
         for c_code, stats in client_stats.items():
             crit_ou_alta = [u for u in stats["urgencias"] if u in ["Crítica", "Alta"]]
             if len(crit_ou_alta) >= 2:
+                reunioes_crit_str = "1 reunião" if len(crit_ou_alta) == 1 else f"{len(crit_ou_alta)} reuniões"
                 managerial_alerts.append(ManagerialAlert(
                     id=f"alert-client-urgency-{c_code}",
                     type="cliente_urgencia_critica",
                     title=f"Cliente em Urgência Crítica: {c_code}",
-                    description=f"O cliente {c_code} acumulou {len(crit_ou_alta)} reuniões com urgência Alta/Crítica e possui {stats['acoes_pendentes']} ações pendentes.",
+                    description=f"O cliente {c_code} acumulou {reunioes_crit_str} com urgência Alta/Crítica e possui {stats['acoes_pendentes']} ações pendentes.",
                     severity="critical" if "Crítica" in crit_ou_alta else "warning",
                     client_code=c_code,
                     count=len(crit_ou_alta),
@@ -619,10 +626,11 @@ class AnalyticsService:
                 if prob and prob not in ["não mencionado", "nao mencionado", "-", ""] and dec in ["não mencionado", "nao mencionado", "-", ""]:
                     sem_decisao_count += 1
         if sem_decisao_count > 0:
+            reuniao_sem_dec_title = "1 Reunião" if sem_decisao_count == 1 else f"{sem_decisao_count} Reuniões"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-tema-sem-decisao",
                 type="reuniao_sem_decisao",
-                title=f"{sem_decisao_count} Reunião(ões) com Discussão Sem Decisão Registrada",
+                title=f"{reuniao_sem_dec_title} com Discussão Sem Decisão Registrada",
                 description="Foram mapeados pontos críticos sem encaminhamento conclusivo deliberado na ata.",
                 severity="warning",
                 count=sem_decisao_count,
@@ -631,10 +639,11 @@ class AnalyticsService:
 
         # 7. Alerta: Reuniões sem análise concluída
         if unanalyzed_meetings_count > 0:
+            reuniao_sem_an_title = "1 Reunião" if unanalyzed_meetings_count == 1 else f"{unanalyzed_meetings_count} Reuniões"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-reunioes-sem-analise",
                 type="reuniao_sem_analise",
-                title=f"{unanalyzed_meetings_count} Reunião(ões) Sem Análise de IA",
+                title=f"{reuniao_sem_an_title} Sem Análise de IA",
                 description="Existem atas importadas ou gravadas que ainda não tiveram síntese processada.",
                 severity="info",
                 count=unanalyzed_meetings_count,
@@ -650,10 +659,11 @@ class AnalyticsService:
                 if isinstance(r, dict) and r.get("fit_score", 0) >= 0.60 and r.get("review_status") == "pending":
                     recs_pendentes_count += 1
         if recs_pendentes_count > 0:
+            recs_pend_title = "1 Recomendação" if recs_pendentes_count == 1 else f"{recs_pendentes_count} Recomendações"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-recs-pendentes",
                 type="recomendacao_pendente",
-                title=f"{recs_pendentes_count} Recomendação(ões) TOTVS Aguardando Validação",
+                title=f"{recs_pend_title} TOTVS Aguardando Validação",
                 description="Oportunidades de produtos com forte aderência preliminar aguardando revisão humana do gestor.",
                 severity="info",
                 count=recs_pendentes_count
@@ -661,10 +671,11 @@ class AnalyticsService:
 
         # 9. Alerta: Tarefas sem responsável designado
         if dq_tarefas_sem_resp > 0:
+            tarefas_sem_resp_title = "1 Tarefa" if dq_tarefas_sem_resp == 1 else f"{dq_tarefas_sem_resp} Tarefas"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-tarefas-sem-responsavel",
                 type="tarefa_sem_responsavel",
-                title=f"{dq_tarefas_sem_resp} Tarefa(s) Sem Responsável Definido",
+                title=f"{tarefas_sem_resp_title} Sem Responsável Definido",
                 description="Ações operacionais cadastradas sem líder responsável correm alto risco de esquecimento.",
                 severity="warning",
                 count=dq_tarefas_sem_resp,
@@ -673,10 +684,11 @@ class AnalyticsService:
 
         # 10. Alerta: Tarefas sem prazo definido
         if dq_tarefas_sem_prazo > 0:
+            tarefas_sem_prazo_title = "1 Tarefa" if dq_tarefas_sem_prazo == 1 else f"{dq_tarefas_sem_prazo} Tarefas"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-tarefas-sem-prazo",
                 type="tarefa_sem_prazo",
-                title=f"{dq_tarefas_sem_prazo} Tarefa(s) Sem Prazo de Conclusão",
+                title=f"{tarefas_sem_prazo_title} Sem Prazo de Conclusão",
                 description="Tarefas sem SLA estabelecido tendem a acumular atrasos operacionais.",
                 severity="warning",
                 count=dq_tarefas_sem_prazo,
@@ -685,10 +697,11 @@ class AnalyticsService:
 
         # 11. Alerta: Detratores de NPS / Risco de Relacionamento
         if nps_detratores > 0:
+            nps_det_title = "1 Avaliação" if nps_detratores == 1 else f"{nps_detratores} Avaliações"
             managerial_alerts.append(ManagerialAlert(
                 id="alert-nps-detratores",
                 type="nps_detratores",
-                title=f"{nps_detratores} Avaliação(ões) com Nota de Detrator no NPS",
+                title=f"{nps_det_title} com Nota de Detrator no NPS",
                 description="Reuniões com notas inferiores a 7 indicam insatisfação ou risco de atrito no cliente.",
                 severity="critical",
                 count=nps_detratores
@@ -735,9 +748,10 @@ class AnalyticsService:
             if len(grp) > 1:
                 proc.add(i)
                 m_ids = list(set(t["meeting_id"] for t in grp))
+                reunioes_grp_str = "1 reunião" if len(m_ids) == 1 else f"{len(m_ids)} reuniões"
                 duplicate_groups.append({
                     "group_title": t1["tarefa"],
-                    "similarity_reason": f"Tarefa repetida em {len(m_ids)} reuniões no período selecionado.",
+                    "similarity_reason": f"Tarefa repetida em {reunioes_grp_str} no período selecionado.",
                     "total_occurrences": len(grp),
                     "meeting_ids": m_ids,
                     "tasks": grp,
@@ -748,10 +762,11 @@ class AnalyticsService:
         if duplicate_groups:
             duplicadas_abertas = sum(1 for g in duplicate_groups if any(t["status"] != "Concluído" for t in g["tasks"]))
             if duplicadas_abertas > 0:
+                grupos_title = "1 Grupo" if duplicadas_abertas == 1 else f"{duplicadas_abertas} Grupos"
                 managerial_alerts.append(ManagerialAlert(
                     id="alert-tarefa-repetida-sem-conclusao",
                     type="tarefa_repetida_sem_conclusao",
-                    title=f"{duplicadas_abertas} Grupo(s) de Tarefas Recorrentes Não Concluídas",
+                    title=f"{grupos_title} de Tarefas Recorrentes Não Concluídas",
                     description="Identificadas ações operacionais que continuam sendo rediscultidas sem fechamento definitivo.",
                     severity="warning",
                     count=duplicadas_abertas

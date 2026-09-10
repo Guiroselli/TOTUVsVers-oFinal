@@ -482,7 +482,8 @@ def compute_recommendations(
             motivos.append(f"A reunião registrou demandas relacionadas a {', '.join(pain_phrases)}.")
 
         if tarefas_match:
-            motivos.append(f"Identificadas {len(tarefas_match)} tarefa(s) operacionalmente compatíveis com as capacidades do módulo.")
+            tarefas_txt = "1 tarefa operacionalmente compatível" if len(tarefas_match) == 1 else f"{len(tarefas_match)} tarefas operacionalmente compatíveis"
+            motivos.append(f"Identificada {tarefas_txt} com as capacidades do módulo." if len(tarefas_match) == 1 else f"Identificadas {tarefas_txt} com as capacidades do módulo.")
         if urgencia in ["Crítica", "Alta"] and (dores_match or tarefas_match):
             motivos.append(f"O nível de urgência ({urgencia}) reforça a prioridade na estruturação deste processo.")
         if segmento_detectado and key in produtos_do_segmento:

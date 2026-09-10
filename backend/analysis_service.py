@@ -477,7 +477,8 @@ def identificar_candidatos_responsavel(
 
     for resp, count in contagem_tarefas.items():
         pontos_extras = min(20.0, count * 10.0)
-        _add_candidate(resp, pontos_extras, f"Responsável por {count} tarefa(s) na reunião.")
+        tarefas_cand_txt = "1 tarefa" if count == 1 else f"{count} tarefas"
+        _add_candidate(resp, pontos_extras, f"Responsável por {tarefas_cand_txt} na reunião.")
 
     # Critério 4: Recorrência no histórico do cliente
     if perfil_cliente and isinstance(perfil_cliente, dict):
@@ -701,11 +702,12 @@ def aplicar_regras_deterministas_seguranca(
                 highest_sev = s
                 
         primary_evidence = " | ".join(g_data["evidencias"][:2]) if g_data["evidencias"] else (g_data["descricoes"][0] if g_data["descricoes"] else "Evidência contextual mapeada")
+        ocorrencias_str = "1 ocorrência mapeada" if count == 1 else f"{count} ocorrências mapeadas"
         
         dores_processadas.append({
             "categoria": cat,
             "label": final_label,
-            "descricao": f"{g_data['label_base']} ({count} ocorrência(s) mapeada(s))",
+            "descricao": f"{g_data['label_base']} ({ocorrencias_str})",
             "trecho": primary_evidence,
             "evidencias": g_data["evidencias"],
             "ocorrencias": count,
@@ -1019,7 +1021,8 @@ def build_executive_summary(
         sentences.append(f"O foco principal de atenção identificado foi: {problema}.")
     elif dores:
         primeira_dor = dores[0].get("label") if isinstance(dores[0], dict) else str(dores[0])
-        sentences.append(f"O mapeamento identificou {len(dores)} gargalo(s) operacional(is), destacando-se {primeira_dor}.")
+        gargalos_str = "1 gargalo operacional" if len(dores) == 1 else f"{len(dores)} gargalos operacionais"
+        sentences.append(f"O mapeamento identificou {gargalos_str}, destacando-se {primeira_dor}.")
     else:
         sentences.append("A sessão estruturou os direcionamentos operacionais e fluxos de trabalho da equipe.")
 
