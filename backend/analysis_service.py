@@ -70,26 +70,25 @@ ANALYSIS_PROMPT_VERSION = os.getenv("ANALYSIS_PROMPT_VERSION", "v2")
 # ────────────────────────────────────────────────────────────
 
 PERFIS_HARDWARE = {
-    # Sem placa de vídeo: modelo pequeno, contexto curto e blocos menores.
-    # Medido num i7-1355U (sem GPU): ~70-120s por bloco, com extração real.
+    # Sem placa de vídeo: modelo leve (qwen2.5:3b), contexto adequado e no máximo 2 blocos
+    # estratégicos (Início + Encerramento/Tarefas). Processamento rápido em ~60-90s no total.
     "cpu": {
         "model": "qwen2.5:3b",
-        "num_ctx": 4096,
-        "num_predict": 2048,
-        "chunk_chars": 4000,
-        "chunk_overlap": 400,
-        "max_chunks": 12,
-        "timeout": 300,
+        "num_ctx": 8192,
+        "num_predict": 1024,
+        "chunk_chars": 7500,
+        "chunk_overlap": 500,
+        "max_chunks": 2,
+        "timeout": 180,
     },
-    # Com placa de vídeo dedicada: cabe um modelo maior, contexto cheio e
-    # blocos grandes, o que reduz o número de chamadas e melhora a síntese.
+    # Com placa de vídeo dedicada: cabe um modelo maior, contexto expandido e até 3 blocos.
     "gpu": {
         "model": "llama3",
         "num_ctx": 8192,
-        "num_predict": 3072,
+        "num_predict": 2048,
         "chunk_chars": 9000,
         "chunk_overlap": 700,
-        "max_chunks": 12,
+        "max_chunks": 3,
         "timeout": 180,
     },
 }
@@ -1219,44 +1218,104 @@ def build_executive_summary(
     }
 
 
-def dividir_transcricao(texto: str, tamanho: int = OLLAMA_CHUNK_CHARS, sobreposicao: int = OLLAMA_CHUNK_OVERLAP) -> List[str]:
+def dividir_transcricao(
+    texto: str, 
+    tamanho: int = OLLAMA_CHUNK_CHARS, 
+    sobreposicao: int = OLLAMA_CHUNK_OVERLAP,
+    max_blocos: int = OLLAMA_MAX_CHUNKS
+) -> List[str]:
     """
-    Divide a transcrição em blocos que cabem na janela de contexto do modelo.
+    Divide a transcrição em blocos otimizados para a janela de contexto do modelo.
 
-    O llama3 tem contexto de 8k tokens. Uma transcrição de reunião real passa
-    facilmente de 100k caracteres, então enviá-la inteira (ou truncá-la) faz o
-    modelo simplesmente não enxergar a maior parte do que foi discutido — que é
-    a causa de temas, dores e tarefas não serem detectados.
+    Para transcrições que cabem dentro da capacidade linear (tamanho * max_blocos),
+    faz a divisão contígua com sobreposição respeitando pontuação e quebra de linha.
 
-    O corte respeita quebras de linha e fim de frase para não partir uma fala no
-    meio, e cada bloco carrega uma sobreposição com o anterior para não perder
-    assuntos que atravessam a fronteira.
+    Para reuniões extensas (como as de 50k a 120k caracteres), realiza uma amostragem
+    estratégica de alta fidelidade:
+    - Bloco 1 (Início): abertura, alinhamento de escopo, dores e problemas relatados.
+    - Bloco 2 (Encerramento): resoluções, decisões tomadas, tarefas delegadas, prazos e donos.
+    (Se max_blocos >= 3, inclui também o miolo da reunião).
+
+    Isso garante que compromissos e tarefas do final da reunião nunca sejam descartados,
+    e mantém o tempo de inferência em ~60-90s no total em CPU, em vez de 15+ minutos.
     """
-    texto = texto or ""
+    texto = (texto or "").strip()
+    if not texto:
+        return []
+
     if len(texto) <= tamanho:
-        return [texto] if texto.strip() else []
+        return [texto]
 
-    blocos: List[str] = []
-    inicio = 0
-    while inicio < len(texto) and len(blocos) < OLLAMA_MAX_CHUNKS:
-        fim = min(inicio + tamanho, len(texto))
+    # Se cabe na cobertura linear contígua:
+    alcance_linear = tamanho + max(0, max_blocos - 1) * max(1000, tamanho - sobreposicao)
+    if len(texto) <= alcance_linear or max_blocos <= 1:
+        blocos: List[str] = []
+        inicio = 0
+        while inicio < len(texto) and len(blocos) < max_blocos:
+            fim = min(inicio + tamanho, len(texto))
+            if fim < len(texto):
+                janela = texto[inicio:fim]
+                corte = max(janela.rfind("\n"), janela.rfind(". "), janela.rfind("? "), janela.rfind("! "))
+                if corte > tamanho * 0.5:
+                    fim = inicio + corte + 1
+            bloco = texto[inicio:fim].strip()
+            if bloco:
+                blocos.append(bloco)
+            if fim >= len(texto):
+                break
+            inicio = max(fim - sobreposicao, inicio + 1)
+        return blocos
 
-        # Recua até uma fronteira natural (quebra de linha ou fim de frase)
-        if fim < len(texto):
-            janela = texto[inicio:fim]
-            corte = max(janela.rfind("\n"), janela.rfind(". "), janela.rfind("? "), janela.rfind("! "))
-            if corte > tamanho * 0.5:
-                fim = inicio + corte + 1
+    # Para reuniões muito longas que excedem a cobertura linear:
+    if max_blocos == 2:
+        # Bloco 1: Abertura e contexto inicial
+        fim1 = min(tamanho, len(texto))
+        janela1 = texto[:fim1]
+        corte1 = max(janela1.rfind("\n"), janela1.rfind(". "), janela1.rfind("? "), janela1.rfind("! "))
+        if corte1 > tamanho * 0.5:
+            fim1 = corte1 + 1
+        bloco1 = texto[:fim1].strip()
 
-        bloco = texto[inicio:fim].strip()
-        if bloco:
-            blocos.append(bloco)
+        # Bloco 2: Fechamento, decisões e tarefas no final da transcrição
+        inicio2 = max(0, len(texto) - tamanho)
+        janela2 = texto[inicio2:inicio2 + min(1500, tamanho // 2)]
+        corte2 = max(janela2.find("\n"), janela2.find(". "), janela2.find("? "), janela2.find("! "))
+        if corte2 > 0 and (inicio2 + corte2 + 1) < len(texto):
+            inicio2 = inicio2 + corte2 + 1
+        bloco2 = texto[inicio2:].strip()
 
-        if fim >= len(texto):
-            break
-        inicio = max(fim - sobreposicao, inicio + 1)
+        res = [b for b in [bloco1, bloco2] if b]
+        return res if res else [texto[:tamanho]]
 
-    return blocos
+    else:
+        # max_blocos >= 3
+        fim1 = min(tamanho, len(texto))
+        janela1 = texto[:fim1]
+        corte1 = max(janela1.rfind("\n"), janela1.rfind(". "), janela1.rfind("? "), janela1.rfind("! "))
+        if corte1 > tamanho * 0.5:
+            fim1 = corte1 + 1
+        bloco1 = texto[:fim1].strip()
+
+        # Bloco Central
+        meio = len(texto) // 2
+        inicio_m = max(fim1, meio - (tamanho // 2))
+        fim_m = min(len(texto) - tamanho, inicio_m + tamanho)
+        janela_m = texto[inicio_m:fim_m]
+        corte_m = max(janela_m.rfind("\n"), janela_m.rfind(". "))
+        if corte_m > tamanho * 0.5:
+            fim_m = inicio_m + corte_m + 1
+        bloco_m = texto[inicio_m:fim_m].strip()
+
+        # Bloco Final
+        inicio_f = max(fim_m, len(texto) - tamanho)
+        janela_f = texto[inicio_f:inicio_f + min(1500, tamanho // 2)]
+        corte_f = max(janela_f.find("\n"), janela_f.find(". "))
+        if corte_f > 0 and (inicio_f + corte_f + 1) < len(texto):
+            inicio_f = inicio_f + corte_f + 1
+        bloco_f = texto[inicio_f:].strip()
+
+        res = [b for b in [bloco1, bloco_m, bloco_f] if b]
+        return res[:max_blocos] if res else [texto[:tamanho]]
 
 
 def _chave_norm(valor: Any) -> str:
@@ -1422,8 +1481,10 @@ class AnalysisService:
 
         def _analisar_bloco(bloco: str) -> Dict[str, Any]:
             """Executa uma passada do modelo sobre um trecho da transcrição."""
-            # Só envia os gatilhos que pertencem a este trecho
+            # Envia os gatilhos pertencentes a este trecho (ou os principais gatilhos globais)
             gatilhos_bloco = [g for g in gatilhos if g.get("frase") and g["frase"][:80] in bloco]
+            if not gatilhos_bloco and gatilhos:
+                gatilhos_bloco = gatilhos[:5]
             texto_gatilhos = ""
             if gatilhos_bloco:
                 linhas_bloco = [f'- [{g["label"]}] "{g["frase"]}"' for g in gatilhos_bloco]

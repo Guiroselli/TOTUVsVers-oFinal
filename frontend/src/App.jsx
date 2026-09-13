@@ -299,20 +299,74 @@ export default function MeetingApp() {
     }
   };
 
-  // Handler de análise de reunião desacoplada
+  // Handler de análise de reunião desacoplada com polling ativo e auto-recuperação
   const handleAnalyzeMeeting = async (meetingId) => {
+    let pollInterval = null;
+    let isFinished = false;
+
     try {
       setIsGeneratingPDF(true);
-      setGeneratingMessage('Analisando reunião com Inteligência Artificial...');
+      setGeneratingMessage('Analisando reunião com Inteligência Artificial (Ollama)...');
+
+      // Polling ativo a cada 2.5s: detecta a conclusão no backend mesmo se a conexão HTTP demorar ou cair
+      pollInterval = setInterval(async () => {
+        try {
+          const currentMeeting = await api.getMeeting(meetingId);
+          const st = currentMeeting?.STATUS_ANALISE;
+          const stMeeting = currentMeeting?.STATUS_MEETING;
+          const hasIa = Boolean(
+            currentMeeting?.RESUMO_IA &&
+            (currentMeeting.RESUMO_IA.tema || (currentMeeting.RESUMO_IA.dores && currentMeeting.RESUMO_IA.dores.length > 0))
+          );
+          if (st === 'analise_concluida' || stMeeting === 'analise_concluida' || hasIa) {
+            isFinished = true;
+            if (pollInterval) {
+              clearInterval(pollInterval);
+              pollInterval = null;
+            }
+            await loadMeetings(pagination.page, pagination.page_size);
+            setIsGeneratingPDF(false);
+          }
+        } catch (e) {
+          // Ignora erros transitórios durante o polling
+        }
+      }, 2500);
+
       const res = await api.analyzeExistingMeeting(meetingId);
-      if (res.status === 'success') {
+      if (res?.status === 'success') {
+        isFinished = true;
         await loadMeetings(pagination.page, pagination.page_size);
       }
     } catch (err) {
-      console.error('Erro ao analisar reunião:', err);
-      alert(`Erro ao processar análise da reunião: ${err.message || err}`);
+      console.error('Verificando status após timeout ou desconexão:', err);
+      // Antes de exibir qualquer alerta, verifica se o backend já concluiu e salvou
+      try {
+        const verifyMeeting = await api.getMeeting(meetingId);
+        const st = verifyMeeting?.STATUS_ANALISE;
+        const stMeeting = verifyMeeting?.STATUS_MEETING;
+        const hasIa = Boolean(
+          verifyMeeting?.RESUMO_IA &&
+          (verifyMeeting.RESUMO_IA.tema || (verifyMeeting.RESUMO_IA.dores && verifyMeeting.RESUMO_IA.dores.length > 0))
+        );
+        if (st === 'analise_concluida' || stMeeting === 'analise_concluida' || hasIa) {
+          isFinished = true;
+          await loadMeetings(pagination.page, pagination.page_size);
+          return;
+        }
+      } catch (e) {
+        // Fallback
+      }
+
+      if (!isFinished) {
+        alert(`Erro ao processar análise da reunião: ${err.message || err}`);
+      }
     } finally {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
       setIsGeneratingPDF(false);
+      await loadMeetings(pagination.page, pagination.page_size);
     }
   };
 
