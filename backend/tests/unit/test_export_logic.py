@@ -517,6 +517,24 @@ def test_noise_variations_dots_commas_newlines_speakers_brackets_zero_tasks():
     assert len(r_brk["tarefas"]) == 0, f"Deveria ter 0 tarefas (parênteses/colchetes), gerou: {r_brk['tarefas']}"
 
 
+def test_infinitive_verbs_outside_whitelist_are_not_noise():
+    """Tarefas que começam com verbo no infinitivo fora da lista fixa não devem ser descartadas como ruído."""
+    from analysis_service import classify_task_operational_intent
+
+    tasks = [
+        "Parametrizar o sistema para registro de ponto apenas dentro da rede da empresa",
+        "Tirar relatório de horas extras validadas",
+        "Implantar o sistema de atestados na unidade de São Paulo",
+    ]
+    for t in tasks:
+        status, reason = classify_task_operational_intent(t)
+        assert status != "rejected_noise", f"Não deveria ser ruído: {t} ({reason})"
+
+    # Palavras terminadas em -ar/-er que não são verbos continuam sem contar como ação
+    status, _ = classify_task_operational_intent("Qualquer coisa sobre o lugar da conversa")
+    assert status == "rejected_noise"
+
+
 def test_noise_phrases_with_additional_context():
     """Valida que ruídos seguidos de contexto vago continuam classificados como rejected_noise."""
     from analysis_service import classify_task_operational_intent
