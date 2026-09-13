@@ -285,6 +285,14 @@ NOISE_TASK_PHRASES = [
 ]
 
 
+# Palavras terminadas em -ar/-er/-ir que não são verbos, para não contarem como ação
+# quando aparecem no início da frase.
+NAO_VERBOS_INFINITIVO = {
+    "lugar", "similar", "familiar", "particular", "regular", "popular", "militar",
+    "escolar", "celular", "titular", "prazer", "qualquer", "quer", "mulher", "colher",
+}
+
+
 def classify_task_operational_intent(tarefa_text: str, evidence: str = "") -> Tuple[str, str]:
     """
     Classifica a intenção operacional de uma frase candidata a tarefa:
@@ -351,6 +359,14 @@ def classify_task_operational_intent(tarefa_text: str, evidence: str = "") -> Tu
             if v_seguinte in OPERATIONAL_ACTION_VERBS or v_seguinte.endswith(("ar", "er", "ir")):
                 has_action_verb = True
                 break
+
+    # Tarefas extraídas pelo modelo costumam começar com o verbo no infinitivo
+    # ("Parametrizar o sistema...", "Tirar relatório..."). A lista fixa acima não cobre
+    # todos os verbos de negócio, então o infinitivo no início da frase também conta.
+    if not has_action_verb:
+        primeira = words[0]
+        if len(primeira) >= 4 and primeira.endswith(("ar", "er", "ir")) and primeira not in NAO_VERBOS_INFINITIVO:
+            has_action_verb = True
 
     if not has_action_verb:
         return "rejected_noise", "Ausência de verbo de ação operacional identificável"
