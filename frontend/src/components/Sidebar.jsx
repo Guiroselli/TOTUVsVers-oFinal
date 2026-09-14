@@ -1,7 +1,7 @@
 import React from 'react';
 import { FileText, Radio, Layers, Sun, Moon, TrendingUp, Building2, ShieldCheck } from 'lucide-react';
 
-export default function Sidebar({ currentView, onSelectView, onOpenConfig, theme = 'dark', onToggleTheme }) {
+export default function Sidebar({ currentView, onSelectView, onOpenConfig, theme = 'light', onToggleTheme }) {
   return (
     <aside className="dashboard-sidebar">
       <div className="logo-area">

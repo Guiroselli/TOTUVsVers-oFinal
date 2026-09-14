@@ -14,9 +14,15 @@ const LiveMeetingPage = lazy(() => import('./components/LiveMeetingPage'));
 export default function MeetingApp() {
   const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'analytics' | 'meeting'
 
-  // Theme State (Dark / Light) com persistência em localStorage
+  // Theme State (Branco / Light como Primário) com persistência em localStorage
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('totvs_pf_theme') || 'dark';
+    const version = localStorage.getItem('totvs_pf_theme_pref_v2');
+    if (!version) {
+      localStorage.setItem('totvs_pf_theme_pref_v2', 'true');
+      localStorage.setItem('totvs_pf_theme', 'light');
+      return 'light';
+    }
+    return localStorage.getItem('totvs_pf_theme') || 'light';
   });
 
   useEffect(() => {

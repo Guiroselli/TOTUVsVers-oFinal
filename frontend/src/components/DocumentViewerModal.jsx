@@ -176,10 +176,10 @@ export default function DocumentViewerModal({
             <div
               style={{
                 display: 'flex',
-                background: '#09090b',
+                background: 'var(--panel-hover)',
                 padding: '3px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
+                border: '1px solid var(--border-color)',
                 gap: '2px'
               }}
             >
@@ -201,14 +201,14 @@ export default function DocumentViewerModal({
               </button>
             </div>
 
-            {/* 2. Escolha do Formato de Visualização */}
+            {/* 2. Escolha do Formato (PDF vs DOCX) */}
             <div
               style={{
                 display: 'flex',
-                background: '#09090b',
+                background: 'var(--panel-hover)',
                 padding: '3px',
                 borderRadius: '8px',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
+                border: '1px solid var(--border-color)',
                 gap: '2px'
               }}
             >
@@ -359,7 +359,7 @@ export default function DocumentViewerModal({
             </div>
           ) : (
             /* Format: DOCX / HTML Paper Preview */
-            <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', justifyContent: 'center', background: '#1e293b' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '2rem', display: 'flex', justifyContent: 'center', background: 'var(--bg-dark)' }}>
               {docType === 'executive' ? (
                 /* ==================== 1. ATA EXECUTIVA (LIDERANÇA) ==================== */
                 <div
