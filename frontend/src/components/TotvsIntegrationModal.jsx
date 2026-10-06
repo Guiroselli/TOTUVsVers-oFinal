@@ -38,6 +38,7 @@ export default function TotvsIntegrationModal({
 
   return (
     <div
+      className="totvs-modal-backdrop"
       style={{
         position: 'fixed',
         inset: 0,
@@ -48,20 +49,22 @@ export default function TotvsIntegrationModal({
         justifyContent: 'center',
         zIndex: 400,
         padding: '1rem',
+        boxSizing: 'border-box'
       }}
       onClick={onClose}
     >
       <div
+        className="totvs-modal-dialog"
         style={{
           background: 'var(--zoom-bg)',
           border: '1px solid var(--border-color)',
           borderRadius: '12px',
-          padding: '2rem',
           maxWidth: '560px',
           width: '100%',
           maxHeight: '90vh',
           overflowY: 'auto',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
+          boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+          boxSizing: 'border-box'
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -94,10 +97,12 @@ export default function TotvsIntegrationModal({
               background: 'var(--panel-bg)',
               border: '1px solid var(--border-color)',
               borderRadius: '8px',
-              padding: '12px 14px'
+              padding: '12px 14px',
+              boxSizing: 'border-box',
+              width: '100%'
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px', flexWrap: 'wrap', gap: '4px' }}>
               <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
                 {info.nome}
               </label>
@@ -116,35 +121,37 @@ export default function TotvsIntegrationModal({
               {info.uso}
             </div>
 
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="totvs-modal-input-row">
               <input
                 type="text"
                 className="input-pf"
-                style={{ flex: 1, fontSize: '12px' }}
+                style={{ flex: 1, minWidth: 0, fontSize: '12px' }}
                 placeholder={info.configurado ? 'Webhook configurado (cole nova URL para alterar)' : 'URL do Webhook / API REST'}
                 value={inputs[chave] || ''}
                 onChange={(e) => setInputs({ ...inputs, [chave]: e.target.value })}
               />
-              <button
-                onClick={() => handleSave(chave)}
-                className="btn-pf btn-pf-primary btn-pf-sm"
-                style={{ padding: '0 12px', fontSize: '12px' }}
-                title="Salvar integração"
-              >
-                <Check size={12} />
-                <span>Salvar</span>
-              </button>
-              {info.configurado && (
+              <div className="totvs-modal-input-actions">
                 <button
-                  onClick={() => handleDelete(chave)}
-                  className="btn-pf btn-pf-danger btn-pf-sm"
-                  style={{ padding: '0 8px' }}
-                  title="Desconectar sistema"
+                  onClick={() => handleSave(chave)}
+                  className="btn-pf btn-pf-primary btn-pf-sm"
+                  style={{ padding: '0 12px', fontSize: '12px' }}
+                  title="Salvar integração"
                 >
-                  <Trash2 size={12} />
-                  <span>Remover</span>
+                  <Check size={12} />
+                  <span>Salvar</span>
                 </button>
-              )}
+                {info.configurado && (
+                  <button
+                    onClick={() => handleDelete(chave)}
+                    className="btn-pf btn-pf-danger btn-pf-sm"
+                    style={{ padding: '0 8px', fontSize: '12px' }}
+                    title="Desconectar sistema"
+                  >
+                    <Trash2 size={12} />
+                    <span>Remover</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}

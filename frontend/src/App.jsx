@@ -5,7 +5,24 @@ import Sidebar from './components/Sidebar';
 import MeetingHistoryTable from './components/MeetingHistoryTable';
 import TotvsIntegrationModal from './components/TotvsIntegrationModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
-import { BarChart3, RotateCcw, Radio, Search, Sun, Moon, Building2, ArrowRight, X } from 'lucide-react';
+import {
+  BarChart3,
+  RotateCcw,
+  Radio,
+  Search,
+  Sun,
+  Moon,
+  Building2,
+  ArrowRight,
+  X,
+  FileText,
+  Clock,
+  Layers,
+  SlidersHorizontal,
+  RefreshCw,
+  Menu,
+  Settings
+} from 'lucide-react';
 
 // Code Splitting / Lazy Loading de páginas pesadas
 const QuarterlyAnalyticsPage = lazy(() => import('./components/QuarterlyAnalyticsPage'));
@@ -34,6 +51,10 @@ export default function MeetingApp() {
     setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
   };
 
+  // Estado da Sidebar Retrátil & Menu Mobile
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   // States for Meeting List / History
   const [meetings, setMeetings] = useState([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
@@ -46,6 +67,7 @@ export default function MeetingApp() {
   const [clientFilter, setClientFilter] = useState('');
   const [segmentFilter, setSegmentFilter] = useState('');
   const [onlyUnanalyzed, setOnlyUnanalyzed] = useState(false);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   // Prevenção de race condition entre requisições assíncronas concorrentes
   const latestRequestIdRef = useRef(0);
@@ -1952,8 +1974,58 @@ export default function MeetingApp() {
     );
   }
 
+  const pendingAnalysisCount = meetings.filter(m => !m.RESUMO_IA || m.STATUS_ANALISE === 'aguardando_analise').length;
+  const totalMeetingsCount = pagination.total || meetings.length;
+
   return (
     <div className="dashboard-layout">
+      {/* Barra Superior Mobile (Visível apenas em telas <= 900px) */}
+      <div className="mobile-top-bar">
+        <button
+          onClick={() => setIsMobileMenuOpen(prev => !prev)}
+          className="mobile-hamburger-btn"
+          title={isMobileMenuOpen ? "Fechar menu de navegação" : "Abrir menu de navegação"}
+          aria-label="Menu de navegação"
+        >
+          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+
+        <div className="mobile-brand">
+          <div className="mobile-logo-badge">PF</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span className="mobile-brand-title">Proton Flow</span>
+            <span className="mobile-brand-sub">TOTVS</span>
+          </div>
+        </div>
+
+        <div className="mobile-top-actions">
+          <button
+            onClick={toggleTheme}
+            className="mobile-action-btn"
+            title={theme === 'dark' ? 'Alternar para Modo Claro' : 'Alternar para Modo Escuro'}
+            aria-label="Alternar tema"
+          >
+            {theme === 'dark' ? <Sun size={17} color="#f59e0b" /> : <Moon size={17} color="#0284c7" />}
+          </button>
+          <button
+            onClick={() => setShowConfigModal(true)}
+            className="mobile-action-btn"
+            title="Configurações TOTVS"
+            aria-label="Configurações TOTVS"
+          >
+            <Settings size={17} />
+          </button>
+        </div>
+      </div>
+
+      {/* Overlay Backdrop do Menu Mobile */}
+      {isMobileMenuOpen && (
+        <div
+          className="mobile-sidebar-backdrop active"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar Navigation */}
       <Sidebar
         currentView={currentView}
@@ -1961,177 +2033,250 @@ export default function MeetingApp() {
         onOpenConfig={() => setShowConfigModal(true)}
         theme={theme}
         onToggleTheme={toggleTheme}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed(prev => !prev)}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
 
       {/* Main View Area */}
       {currentView === 'dashboard' && (
         <main className="dashboard-main">
+          {/* Header Executivo Superior */}
           <header className="dashboard-header">
             <div>
-              <h2 style={{ fontSize: '1.8rem', margin: '0 0 4px 0' }}>Histórico de Reuniões</h2>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-                Consulte, filtre e gerencie as atas das reuniões corporativas da TOTVS.
+              <h2 className="dashboard-header-title">
+                Histórico de Reuniões
+              </h2>
+              <p className="dashboard-header-desc">
+                Consulte, filtre e gerencie as atas das reuniões corporativas da TOTVS com inteligência artificial.
               </p>
+            </div>
+            <div className="dashboard-header-actions">
+              <button
+                onClick={() => loadMeetings(pagination.page, pagination.page_size)}
+                className="btn-pf btn-pf-secondary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', fontSize: '12.5px', padding: '0 12px' }}
+                title="Recarregar lista de reuniões do banco de dados"
+                disabled={loadingMeetings}
+              >
+                <RefreshCw size={14} className={loadingMeetings ? 'spin' : ''} />
+                <span>Atualizar</span>
+              </button>
+              <button
+                onClick={() => setCurrentView('meeting')}
+                className="btn-pf btn-pf-primary"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  height: '36px',
+                  fontSize: '12.5px',
+                  padding: '0 14px',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                  boxShadow: '0 3px 10px rgba(2, 132, 199, 0.25)'
+                }}
+                title="Iniciar gravação ou registro de reunião ao vivo"
+              >
+                <Radio size={14} />
+                <span>Reunião Ao Vivo</span>
+              </button>
             </div>
           </header>
 
-          <div style={{ padding: '2rem 3rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {/* Executive Banner: Área Empresarial em Destaque */}
-            <div className="executive-banner">
-              <div style={{ position: 'relative', zIndex: 1, maxWidth: '640px' }}>
-                <div style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  background: 'rgba(2, 132, 199, 0.2)',
-                  border: '1px solid rgba(2, 132, 199, 0.4)',
-                  color: '#38bdf8',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  marginBottom: '8px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.04em'
-                }}>
-                  <Building2 size={13} />
-                  <span>Gestão Estratégica TOTVS</span>
+          <div className="dashboard-content-area">
+            {/* Grid Executivo de 4 KPIs */}
+            <div className="executive-kpi-grid">
+              {/* Card 1: Total de Reuniões */}
+              <div className="executive-kpi-card">
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Reuniões Registradas</span>
+                  <div className="executive-kpi-icon-box" title="Volume total de reuniões no banco">
+                    <FileText size={18} />
+                  </div>
                 </div>
-                <h3 style={{ fontSize: '1.35rem', fontWeight: 700, margin: '0 0 6px 0', letterSpacing: '-0.02em', color: 'var(--text-main)' }}>
-                  Área Empresarial & Inteligência Corporativa
-                </h3>
-                <p style={{ margin: '0 0 14px 0', fontSize: '13px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                  Acesse o painel executivo consolidado: matriz de risco por cliente, análise trimestral de gargalos, comparativo de SLA e exportação de relatórios gerenciais para diretoria.
-                </p>
-                <div className="executive-banner-kpis">
-                  <div className="executive-banner-kpi">
-                    <span className="executive-banner-kpi-val">{pagination.total || meetings.length}</span>
-                    <span className="executive-banner-kpi-label">Reuniões Registradas</span>
-                  </div>
-                  <div className="executive-banner-kpi">
-                    <span className="executive-banner-kpi-val" style={{ color: '#22c55e' }}>100%</span>
-                    <span className="executive-banner-kpi-label">IA Local Llama 3</span>
-                  </div>
-                  <div className="executive-banner-kpi">
-                    <span className="executive-banner-kpi-val" style={{ color: '#38bdf8' }}>TOTVS Hub</span>
-                    <span className="executive-banner-kpi-label">Fluig • Protheus • RM</span>
-                  </div>
+                <div className="executive-kpi-value">{totalMeetingsCount}</div>
+                <div className="executive-kpi-meta">
+                  <span>Atas catalogadas no banco</span>
                 </div>
               </div>
 
-              <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '8px', justifyContent: 'center' }}>
-                <button
-                  className="btn-pf btn-pf-executive"
-                  onClick={() => setCurrentView('analytics')}
-                  style={{
-                    padding: '10px 18px',
-                    fontSize: '13.5px',
-                    fontWeight: 700,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.25)'
-                  }}
+              {/* Card 2: Pendentes de Análise */}
+              <div className="executive-kpi-card">
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Aguardando Análise</span>
+                  <div
+                    className="executive-kpi-icon-box"
+                    style={{ background: pendingAnalysisCount > 0 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(2, 132, 199, 0.1)', color: pendingAnalysisCount > 0 ? '#d97706' : 'var(--primary-color)' }}
+                    title="Reuniões que ainda não foram analisadas pela IA"
+                  >
+                    <Clock size={18} />
+                  </div>
+                </div>
+                <div
+                  className="executive-kpi-value"
+                  style={{ color: pendingAnalysisCount > 0 ? '#d97706' : 'var(--text-main)' }}
                 >
-                  <Building2 size={17} />
-                  <span>Acessar Área Empresarial</span>
-                  <ArrowRight size={16} />
-                </button>
+                  {pendingAnalysisCount}
+                </div>
+                <div className="executive-kpi-meta">
+                  <span>{pendingAnalysisCount > 0 ? 'Requerem síntese e revisão' : 'Todas atas analisadas'}</span>
+                </div>
+              </div>
+
+              {/* Card 3: Ecossistema TOTVS */}
+              <div className="executive-kpi-card">
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Ecossistema TOTVS</span>
+                  <div className="executive-kpi-icon-box" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }} title="Conectores de integração">
+                    <Layers size={18} />
+                  </div>
+                </div>
+                <div className="executive-kpi-value" style={{ color: '#10b981', fontSize: '1.5rem', marginTop: '4px' }}>
+                  100% Ativo
+                </div>
+                <div className="executive-kpi-meta">
+                  <span>Fluig • Protheus • RM</span>
+                </div>
+              </div>
+
+              {/* Card 4: Gestão Estratégica (Área Empresarial) */}
+              <div className="executive-kpi-card highlight-enterprise">
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label" style={{ color: 'var(--primary-color)' }}>Gestão Estratégica</span>
+                  <div className="executive-kpi-icon-box" style={{ background: 'rgba(2, 132, 199, 0.18)', color: 'var(--primary-color)' }}>
+                    <Building2 size={18} />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <button
+                    onClick={() => setCurrentView('analytics')}
+                    className="executive-kpi-action-btn"
+                    title="Acessar Área Empresarial: Matriz de Gargalos, SLA e Analytics"
+                  >
+                    <span>Área Empresarial</span>
+                    <ArrowRight size={14} />
+                  </button>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Matriz de Gargalos & KPIs</span>
+                </div>
               </div>
             </div>
 
-            {/* Quick Filters */}
-            <form className="filter-bar-pf" onSubmit={handleApplyFilter}>
-              <div style={{ flex: 1, minWidth: '220px', position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <Search size={14} style={{ position: 'absolute', left: '12px', color: '#64748b', pointerEvents: 'none' }} />
-                <input
-                  type="text"
-                  className="input-pf"
-                  placeholder="Buscar por transcrição, tema ou facilitador..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    width: '100%',
-                    paddingLeft: '34px',
-                    paddingRight: searchQuery ? '30px' : '12px'
-                  }}
-                />
-                {searchQuery && (
+            {/* Barra de Comando e Filtros Unificada */}
+            <form className="executive-command-bar" onSubmit={handleApplyFilter}>
+              <div className="command-bar-row">
+                {/* Campo Principal de Busca com Ícone e Espaçamento Corrigidos */}
+                <div className="command-search-wrapper">
+                  <Search size={16} className="command-search-icon" />
+                  <input
+                    type="text"
+                    className="command-search-input"
+                    placeholder="Buscar por assunto, cliente, participante ou transcrição..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={handleClearSearch}
+                      className="command-search-clear"
+                      title="Limpar busca"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Bloco de Ações e Filtros Rápidos */}
+                <div className="command-bar-actions">
+                  {/* Chip Rápido: Somente sem análise */}
                   <button
                     type="button"
-                    onClick={handleClearSearch}
-                    style={{
-                      position: 'absolute',
-                      right: '8px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-muted)',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                    title="Limpar busca"
+                    className={`quick-pill-filter ${onlyUnanalyzed ? 'active' : ''}`}
+                    onClick={() => handleToggleUnanalyzed(!onlyUnanalyzed)}
+                    title="Filtrar reuniões pendentes de análise"
                   >
-                    <X size={13} />
+                    <Clock size={13} />
+                    <span>Sem Análise</span>
+                    {pendingAnalysisCount > 0 && (
+                      <span className="quick-pill-badge">
+                        {pendingAnalysisCount}
+                      </span>
+                    )}
                   </button>
-                )}
+
+                  {/* Botão de Toggle para Gaveta de Filtros Secundários */}
+                  <button
+                    type="button"
+                    className={`filter-drawer-toggle-btn ${(clientFilter || segmentFilter) ? 'has-filters' : ''}`}
+                    onClick={() => setShowAdvancedFilters(prev => !prev)}
+                    title="Filtros avançados (Cliente e Segmento)"
+                  >
+                    <SlidersHorizontal size={14} />
+                    <span>Filtros</span>
+                    {(clientFilter || segmentFilter) && (
+                      <span className="filter-active-count-badge">
+                        {(clientFilter ? 1 : 0) + (segmentFilter ? 1 : 0)}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Botão Aplicar Busca */}
+                  <button
+                    type="submit"
+                    className="btn-pf btn-pf-primary btn-pf-sm command-submit-btn"
+                    title="Aplicar filtros de busca"
+                  >
+                    <Search size={14} />
+                    <span>Filtrar</span>
+                  </button>
+
+                  {/* Botão Limpar Filtros Ativos */}
+                  {(searchQuery || clientFilter || segmentFilter || onlyUnanalyzed) && (
+                    <button
+                      type="button"
+                      onClick={handleClearFilters}
+                      className="btn-clear-all-filters"
+                      title="Limpar todos os filtros ativos"
+                    >
+                      <X size={13} />
+                      <span>Limpar</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className="filter-label-pf">Cliente:</span>
-                <input
-                  type="text"
-                  className="input-pf"
-                  placeholder="Ex: T27261"
-                  value={clientFilter}
-                  onChange={(e) => setClientFilter(e.target.value)}
-                  style={{ width: '110px' }}
-                />
-              </div>
+              {/* Gaveta de Filtros Secundários (Cliente e Segmento) */}
+              {showAdvancedFilters && (
+                <div className="executive-filter-drawer">
+                  <div className="drawer-field-group">
+                    <span className="drawer-field-label">Cliente:</span>
+                    <input
+                      type="text"
+                      className="drawer-input"
+                      placeholder="Ex: T27261"
+                      value={clientFilter}
+                      onChange={(e) => setClientFilter(e.target.value)}
+                      style={{ width: '130px' }}
+                    />
+                  </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span className="filter-label-pf">Segmento:</span>
-                <input
-                  type="text"
-                  className="input-pf"
-                  placeholder="Ex: Serviços"
-                  value={segmentFilter}
-                  onChange={(e) => setSegmentFilter(e.target.value)}
-                  style={{ width: '120px' }}
-                />
-              </div>
+                  <div className="drawer-field-group">
+                    <span className="drawer-field-label">Segmento:</span>
+                    <input
+                      type="text"
+                      className="drawer-input"
+                      placeholder="Ex: Serviços, Manufatura..."
+                      value={segmentFilter}
+                      onChange={(e) => setSegmentFilter(e.target.value)}
+                      style={{ width: '180px' }}
+                    />
+                  </div>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: 'var(--text-main)', cursor: 'pointer', userSelect: 'none' }}>
-                <input
-                  type="checkbox"
-                  className="checkbox-pf"
-                  checked={onlyUnanalyzed}
-                  onChange={(e) => handleToggleUnanalyzed(e.target.checked)}
-                />
-                <span>Somente sem análise</span>
-              </label>
-
-              <button
-                type="submit"
-                className="btn-pf btn-pf-primary btn-pf-sm"
-                title="Aplicar filtros de busca"
-              >
-                <Search size={13} />
-                <span>Filtrar</span>
-              </button>
-
-              {(searchQuery || clientFilter || segmentFilter || onlyUnanalyzed) && (
-                <button
-                  type="button"
-                  onClick={handleClearFilters}
-                  className="btn-pf btn-pf-secondary btn-pf-sm"
-                  title="Limpar todos os filtros"
-                >
-                  <X size={13} />
-                  <span>Limpar</span>
-                </button>
+                  <span className="drawer-hint-text">
+                    Pressione <strong>Enter</strong> ou clique em <strong>Filtrar</strong> para aplicar
+                  </span>
+                </div>
               )}
             </form>
 

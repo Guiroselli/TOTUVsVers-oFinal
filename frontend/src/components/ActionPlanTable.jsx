@@ -65,8 +65,8 @@ export default function ActionPlanTable({
       </div>
 
       {tarefas && tarefas.length > 0 ? (
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+          <table style={{ width: '100%', minWidth: '680px', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>
               <tr style={{
                 position: 'sticky',

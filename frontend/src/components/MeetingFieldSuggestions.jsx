@@ -77,7 +77,7 @@ export default function MeetingFieldSuggestions({
         </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 260px), 1fr))', gap: '1rem' }}>
         {Object.entries(suggestions).map(([fieldName, sug]) => {
           const isEditing = editingField === fieldName;
           const status = sug.review_status || 'pending';

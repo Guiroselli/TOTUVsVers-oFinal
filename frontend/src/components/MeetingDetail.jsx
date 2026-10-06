@@ -47,7 +47,7 @@ export default function MeetingDetail({
   const sugestoesCount = Object.keys(suggestions).length;
 
   return (
-    <div style={{ background: 'var(--panel-bg)', borderRadius: '8px', padding: '1.25rem', border: '1px solid var(--border-color)' }}>
+    <div className="meeting-detail-root">
       {resumo ? (
         <>
           {/* Barra de Sub-Navegação por Abas Executivas (Progressive Disclosure) */}
@@ -58,7 +58,7 @@ export default function MeetingDetail({
               title="Atas de Reunião e Síntese Executiva"
             >
               <FileText size={13} />
-              <span>Atas & Resumo</span>
+              <span>Atas & Síntese</span>
             </button>
 
             {tarefasCount > 0 && (
@@ -110,46 +110,84 @@ export default function MeetingDetail({
             )}
           </div>
 
-          {/* ABA 1: ATAS & RESUMO */}
+          {/* ABA 1: ATAS & SÍNTESE */}
           {activeSubTab === 'resumo' && (
-            <div>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-                gap: '12px',
-                marginBottom: resumo.perfil_cliente ? '1.25rem' : '0'
-              }}>
-                {/* Card 1: Ata Executiva */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {/* Síntese Executiva & Decisões Principais */}
+              {(resumo.tema || _execSummary.situacao || _execSummary.decisoes?.length > 0 || resumo.decisoes?.length > 0) && (
                 <div style={{
-                  background: 'var(--panel-bg)',
+                  background: 'var(--panel-hover)',
                   border: '1px solid var(--border-color)',
+                  borderLeft: '4px solid var(--primary-color)',
                   borderRadius: '8px',
-                  padding: '14px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  boxShadow: 'var(--glass-shadow)'
+                  padding: '12px 14px'
                 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap size={14} color="var(--primary-color)" />
+                      <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>
+                        Síntese da Reunião
+                      </strong>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <span>{tarefasCount} tarefas</span>
+                      <span>•</span>
+                      <span>{doresCount} dores</span>
+                      <span>•</span>
+                      <span>{totvsCount} TOTVS</span>
+                    </div>
+                  </div>
+
+                  {resumo.tema && (
+                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>
+                      {resumo.tema}
+                    </div>
+                  )}
+
+                  {(_execSummary.situacao || resumo.resumo_executivo?.situacao) && (
+                    <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.45' }}>
+                      {_execSummary.situacao || resumo.resumo_executivo?.situacao}
+                    </p>
+                  )}
+
+                  {((_execSummary.decisoes && _execSummary.decisoes.length > 0) || (resumo.decisoes && resumo.decisoes.length > 0)) && (
+                    <div style={{ marginTop: '8px', borderTop: '1px solid var(--border-color)', paddingTop: '6px' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--primary-color)', textTransform: 'uppercase' }}>
+                        Decisões Tomadas:
+                      </span>
+                      <ul style={{ margin: '4px 0 0 16px', padding: 0, fontSize: '12px', color: 'var(--text-main)' }}>
+                        {(_execSummary.decisoes || resumo.decisoes || []).slice(0, 3).map((d, dIdx) => (
+                          <li key={dIdx} style={{ marginBottom: '2px' }}>{d}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Grid dos Cards de Ata */}
+              <div className="meeting-atas-grid" style={{ marginBottom: resumo.perfil_cliente ? '4px' : '0' }}>
+                {/* Card 1: Ata Executiva */}
+                <div className="meeting-ata-card">
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '4px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <FileText size={16} color="var(--primary-color)" />
-                        <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>Ata Executiva de Reunião</strong>
+                        <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>Ata Executiva</strong>
                       </div>
-                      <span style={{ fontSize: '10.5px', background: 'rgba(2, 132, 199, 0.12)', color: 'var(--primary-light)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, border: '1px solid var(--primary-color)' }}>
+                      <span style={{ fontSize: '10px', background: 'rgba(2, 132, 199, 0.12)', color: 'var(--primary-light)', padding: '2px 7px', borderRadius: '4px', fontWeight: 600, border: '1px solid var(--primary-color)' }}>
                         1-2 Páginas • Liderança
                       </span>
                     </div>
                     <p style={{ margin: 0, fontSize: '11.5px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
-                      Síntese de alto nível para tomada de decisão: situação, impacto, riscos, decisões e próximos passos.
+                      Síntese de alto nível para tomada de decisão: situação, impacto, riscos e decisões.
                     </p>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="meeting-ata-actions">
                     <button
                       onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'executive', 'pdf')}
-                      className="btn-pf btn-pf-primary btn-pf-sm"
+                      className="btn-pf btn-pf-primary btn-pf-sm btn-ata-open"
                       title="Abrir Ata Executiva no visualizador integrado"
                     >
                       <Eye size={13} />
@@ -157,7 +195,7 @@ export default function MeetingDetail({
                     </button>
                     <button
                       onClick={() => onDownloadExecutivePdf && onDownloadExecutivePdf(meeting)}
-                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      className="btn-pf btn-pf-secondary btn-pf-sm btn-ata-dl"
                       title="Baixar arquivo PDF da Ata Executiva"
                     >
                       <FileDown size={13} />
@@ -165,7 +203,7 @@ export default function MeetingDetail({
                     </button>
                     <button
                       onClick={() => onDownloadExecutiveDocx && onDownloadExecutiveDocx(meeting)}
-                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      className="btn-pf btn-pf-secondary btn-pf-sm btn-ata-dl"
                       title="Baixar arquivo Word (DOCX) da Ata Executiva"
                     >
                       <Download size={13} />
@@ -175,19 +213,9 @@ export default function MeetingDetail({
                 </div>
 
                 {/* Card 2: Ata Operacional */}
-                <div style={{
-                  background: 'var(--panel-bg)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '8px',
-                  padding: '14px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  gap: '12px',
-                  boxShadow: 'var(--glass-shadow)'
-                }}>
+                <div className="meeting-ata-card">
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', flexWrap: 'wrap', gap: '4px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <FileSpreadsheet size={16} color="var(--text-secondary)" />
                         <strong style={{ fontSize: '13px', color: 'var(--text-main)' }}>Ata Operacional Detalhada</strong>
@@ -201,10 +229,10 @@ export default function MeetingDetail({
                     </p>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="meeting-ata-actions">
                     <button
                       onClick={() => onOpenDocumentViewer && onOpenDocumentViewer(meeting, 'operational', 'pdf')}
-                      className="btn-pf btn-pf-executive btn-pf-sm"
+                      className="btn-pf btn-pf-executive btn-pf-sm btn-ata-open"
                       title="Abrir Ata Operacional no visualizador integrado"
                     >
                       <Eye size={13} />
@@ -212,7 +240,7 @@ export default function MeetingDetail({
                     </button>
                     <button
                       onClick={() => onDownloadOperationalPdf && onDownloadOperationalPdf(meeting)}
-                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      className="btn-pf btn-pf-secondary btn-pf-sm btn-ata-dl"
                       title="Baixar arquivo PDF da Ata Operacional"
                     >
                       <FileDown size={13} />
@@ -220,7 +248,7 @@ export default function MeetingDetail({
                     </button>
                     <button
                       onClick={() => onDownloadOperationalDocx && onDownloadOperationalDocx(meeting)}
-                      className="btn-pf btn-pf-secondary btn-pf-sm"
+                      className="btn-pf btn-pf-secondary btn-pf-sm btn-ata-dl"
                       title="Baixar arquivo Word (DOCX) da Ata Operacional"
                     >
                       <Download size={13} />

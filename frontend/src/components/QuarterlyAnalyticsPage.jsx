@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import api from '../api/client';
 import EvidenceModal from './EvidenceModal';
-import { BarChart3, Activity, Scale, RefreshCw, Filter, ChevronDown, ChevronUp, Search, User, Sliders, ArrowRightLeft, Check, X, AlertTriangle, AlertCircle, Calendar, Info, Layers } from 'lucide-react';
+import { BarChart3, Activity, Scale, RefreshCw, Filter, ChevronDown, ChevronUp, Search, User, Sliders, ArrowRightLeft, ArrowRight, Check, X, AlertTriangle, AlertCircle, Calendar, Info, Layers } from 'lucide-react';
 
 export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
   // Navigation Tabs
@@ -202,34 +202,51 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
   };
 
   return (
-    <div style={{ padding: '1.5rem', maxWidth: '1400px', margin: '0 auto' }}>
+    <div className="analytics-page-container">
       {/* Header Principal com Resumo Executivo e Sincronização */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <div className="analytics-header-row">
         <div>
-          <h2 style={{ margin: '0 0 4px 0', color: 'var(--primary-color)', fontSize: '22px' }}>
-            Visão Executiva & Analytics
-          </h2>
-          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '13px' }}>
-            {analyticsData?.period?.label || 'Visão Anual e Trimestral'} — Inteligência Corporativa TOTVS
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+            <h2 className="analytics-title-text" style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.45rem', fontFamily: "'Outfit', sans-serif", fontWeight: 700 }}>
+              Visão Executiva & Analytics
+            </h2>
+            <span style={{
+              fontSize: '10.5px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              padding: '2px 8px',
+              borderRadius: '6px',
+              background: 'rgba(2, 132, 199, 0.12)',
+              color: 'var(--primary-color)',
+              border: '1px solid rgba(2, 132, 199, 0.25)'
+            }}>
+              Inteligência TOTVS
+            </span>
+          </div>
+          <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            {analyticsData?.period?.label || 'Visão Anual e Trimestral'} — Painel Estratégico, Matriz de Gargalos e SLA
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           <button
             onClick={handleGenerateSummary}
-            className="btn-pf btn-pf-executive btn-pf-sm"
+            className="btn-pf btn-pf-primary btn-pf-sm"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', height: '38px', padding: '0 16px', fontWeight: 600 }}
+            title="Consolidar resumo executivo estratégico com IA"
           >
-            <BarChart3 size={14} />
+            <BarChart3 size={15} />
             <span>Gerar Resumo Executivo</span>
           </button>
         </div>
       </div>
 
       {/* Navegação entre Abas Principais */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '8px', flexWrap: 'wrap' }}>
+      <div className="analytics-tabs-row">
         <button
           onClick={() => setActiveTab('visao_geral')}
-          className={`btn-pf btn-pf-sm ${activeTab === 'visao_geral' ? 'btn-pf-primary' : 'btn-pf-secondary'}`}
+          className={`analytics-tab-btn ${activeTab === 'visao_geral' ? 'active' : ''}`}
         >
           <Activity size={14} />
           <span>Visão Geral & Indicadores</span>
@@ -240,7 +257,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             setActiveTab('comparacao');
             if (!compareData) loadComparison();
           }}
-          className={`btn-pf btn-pf-sm ${activeTab === 'comparacao' ? 'btn-pf-primary' : 'btn-pf-secondary'}`}
+          className={`analytics-tab-btn ${activeTab === 'comparacao' ? 'active' : ''}`}
         >
           <Scale size={14} />
           <span>Comparação entre Períodos</span>
@@ -251,10 +268,10 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             setActiveTab('ciclo_vida_dores');
             if (!lifecycleData) loadPainsLifecycle();
           }}
-          className={`btn-pf btn-pf-sm ${activeTab === 'ciclo_vida_dores' ? 'btn-pf-primary' : 'btn-pf-secondary'}`}
+          className={`analytics-tab-btn ${activeTab === 'ciclo_vida_dores' ? 'active' : ''}`}
         >
           <RefreshCw size={14} />
-          <span>Resolução e Ciclo de Vida das Dores</span>
+          <span>Resolução e Ciclo de Vida</span>
         </button>
       </div>
 
@@ -305,7 +322,6 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
               placeholder="Ex: T27261"
               value={clientFilter}
               onChange={(e) => setClientFilter(e.target.value)}
-              style={{ width: '140px' }}
             />
           </div>
 
@@ -402,7 +418,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                 )}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '10px' }}>
+              <div className="managerial-alerts-grid">
                 {(showAllAlerts ? analyticsData.managerial_alerts : analyticsData.managerial_alerts.slice(0, 4)).map((al) => {
                   const isCrit = al.severity === 'critical' || al.severity === 'danger';
                   const isWarn = al.severity === 'warning';
@@ -471,64 +487,101 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             </div>
           )}
 
-          {/* Nível 1: Cards de Métricas Principais */}
+          {/* Nível 1: Cards de Métricas Principais (Executive KPI Cards) */}
           {analyticsData && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Total de Reuniões</div>
-                <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text-main)', marginTop: '4px' }}>
+            <div className="executive-kpi-grid" style={{ marginBottom: '1.5rem' }}>
+              {/* Card 1: Reuniões */}
+              <div className="executive-kpi-card">
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Total de Reuniões</span>
+                  <div className="executive-kpi-icon-box kpi-blue" title="Volume total de reuniões registradas">
+                    <Calendar size={18} />
+                  </div>
+                </div>
+                <div className="executive-kpi-value">
                   {analyticsData.meetings?.total || 0}
                 </div>
-                <div style={{ fontSize: '10px', color: 'var(--success)', marginTop: '2px' }}>
-                  {analyticsData.meetings?.analyzed || 0} analisadas com IA
+                <div className="executive-kpi-meta">
+                  <span style={{ color: 'var(--success)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <Check size={13} strokeWidth={2.5} />
+                    {analyticsData.meetings?.analyzed || 0} analisadas com IA
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>Base Consolidada</span>
                 </div>
               </div>
 
-              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ações em Aberto</div>
-                <div
-                  onClick={() => handleOpenDrilldown('open_actions', 'open')}
-                  style={{ fontSize: '24px', fontWeight: 700, color: 'var(--primary-color)', marginTop: '4px', cursor: 'pointer' }}
-                  title="Clique para ver ações abertas"
-                >
+              {/* Card 2: Ações em Aberto */}
+              <div
+                className="executive-kpi-card clickable"
+                onClick={() => handleOpenDrilldown('open_actions', 'open')}
+                title="Clique para detalhar ações e tarefas em aberto"
+              >
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Ações em Aberto</span>
+                  <div className="executive-kpi-icon-box kpi-amber" title="Ações pendentes de execução">
+                    <Activity size={18} />
+                  </div>
+                </div>
+                <div className="executive-kpi-value" style={{ color: 'var(--primary-color)' }}>
                   {analyticsData.open_actions || 0}
                 </div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  de {analyticsData.total_actions || 0} ações registradas
+                <div className="executive-kpi-meta">
+                  <span>de {analyticsData.total_actions || 0} mapeadas</span>
+                  <span className="kpi-click-hint" style={{ color: 'var(--primary-color)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    Ver detalhes <ArrowRight size={12} />
+                  </span>
                 </div>
               </div>
 
-              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ações Vencidas (SLA)</div>
-                <div
-                  onClick={() => handleOpenDrilldown('overdue_actions', 'overdue')}
-                  style={{ fontSize: '24px', fontWeight: 700, color: 'var(--danger)', marginTop: '4px', cursor: 'pointer' }}
-                  title="Clique para ver ações vencidas"
-                >
+              {/* Card 3: Ações Vencidas (SLA) */}
+              <div
+                className="executive-kpi-card clickable"
+                onClick={() => handleOpenDrilldown('overdue_actions', 'overdue')}
+                title="Clique para detalhar ações fora do prazo (SLA)"
+              >
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Ações Vencidas (SLA)</span>
+                  <div className="executive-kpi-icon-box kpi-rose" title="Tarefas com prazo estourado">
+                    <AlertCircle size={18} />
+                  </div>
+                </div>
+                <div className="executive-kpi-value" style={{ color: 'var(--danger)' }}>
                   {analyticsData.overdue_actions || 0}
                 </div>
-                <div style={{ fontSize: '10px', color: 'var(--danger)', marginTop: '2px' }}>
-                  exigem regularização
+                <div className="executive-kpi-meta">
+                  <span style={{ color: 'var(--danger)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertTriangle size={12} />
+                    Exigem regularização
+                  </span>
+                  <span className="kpi-click-hint" style={{ color: 'var(--danger)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                    Ver detalhes <ArrowRight size={12} />
+                  </span>
                 </div>
               </div>
 
-              <div style={{ background: 'var(--panel-bg)', padding: '1.1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Qualidade Geral</div>
-                  <button
-                    onClick={() => setIsDataQualityModalOpen(true)}
-                    className="btn-pf btn-pf-outline-blue btn-pf-sm"
-                    style={{ fontSize: '11px', padding: '2px 8px' }}
-                  >
-                    <Sliders size={11} />
-                    <span>Detalhar</span>
-                  </button>
+              {/* Card 4: Qualidade dos Dados */}
+              <div className="executive-kpi-card">
+                <div className="executive-kpi-header">
+                  <span className="executive-kpi-label">Qualidade Geral</span>
+                  <div className="executive-kpi-icon-box kpi-emerald" title="Índice composto de qualidade de dados e IA">
+                    <Sliders size={18} />
+                  </div>
                 </div>
-                <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--success)', marginTop: '4px' }}>
+                <div className="executive-kpi-value" style={{ color: 'var(--success)' }}>
                   {analyticsData.data_quality?.score_qualidade || 100}%
                 </div>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Dados: {analyticsData.data_quality?.score_qualidade_dados || 100}% (50%) | IA: {analyticsData.data_quality?.score_qualidade_ia || 100}% (50%)
+                <div className="executive-kpi-meta">
+                  <span style={{ fontSize: '0.75rem' }}>
+                    Dados {analyticsData.data_quality?.score_qualidade_dados || 100}% • IA {analyticsData.data_quality?.score_qualidade_ia || 100}%
+                  </span>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setIsDataQualityModalOpen(true); }}
+                    className="btn-pf btn-pf-outline-blue btn-pf-sm"
+                    style={{ fontSize: '11px', padding: '2px 8px', height: '24px', whiteSpace: 'nowrap' }}
+                    title="Ver metodologia e composição do índice de qualidade"
+                  >
+                    Detalhar
+                  </button>
                 </div>
               </div>
             </div>
@@ -536,38 +589,38 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
 
           {/* Nível 3: Gráficos de Temas e Dores */}
           {analyticsData && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(450px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+            <div className="analytics-charts-grid">
               {/* Gráfico de Temas Mais Discutidos */}
-              <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 1rem 0', fontSize: '14px', color: 'var(--text-main)' }}>
+              <div className="analytics-chart-card">
+                <h4 className="analytics-chart-title">
                   Temas Mais Discutidos nas Reuniões
                 </h4>
-                <div style={{ height: '240px' }}>
+                <div style={{ height: '260px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={(analyticsData.top_topics || []).slice(0, 6)} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                       <XAxis type="number" stroke="var(--text-muted)" fontSize={11} />
                       <YAxis type="category" dataKey="label" stroke="var(--text-muted)" fontSize={11} width={130} />
-                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px' }} />
-                      <Bar dataKey="reunioes_com_tema" name="Reuniões" fill="var(--primary-color)" radius={[0, 4, 4, 0]} />
+                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px', borderRadius: '8px' }} />
+                      <Bar dataKey="reunioes_com_tema" name="Reuniões" fill="var(--primary-color)" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
               {/* Gráfico de Dores Recorrentes */}
-              <div style={{ background: 'var(--panel-bg)', padding: '1.2rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ margin: '0 0 1rem 0', fontSize: '14px', color: 'var(--text-main)' }}>
+              <div className="analytics-chart-card">
+                <h4 className="analytics-chart-title">
                   Dores Críticas e Gargalos Operacionais
                 </h4>
-                <div style={{ height: '240px' }}>
+                <div style={{ height: '260px' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={(analyticsData.recurring_pains || []).slice(0, 6)} layout="vertical" margin={{ left: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                       <XAxis type="number" stroke="var(--text-muted)" fontSize={11} />
                       <YAxis type="category" dataKey="label" stroke="var(--text-muted)" fontSize={11} width={130} />
-                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px' }} />
-                      <Bar dataKey="reunioes_afetadas" name="Reuniões Afetadas" fill="var(--warning)" radius={[0, 4, 4, 0]} />
+                      <Tooltip contentStyle={{ background: 'var(--panel-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '12px', borderRadius: '8px' }} />
+                      <Bar dataKey="reunioes_afetadas" name="Reuniões Afetadas" fill="#f59e0b" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -1156,7 +1209,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '1.5rem' }}>
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px', borderLeft: '3px solid var(--primary-color)' }}>
+              <div style={{ background: 'var(--panel-hover)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: '8px', borderLeft: '3px solid var(--primary-color)' }}>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   Qualidade dos Dados ({analyticsData.data_quality.calculation_breakdown?.peso_dados_geral || 50}%)
                 </div>
@@ -1164,7 +1217,7 @@ export default function QuarterlyAnalyticsPage({ onOpenMeeting }) {
                   {analyticsData.data_quality.score_qualidade_dados || 100}%
                 </div>
               </div>
-              <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '6px', borderLeft: '3px solid var(--success)' }}>
+              <div style={{ background: 'var(--panel-hover)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: '8px', borderLeft: '3px solid var(--success)' }}>
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                   Qualidade da IA ({analyticsData.data_quality.calculation_breakdown?.peso_ia_geral || 50}%)
                 </div>
