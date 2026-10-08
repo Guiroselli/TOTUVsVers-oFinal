@@ -522,3 +522,62 @@ def test_24_reject_missing_date_and_departamento():
     res5 = client.post("/api/live/meetings", json={**valid_base, "departamento": "   "})
     assert res5.status_code == 422
 
+
+def test_25_transcript_endpoint_session_id_contract():
+    """25: Atualizar transcrição passando session_id e verificar persistência."""
+    payload = make_payload("Reunião Contrato Transcrição", departamento="TI", horario="11:00", data="2026-10-08", iniciar_agora=True)
+    res = client.post("/api/live/meetings", json=payload)
+    assert res.status_code == 200
+    mid = res.json()["meeting"]["ID_MEETING"]
+
+    # Atualiza com session_id
+    tr_res = client.post(
+        f"/api/live/meetings/{mid}/transcript",
+        json={"transcript": "Primeiro bloco transcrito.", "is_incremental": False, "session_id": "test_sess_001"}
+    )
+    assert tr_res.status_code == 200
+    assert tr_res.json()["meeting"]["ANON_TRANSCRICAO"] == "Primeiro bloco transcrito."
+    assert tr_res.json()["meeting"].get("LAST_TRANSCRIPT_SESSION_ID") == "test_sess_001"
+
+    # GET confirma persistência
+    get_res = client.get(f"/api/live/meetings/{mid}")
+    assert get_res.status_code == 200
+    assert get_res.json()["ANON_TRANSCRICAO"] == "Primeiro bloco transcrito."
+
+
+def test_26_transcript_sync_status_and_incremental():
+    """26: Transcrição incremental não sobrescreve bloco anterior e mantém isolamento."""
+    p1 = make_payload("Reunião A Transcrição", departamento="RH", horario="11:30", data="2026-10-08", iniciar_agora=True)
+    p2 = make_payload("Reunião B Transcrição", departamento="TI", horario="11:30", data="2026-10-08", iniciar_agora=True)
+
+    r1 = client.post("/api/live/meetings", json=p1).json()["meeting"]
+    r2 = client.post("/api/live/meetings", json=p2).json()["meeting"]
+
+    m1_id = r1["ID_MEETING"]
+    m2_id = r2["ID_MEETING"]
+
+    # Bloco 1 para reunião A
+    client.post(
+        f"/api/live/meetings/{m1_id}/transcript",
+        json={"transcript": "Início da reunião do RH.", "is_incremental": False, "session_id": "sess_rh"}
+    )
+
+    # Bloco incremental para reunião A
+    client.post(
+        f"/api/live/meetings/{m1_id}/transcript",
+        json={"transcript": "Continuação da pauta do RH.", "is_incremental": True, "session_id": "sess_rh"}
+    )
+
+    # Reunião B recebe sua própria fala
+    client.post(
+        f"/api/live/meetings/{m2_id}/transcript",
+        json={"transcript": "Discussão de infraestrutura TI.", "is_incremental": False, "session_id": "sess_ti"}
+    )
+
+    # Verifica isolamento absoluto
+    get_m1 = client.get(f"/api/live/meetings/{m1_id}").json()
+    get_m2 = client.get(f"/api/live/meetings/{m2_id}").json()
+
+    assert get_m1["ANON_TRANSCRICAO"] == "Início da reunião do RH. Continuação da pauta do RH."
+    assert get_m2["ANON_TRANSCRICAO"] == "Discussão de infraestrutura TI."
+

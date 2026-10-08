@@ -501,6 +501,9 @@ class MeetingRepository:
             else:
                 target_item["ANON_TRANSCRICAO"] = clean_text
 
+            if session_id:
+                target_item["LAST_TRANSCRIPT_SESSION_ID"] = str(session_id)
+
             _atomic_write_json(self.dataset_path, data)
             return _normalize_live_fields(_apply_pdf_state(target_item))
 

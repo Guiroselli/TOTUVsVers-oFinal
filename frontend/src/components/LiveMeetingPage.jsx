@@ -21,7 +21,9 @@ import {
   CheckCircle2,
   Sparkles,
   Info,
-  Volume2
+  Volume2,
+  Activity,
+  Check
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -71,13 +73,26 @@ export default function LiveMeetingPage({
   const [mediaPermission, setMediaPermission] = useState('idle'); // 'idle' | 'requesting' | 'granted' | 'denied' | 'unavailable'
   const [audioStatus, setAudioStatus] = useState('unavailable'); // 'unavailable' | 'requesting' | 'active' | 'muted' | 'denied' | 'ended'
   const [videoStatus, setVideoStatus] = useState('unavailable'); // 'unavailable' | 'requesting' | 'active' | 'disabled' | 'denied' | 'ended'
-  const [transcriptionStatus, setTranscriptionStatus] = useState('idle'); // 'unsupported' | 'idle' | 'starting' | 'listening' | 'paused' | 'error'
+  // PARTE 2: Estados explícitos e observáveis de transcrição
+  const [transcriptionStatus, setTranscriptionStatus] = useState('idle'); // 'idle' | 'requesting_permission' | 'media_ready' | 'recognition_starting' | 'listening' | 'receiving_speech' | 'paused' | 'unsupported' | 'permission_denied' | 'no_audio_input' | 'service_unavailable' | 'error'
   const [mediaError, setMediaError] = useState('');
   const [cameraNotice, setCameraNotice] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
   const [videoDevices, setVideoDevices] = useState([]);
+  const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'saving' | 'synced' | 'unsaved'
+  const [showTechnicalDiagnostics, setShowTechnicalDiagnostics] = useState(false);
+  const [diagnosticInfo, setDiagnosticInfo] = useState({
+    engine: 'Não inicializado',
+    lang: 'pt-BR',
+    lastEvent: 'none',
+    lastEventTime: null,
+    resultsCount: 0,
+    finalCharsCount: 0,
+    lastError: null,
+    activeSessionId: null
+  });
 
-  // Refs de mídia e timers com isolamento estrito
+  // Refs de mídia, transcrição e timers com isolamento estrito
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const scrollRef = useRef(null);
@@ -92,6 +107,13 @@ export default function LiveMeetingPage({
   const audioContextRef = useRef(null);
   const analyserRef = useRef(null);
   const animFrameRef = useRef(null);
+  const startingTimeoutRef = useRef(null);
+  const sessionTokenRef = useRef(null);
+  const consecutiveErrorsRef = useRef(0);
+  const audioLevelRef = useRef(0);
+  const transcriptionStatusRef = useRef('idle');
+  const currentMeetingRef = useRef(null);
+  const isPausedRef = useRef(false);
 
   // 1. Carrega lista de dispositivos de áudio e vídeo disponíveis
   const loadAudioDevices = useCallback(async () => {
@@ -244,17 +266,84 @@ export default function LiveMeetingPage({
     };
   }, [isRecording]);
 
-  // Salvamento automático da transcrição no backend (a cada 4s se houver alterações)
+  // Helpers visuais de diagnóstico de transcrição (PARTE 2 & 11)
+  const getTranscriptionStatusInfo = useCallback((status) => {
+    switch (status) {
+      case 'idle':
+        return { label: 'Aguardando Início', color: '#94a3b8', dotColor: '#94a3b8' };
+      case 'requesting_permission':
+        return { label: 'Solicitando Permissão...', color: '#eab308', dotColor: '#eab308' };
+      case 'media_ready':
+        return { label: 'Microfone Pronto', color: '#38bdf8', dotColor: '#38bdf8' };
+      case 'recognition_starting':
+        return { label: 'Iniciando Reconhecimento...', color: '#eab308', dotColor: '#eab308' };
+      case 'listening':
+        return { label: 'Ouvindo', color: '#10b981', dotColor: '#10b981' };
+      case 'receiving_speech':
+        return { label: 'Transcrevendo...', color: '#10b981', dotColor: '#10b981' };
+      case 'paused':
+        return { label: 'Pausada', color: '#eab308', dotColor: '#eab308' };
+      case 'unsupported':
+        return { label: 'Não Suportada', color: '#f87171', dotColor: '#ef4444' };
+      case 'permission_denied':
+        return { label: 'Permissão Negada', color: '#f87171', dotColor: '#ef4444' };
+      case 'no_audio_input':
+        return { label: 'Sem Sinal de Áudio', color: '#f87171', dotColor: '#ef4444' };
+      case 'service_unavailable':
+        return { label: 'Serviço Indisponível', color: '#f87171', dotColor: '#ef4444' };
+      case 'error':
+        return { label: 'Erro', color: '#f87171', dotColor: '#ef4444' };
+      default:
+        return { label: 'Desconhecido', color: '#94a3b8', dotColor: '#94a3b8' };
+    }
+  }, []);
+
+  const getEmptyMessage = useCallback((status, title) => {
+    switch (status) {
+      case 'idle':
+        return `Reunião "${title}" pronta. Clique em Iniciar para começar a captação.`;
+      case 'requesting_permission':
+        return 'Solicitando acesso ao microfone... Por favor, autorize no navegador.';
+      case 'media_ready':
+        return 'Microfone configurado com sucesso. Pronto para iniciar o reconhecimento de voz.';
+      case 'recognition_starting':
+        return 'Conectando ao serviço de reconhecimento de fala do navegador...';
+      case 'listening':
+        return 'Microfone ativo e captando sinal. Fale algo para que o texto apareça em tempo real.';
+      case 'receiving_speech':
+        return 'Transcrevendo áudio em tempo real...';
+      case 'paused':
+        return 'Gravação pausada temporariamente. Clique em Retomar para continuar.';
+      case 'unsupported':
+        return 'Este navegador não oferece reconhecimento de voz nativo (Web Speech API). Recomendamos o Google Chrome ou Microsoft Edge.';
+      case 'permission_denied':
+        return 'Permissão de microfone negada. Conceda permissão nas configurações do navegador e clique em Reconectar.';
+      case 'no_audio_input':
+        return 'Nenhum sinal detectado no microfone selecionado. Verifique se o microfone não está silenciado no sistema operacional.';
+      case 'service_unavailable':
+        return 'O serviço de reconhecimento de voz do navegador está indisponível ou desconectado. Clique em Ativar Transcrição.';
+      case 'error':
+        return 'Ocorreu um erro no reconhecimento de voz. Clique no botão de reconexão abaixo.';
+      default:
+        return `Aguardando áudio da reunião "${title}"...`;
+    }
+  }, []);
+
+  // Salvamento automático da transcrição no backend (com debounce e sessão)
   const saveTranscriptToBackend = useCallback(
-    async (text) => {
-      if (!activeMeetingId || !text) return;
+    async (text, isIncremental = false) => {
+      const targetId = activeMeetingIdRef.current;
+      if (!targetId || !text) return;
+      setSyncStatus('saving');
       try {
-        await api.updateLiveTranscript(activeMeetingId, text, false);
+        await api.updateLiveTranscript(targetId, text, isIncremental, sessionTokenRef.current);
+        setSyncStatus('synced');
       } catch (e) {
         console.warn('Erro ao salvar transcrição incremental no backend:', e);
+        setSyncStatus('unsaved');
       }
     },
-    [activeMeetingId]
+    []
   );
 
   // VU Meter & Analyser de Áudio para diagnóstico visual de captação
@@ -289,6 +378,7 @@ export default function LiveMeetingPage({
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const updateVolume = () => {
         if (!analyserRef.current || !isRecordingRef.current) {
+          audioLevelRef.current = 0;
           setAudioLevel(0);
           return;
         }
@@ -300,6 +390,7 @@ export default function LiveMeetingPage({
         const avg = sum / dataArray.length;
         // Normaliza valor de 0 a 100
         const level = Math.min(100, Math.round((avg / 128) * 100));
+        audioLevelRef.current = level;
         setAudioLevel(level);
         animFrameRef.current = requestAnimationFrame(updateVolume);
       };
@@ -309,11 +400,350 @@ export default function LiveMeetingPage({
     }
   }, []);
 
+  // Inicia o motor Web Speech API de forma resiliente e instrumentada (PARTES 3, 4, 5, 6, 7)
+  const startSpeechRecognition = useCallback((_isManualGesture = false) => {
+    const targetMeetingId = activeMeetingIdRef.current;
+    if (!targetMeetingId) return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      console.warn('[SpeechRecognition] API não disponível no navegador.');
+      setTranscriptionStatus('unsupported');
+      transcriptionStatusRef.current = 'unsupported';
+      setError('Este navegador não oferece suporte nativo ao reconhecimento de voz (Web Speech API). Recomendamos o Google Chrome ou Microsoft Edge.');
+      setDiagnosticInfo((prev) => ({ ...prev, engine: 'Indisponível', lastError: 'API não suportada' }));
+      return;
+    }
+
+    // Limpa instância anterior de forma imediata com abort() para liberar recurso
+    if (recognitionRef.current) {
+      try {
+        const old = recognitionRef.current;
+        old.onstart = null;
+        old.onaudiostart = null;
+        old.onsoundstart = null;
+        old.onspeechstart = null;
+        old.onresult = null;
+        old.onspeechend = null;
+        old.onsoundend = null;
+        old.onaudioend = null;
+        old.onerror = null;
+        old.onend = null;
+        old.abort();
+      } catch (err) {
+        console.warn('Erro ao abortar reconhecimento prévio:', err);
+      }
+      recognitionRef.current = null;
+    }
+
+    if (startingTimeoutRef.current) {
+      clearTimeout(startingTimeoutRef.current);
+      startingTimeoutRef.current = null;
+    }
+
+    const sessionToken = `${targetMeetingId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    sessionTokenRef.current = sessionToken;
+    isPausedRef.current = false;
+    consecutiveErrorsRef.current = 0;
+
+    const engineName = window.SpeechRecognition ? 'SpeechRecognition' : 'webkitSpeechRecognition';
+    console.log(`[SpeechRecognition] Inicializando motor (${engineName}) para reunião ${targetMeetingId.slice(0, 8)}...`);
+
+    setDiagnosticInfo((prev) => ({
+      ...prev,
+      engine: engineName,
+      lang: 'pt-BR',
+      activeSessionId: sessionToken,
+      lastEvent: 'iniciando_instancia',
+      lastEventTime: new Date().toLocaleTimeString('pt-BR')
+    }));
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'pt-BR';
+    recognition.maxAlternatives = 1;
+
+    // PARTE 2: Timeout de segurança (4.5s) para evitar estado "Iniciando..." travado
+    startingTimeoutRef.current = setTimeout(() => {
+      if (sessionTokenRef.current === sessionToken && transcriptionStatusRef.current === 'recognition_starting') {
+        console.warn('[SpeechRecognition] Timeout de 4.5s aguardando evento onstart');
+        if (audioLevelRef.current > 4) {
+          setTranscriptionStatus('service_unavailable');
+          transcriptionStatusRef.current = 'service_unavailable';
+          setError('O serviço de reconhecimento de voz demorou para responder. Clique em "Ativar Transcrição" para reconectar com ação do usuário.');
+        } else {
+          setTranscriptionStatus('no_audio_input');
+          transcriptionStatusRef.current = 'no_audio_input';
+          setError('Nenhum sinal detectado no microfone selecionado. Verifique as permissões de áudio.');
+        }
+      }
+    }, 4500);
+
+    // PARTE 5: Instrumentação de todos os eventos
+    recognition.onstart = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      if (startingTimeoutRef.current) {
+        clearTimeout(startingTimeoutRef.current);
+        startingTimeoutRef.current = null;
+      }
+      console.log('[SpeechRecognition] Evento onstart disparado com sucesso');
+      isListeningRef.current = true;
+      setTranscriptionStatus('listening');
+      transcriptionStatusRef.current = 'listening';
+      setError('');
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onstart',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR'),
+        lastError: null
+      }));
+    };
+
+    recognition.onaudiostart = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      if (startingTimeoutRef.current) {
+        clearTimeout(startingTimeoutRef.current);
+        startingTimeoutRef.current = null;
+      }
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onaudiostart',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+    };
+
+    recognition.onsoundstart = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onsoundstart',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+    };
+
+    recognition.onspeechstart = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      setTranscriptionStatus('receiving_speech');
+      transcriptionStatusRef.current = 'receiving_speech';
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onspeechstart',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+    };
+
+    // PARTE 6: Processamento de onresult sem duplicatas e com isolamento estrito
+    recognition.onresult = (event) => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+
+      let interim = '';
+      let newlyFinal = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        const res = event.results[i];
+        if (res.isFinal) {
+          newlyFinal += res[0].transcript + ' ';
+        } else {
+          interim += res[0].transcript;
+        }
+      }
+
+      if (newlyFinal) {
+        const cleanFinal = newlyFinal.trim();
+        if (cleanFinal) {
+          finalTranscriptRef.current = (finalTranscriptRef.current ? finalTranscriptRef.current.trim() + ' ' : '') + cleanFinal + ' ';
+        }
+      }
+
+      const fullDisplay = (finalTranscriptRef.current + interim).trim();
+      setTranscription(fullDisplay);
+      setTranscriptionStatus('receiving_speech');
+      transcriptionStatusRef.current = 'receiving_speech';
+
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onresult',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR'),
+        resultsCount: prev.resultsCount + 1,
+        finalCharsCount: finalTranscriptRef.current.length
+      }));
+
+      // Auto-save com debounce de 3s
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(async () => {
+        if (activeMeetingIdRef.current === targetMeetingId && fullDisplay) {
+          saveTranscriptToBackend(fullDisplay, false);
+        }
+      }, 3000);
+    };
+
+    recognition.onspeechend = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      if (transcriptionStatusRef.current === 'receiving_speech') {
+        setTranscriptionStatus('listening');
+        transcriptionStatusRef.current = 'listening';
+      }
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onspeechend',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+    };
+
+    recognition.onsoundend = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onsoundend',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+    };
+
+    recognition.onaudioend = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onaudioend',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+    };
+
+    // Classificação de erros com mensagens explícitas em português
+    recognition.onerror = (event) => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      console.warn('[SpeechRecognition] Evento onerror:', event.error);
+      if (startingTimeoutRef.current) {
+        clearTimeout(startingTimeoutRef.current);
+        startingTimeoutRef.current = null;
+      }
+
+      const errType = event.error;
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onerror',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR'),
+        lastError: errType
+      }));
+
+      if (errType === 'not-allowed') {
+        consecutiveErrorsRef.current += 10;
+        setTranscriptionStatus('permission_denied');
+        transcriptionStatusRef.current = 'permission_denied';
+        setError('O navegador não autorizou o reconhecimento de voz. Autorize o microfone nas permissões.');
+      } else if (errType === 'service-not-allowed') {
+        consecutiveErrorsRef.current += 10;
+        setTranscriptionStatus('service_unavailable');
+        transcriptionStatusRef.current = 'service_unavailable';
+        setError('O serviço de reconhecimento de voz foi bloqueado ou não é suportado pelo navegador.');
+      } else if (errType === 'audio-capture') {
+        consecutiveErrorsRef.current += 2;
+        setTranscriptionStatus('no_audio_input');
+        transcriptionStatusRef.current = 'no_audio_input';
+        setError('Nenhum microfone capturado. Confirme o dispositivo de áudio selecionado.');
+      } else if (errType === 'network') {
+        consecutiveErrorsRef.current += 1;
+        setTranscriptionStatus('service_unavailable');
+        transcriptionStatusRef.current = 'service_unavailable';
+        setError('Erro de conexão com o serviço de voz. Verifique sua conexão com a internet.');
+      } else if (errType === 'language-not-supported') {
+        consecutiveErrorsRef.current += 10;
+        setTranscriptionStatus('unsupported');
+        transcriptionStatusRef.current = 'unsupported';
+        setError('O idioma pt-BR não é suportado nativamente pelo navegador.');
+      } else if (errType === 'no-speech') {
+        // Silêncio momentâneo normal do usuário
+        if (transcriptionStatusRef.current !== 'listening' && transcriptionStatusRef.current !== 'receiving_speech') {
+          setTranscriptionStatus('listening');
+          transcriptionStatusRef.current = 'listening';
+        }
+      } else if (errType === 'aborted') {
+        isListeningRef.current = false;
+      } else {
+        consecutiveErrorsRef.current += 1;
+        setTranscriptionStatus('error');
+        transcriptionStatusRef.current = 'error';
+        setError(`Erro no reconhecimento de voz (${errType}).`);
+      }
+    };
+
+    // PARTE 7: Reinício controlado com backoff após onend
+    recognition.onend = () => {
+      if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
+      isListeningRef.current = false;
+      if (startingTimeoutRef.current) {
+        clearTimeout(startingTimeoutRef.current);
+        startingTimeoutRef.current = null;
+      }
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastEvent: 'onend',
+        lastEventTime: new Date().toLocaleTimeString('pt-BR')
+      }));
+
+      const shouldRestart = isRecordingRef.current &&
+        currentMeetingRef.current?.STATUS_MEETING === 'ao_vivo' &&
+        !isPausedRef.current &&
+        consecutiveErrorsRef.current < 4;
+
+      if (shouldRestart) {
+        setTimeout(() => {
+          if (sessionTokenRef.current === sessionToken && isRecordingRef.current) {
+            try {
+              if (recognitionRef.current) {
+                recognitionRef.current.start();
+              }
+            } catch (e) {
+              console.warn('[SpeechRecognition] Erro ao reiniciar:', e);
+            }
+          }
+        }, 350);
+      } else {
+        if (consecutiveErrorsRef.current >= 4) {
+          setTranscriptionStatus('service_unavailable');
+          transcriptionStatusRef.current = 'service_unavailable';
+          setError('O serviço de reconhecimento de voz falhou repetidamente. Clique em "Ativar Transcrição" para tentar novamente.');
+        } else if (isPausedRef.current) {
+          setTranscriptionStatus('paused');
+          transcriptionStatusRef.current = 'paused';
+        } else {
+          setTranscriptionStatus('idle');
+          transcriptionStatusRef.current = 'idle';
+        }
+      }
+    };
+
+    recognitionRef.current = recognition;
+
+    try {
+      setTranscriptionStatus('recognition_starting');
+      transcriptionStatusRef.current = 'recognition_starting';
+      recognition.start();
+    } catch (e) {
+      console.warn('[SpeechRecognition] Exceção ao chamar recognition.start():', e);
+      if (startingTimeoutRef.current) clearTimeout(startingTimeoutRef.current);
+      if (e.name === 'InvalidStateError') {
+        // Já estava iniciado
+        setTranscriptionStatus('listening');
+        transcriptionStatusRef.current = 'listening';
+      } else {
+        setTranscriptionStatus('error');
+        transcriptionStatusRef.current = 'error';
+        setError(`Falha ao iniciar reconhecimento: ${e.message || e.name}`);
+      }
+    }
+  }, [saveTranscriptToBackend]);
+
   // Parar mídia e reconhecimento de forma estrita e segura
   const stopMediaAndRecognition = useCallback(() => {
     isRecordingRef.current = false;
     isListeningRef.current = false;
     isRequestingMediaRef.current = false;
+    isPausedRef.current = true;
+
+    if (startingTimeoutRef.current) {
+      clearTimeout(startingTimeoutRef.current);
+      startingTimeoutRef.current = null;
+    }
 
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
@@ -325,11 +755,23 @@ export default function LiveMeetingPage({
       } catch {}
       audioContextRef.current = null;
     }
+    audioLevelRef.current = 0;
     setAudioLevel(0);
 
     if (recognitionRef.current) {
       try {
-        recognitionRef.current.stop();
+        const old = recognitionRef.current;
+        old.onstart = null;
+        old.onaudiostart = null;
+        old.onsoundstart = null;
+        old.onspeechstart = null;
+        old.onresult = null;
+        old.onspeechend = null;
+        old.onsoundend = null;
+        old.onaudioend = null;
+        old.onerror = null;
+        old.onend = null;
+        old.abort();
       } catch {}
       recognitionRef.current = null;
     }
@@ -351,6 +793,7 @@ export default function LiveMeetingPage({
     setAudioStatus('unavailable');
     setVideoStatus('unavailable');
     setTranscriptionStatus('idle');
+    transcriptionStatusRef.current = 'idle';
   }, []);
 
   // Iniciar reconhecimento de voz e mídia na sala ativa com resiliência total
@@ -358,6 +801,7 @@ export default function LiveMeetingPage({
     if (!activeMeetingId) return;
     if (isRequestingMediaRef.current) return;
     isRequestingMediaRef.current = true;
+    isPausedRef.current = false;
 
     setMediaPermission('requesting');
     setAudioStatus('requesting');
@@ -373,6 +817,7 @@ export default function LiveMeetingPage({
       setAudioStatus('unavailable');
       setVideoStatus('unavailable');
       setTranscriptionStatus('unsupported');
+      transcriptionStatusRef.current = 'unsupported';
       isRequestingMediaRef.current = false;
       return;
     }
@@ -402,7 +847,7 @@ export default function LiveMeetingPage({
           video: false
         });
         cameraAcquired = false;
-        setCameraNotice('Câmera não detectada ou ocupada por outro aplicativo. A reunião prosseguirá apenas com áudio.');
+        setCameraNotice('Câmera não detectada ou ocupada por outro aplicativo. A reunião prosseguirá normalmente apenas com áudio.');
       } catch (audioErr) {
         console.error('Falha crítica ao obter áudio:', audioErr);
         isRequestingMediaRef.current = false;
@@ -486,115 +931,9 @@ export default function LiveMeetingPage({
     // Inicia VU meter
     setupAudioAnalyser(stream);
 
-    // Inicia SpeechRecognition para transcrição em tempo real
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {}
-        recognitionRef.current = null;
-      }
-
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'pt-BR';
-      recognition.maxAlternatives = 1;
-
-      const currentMeetingTargetId = activeMeetingId;
-
-      recognition.onstart = () => {
-        if (activeMeetingIdRef.current === currentMeetingTargetId) {
-          isListeningRef.current = true;
-          setTranscriptionStatus('listening');
-        }
-      };
-
-      recognition.onresult = (event) => {
-        // Isolamento estrito por reunião ativa
-        if (activeMeetingIdRef.current !== currentMeetingTargetId) return;
-
-        let interim = '';
-        let newlyFinal = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const res = event.results[i];
-          if (res.isFinal) {
-            newlyFinal += res[0].transcript + ' ';
-          } else {
-            interim += res[0].transcript;
-          }
-        }
-
-        if (newlyFinal) {
-          finalTranscriptRef.current = (finalTranscriptRef.current ? finalTranscriptRef.current.trim() + ' ' : '') + newlyFinal.trim() + ' ';
-        }
-
-        const fullDisplay = (finalTranscriptRef.current + interim).trim();
-        setTranscription(fullDisplay);
-
-        // Auto-save com debounce
-        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = setTimeout(() => {
-          if (activeMeetingIdRef.current === currentMeetingTargetId && fullDisplay) {
-            saveTranscriptToBackend(fullDisplay);
-          }
-        }, 3000);
-      };
-
-      recognition.onerror = (event) => {
-        if (activeMeetingIdRef.current !== currentMeetingTargetId) return;
-        console.warn('SpeechRecognition erro:', event.error);
-        if (event.error === 'not-allowed') {
-          setTranscriptionStatus('error');
-          setError('Acesso ao reconhecimento de voz negado pelo navegador.');
-          isListeningRef.current = false;
-        } else if (event.error === 'audio-capture') {
-          setTranscriptionStatus('error');
-          setError('Nenhum microfone capturado pelo reconhecimento de voz.');
-          isListeningRef.current = false;
-        } else if (event.error === 'network') {
-          setTranscriptionStatus('error');
-          setError('Erro de conexão do serviço de reconhecimento de voz.');
-        } else if (event.error === 'no-speech') {
-          // Silêncio momentâneo normal
-          setTranscriptionStatus('listening');
-        } else if (event.error === 'aborted') {
-          isListeningRef.current = false;
-        }
-      };
-
-      recognition.onend = () => {
-        isListeningRef.current = false;
-        // Reinicia continuamente enquanto a reunião estiver ativa e for a mesma
-        if (
-          isRecordingRef.current &&
-          activeMeetingIdRef.current === currentMeetingTargetId &&
-          recognitionRef.current
-        ) {
-          try {
-            recognition.start();
-          } catch (e) {
-            console.warn('Erro ao reiniciar SpeechRecognition:', e);
-          }
-        } else {
-          setTranscriptionStatus('paused');
-        }
-      };
-
-      recognitionRef.current = recognition;
-      try {
-        setTranscriptionStatus('starting');
-        recognition.start();
-      } catch (e) {
-        console.warn('Erro ao iniciar reconhecimento:', e);
-        setTranscriptionStatus('error');
-      }
-    } else {
-      setTranscriptionStatus('unsupported');
-      setError('Seu navegador não possui suporte nativo ao Web Speech API (recomendado Google Chrome ou Microsoft Edge). A reunião continua normalmente.');
-    }
-  }, [activeMeetingId, selectedAudioDeviceId, saveTranscriptToBackend, setupAudioAnalyser]);
+    // Inicia reconhecimento de voz integrado
+    startSpeechRecognition(false);
+  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition]);
 
   // Controles de áudio e vídeo
   const toggleMute = () => {
@@ -650,21 +989,25 @@ export default function LiveMeetingPage({
 
   // Gerencia ciclo de vida da reunião (iniciar automaticamente se ao vivo ao entrar na sala)
   useEffect(() => {
+    currentMeetingRef.current = currentMeeting;
     if (currentMeeting) {
       if (currentMeeting.STATUS_MEETING === 'ao_vivo') {
         setIsRecording(true);
         isRecordingRef.current = true;
+        isPausedRef.current = false;
         if (!streamRef.current) {
           startMediaAndRecognition();
         }
       } else {
         setIsRecording(false);
         isRecordingRef.current = false;
+        isPausedRef.current = currentMeeting.STATUS_MEETING === 'pausada';
         stopMediaAndRecognition();
       }
     } else {
       setIsRecording(false);
       isRecordingRef.current = false;
+      isPausedRef.current = false;
       stopMediaAndRecognition();
     }
   }, [activeMeetingId, currentMeeting, startMediaAndRecognition, stopMediaAndRecognition]);
@@ -1055,31 +1398,96 @@ export default function LiveMeetingPage({
             {/* Transcrição Status */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ color: 'var(--text-muted)' }}>Transcrição:</span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontWeight: 600,
-                color: transcriptionStatus === 'listening' ? '#38bdf8' : transcriptionStatus === 'starting' ? '#eab308' : transcriptionStatus === 'error' ? '#ef4444' : '#94a3b8'
-              }}>
-                {transcriptionStatus === 'listening' ? 'Ouvindo...' : transcriptionStatus === 'starting' ? 'Iniciando...' : transcriptionStatus === 'error' ? 'Erro' : transcriptionStatus === 'unsupported' ? 'Não Suportada' : 'Pausada'}
-              </span>
+              {(() => {
+                const sInfo = getTranscriptionStatusInfo(transcriptionStatus);
+                return (
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontWeight: 600,
+                    color: sInfo.color
+                  }}>
+                    <span style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: sInfo.dotColor
+                    }}></span>
+                    {sInfo.label}
+                  </span>
+                );
+              })()}
             </div>
           </div>
 
-          {/* Ação de Reconexão se necessário */}
-          {(mediaPermission === 'denied' || mediaPermission === 'unavailable' || audioStatus === 'denied' || audioStatus === 'unavailable' || mediaError) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Botão de ação direta para iniciar reconhecimento caso ainda não esteja ouvindo */}
+            {transcriptionStatus !== 'listening' && transcriptionStatus !== 'receiving_speech' && (
+              <button
+                type="button"
+                onClick={() => startSpeechRecognition(true)}
+                className="btn btn-primary"
+                style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
+                title="Iniciar reconhecimento de voz com gesto explícito de clique"
+              >
+                <Play size={10} fill="#ffffff" />
+                Ativar Transcrição
+              </button>
+            )}
+
+            {/* Alternar painel de diagnóstico técnico */}
             <button
               type="button"
-              onClick={startMediaAndRecognition}
+              onClick={() => setShowTechnicalDiagnostics(!showTechnicalDiagnostics)}
               className="btn btn-secondary"
-              style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+              style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              title="Exibir métricas e diagnóstico técnico da transcrição"
             >
-              <RefreshCw size={11} />
-              Tentar Reconectar Mídia
+              <Activity size={11} />
+              Diagnóstico
             </button>
-          )}
+
+            {/* Ação de Reconexão se necessário */}
+            {(mediaPermission === 'denied' || mediaPermission === 'unavailable' || audioStatus === 'denied' || audioStatus === 'unavailable' || mediaError) && (
+              <button
+                type="button"
+                onClick={startMediaAndRecognition}
+                className="btn btn-secondary"
+                style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+              >
+                <RefreshCw size={11} />
+                Tentar Reconectar Mídia
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Card Expansível de Diagnóstico Técnico (PARTE 5) */}
+        {showTechnicalDiagnostics && (
+          <div style={{
+            padding: '10px 20px',
+            background: '#0d1321',
+            borderBottom: '1px solid var(--border-color)',
+            fontSize: '11px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '16px',
+            alignItems: 'center',
+            color: 'var(--text-muted)'
+          }}>
+            <div><strong>Engine:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.engine}</span></div>
+            <div><strong>Idioma:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.lang}</span></div>
+            <div><strong>Sessão:</strong> <code style={{ color: '#38bdf8', fontSize: '10px' }}>{diagnosticInfo.activeSessionId ? diagnosticInfo.activeSessionId.slice(0, 16) + '...' : 'none'}</code></div>
+            <div><strong>Último Evento:</strong> <span style={{ color: '#10b981', fontWeight: 600 }}>{diagnosticInfo.lastEvent}</span> ({diagnosticInfo.lastEventTime || 'nenhum'})</div>
+            <div><strong>Resultados:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.resultsCount}</span></div>
+            <div><strong>Caracteres:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.finalCharsCount}</span></div>
+            <div><strong>Sinal Microfone:</strong> <span style={{ color: audioLevel > 5 ? '#10b981' : '#f87171' }}>{audioLevel}% ({audioLevel > 5 ? 'Sinal detectado' : 'Sem sinal'})</span></div>
+            {diagnosticInfo.lastError && (
+              <div style={{ color: '#f87171' }}><strong>Último Erro:</strong> {diagnosticInfo.lastError}</div>
+            )}
+          </div>
+        )}
 
         {/* Notificação de Câmera Desconectada / Ocupada (Fallback Gracioso) */}
         {cameraNotice && (
@@ -1316,23 +1724,50 @@ export default function LiveMeetingPage({
                 <Sparkles size={18} color="var(--primary-color)" />
                 <h2 style={{ fontSize: '1rem', margin: 0 }}>Proton Flow AI</h2>
               </div>
-              {isRecording && (
-                <span
-                  className="badge"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: 'rgba(239, 68, 68, 0.2)',
-                    color: 'var(--danger)',
-                    borderColor: 'var(--danger)',
-                    fontSize: '11px'
-                  }}
-                >
-                  <span className="typing-indicator" style={{ background: 'var(--danger)', margin: 0, marginRight: 4 }}></span>
-                  Gravando {currentMeeting.DEPARTAMENTO}
-                </span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {(() => {
+                  const statusInfo = getTranscriptionStatusInfo(transcriptionStatus);
+                  return (
+                    <span
+                      className="badge"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderColor: statusInfo.dotColor,
+                        color: statusInfo.color,
+                        fontSize: '11px',
+                        padding: '2px 8px'
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: '6px',
+                          height: '6px',
+                          borderRadius: '50%',
+                          background: statusInfo.dotColor,
+                          boxShadow: isRecording ? `0 0 6px ${statusInfo.dotColor}` : 'none'
+                        }}
+                      />
+                      {statusInfo.label}
+                    </span>
+                  );
+                })()}
+                {isRecording && currentMeeting.DEPARTAMENTO && (
+                  <span
+                    className="badge"
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      color: 'var(--danger)',
+                      borderColor: 'rgba(239, 68, 68, 0.4)',
+                      fontSize: '10.5px'
+                    }}
+                  >
+                    {currentMeeting.DEPARTAMENTO}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1348,9 +1783,19 @@ export default function LiveMeetingPage({
                   <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
                     Transcrição em Tempo Real ({transcription.length} caracteres)
                   </h3>
-                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
-                    Auto-salvo por ID
-                  </span>
+                  <div style={{ fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {syncStatus === 'saving' && (
+                      <span style={{ color: '#eab308' }}>Salvando...</span>
+                    )}
+                    {syncStatus === 'synced' && (
+                      <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        <Check size={11} /> Salvo no servidor
+                      </span>
+                    )}
+                    {syncStatus === 'unsaved' && (
+                      <span style={{ color: '#f87171' }}>Rascunho local</span>
+                    )}
+                  </div>
                 </div>
 
                 <div
@@ -1369,12 +1814,56 @@ export default function LiveMeetingPage({
                     lineHeight: '1.6'
                   }}
                 >
-                  {transcription || (
-                    <span style={{ color: 'var(--text-muted)' }}>
-                      Aguardando áudio da reunião {currentMeeting.TITULO_REUNIAO}... Fale algo para iniciar a transcrição.
-                    </span>
+                  {transcription.trim() ? (
+                    <div>
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{transcription}</span>
+                      {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
+                    </div>
+                  ) : (
+                    <div style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: '100%',
+                      minHeight: '180px',
+                      textAlign: 'center',
+                      gap: '12px',
+                      padding: '20px',
+                      color: 'var(--text-muted)'
+                    }}>
+                      <div style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: getTranscriptionStatusInfo(transcriptionStatus).dotColor,
+                        boxShadow: `0 0 8px ${getTranscriptionStatusInfo(transcriptionStatus).dotColor}`
+                      }} />
+                      <p style={{ margin: 0, fontSize: '12px', maxWidth: '300px', lineHeight: 1.5 }}>
+                        {getEmptyMessage(transcriptionStatus, currentMeeting.TITULO_REUNIAO)}
+                      </p>
+                      {transcriptionStatus !== 'listening' && transcriptionStatus !== 'receiving_speech' && (
+                        <button
+                          type="button"
+                          onClick={() => startSpeechRecognition(true)}
+                          className="btn btn-secondary"
+                          style={{
+                            fontSize: '11px',
+                            padding: '6px 12px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            borderColor: 'var(--primary-color)',
+                            color: 'var(--primary-color)',
+                            marginTop: '4px'
+                          }}
+                        >
+                          <Play size={12} />
+                          Ativar Reconhecimento de Voz
+                        </button>
+                      )}
+                    </div>
                   )}
-                  {isRecording && <span className="typing-indicator"></span>}
                 </div>
               </div>
 
