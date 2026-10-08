@@ -17,7 +17,7 @@ logger = logging.getLogger("stt_service")
 
 # Variáveis de ambiente configuráveis (PARTE 2)
 STT_PROVIDER = os.getenv("STT_PROVIDER", "faster_whisper")
-STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "small")
+STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "base")
 STT_DEVICE = os.getenv("STT_DEVICE", "cpu")
 STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")
 STT_LANGUAGE = os.getenv("STT_LANGUAGE", "pt")
@@ -70,6 +70,8 @@ class STTService:
         self._dependency_checked = False
         self._dependency_available = False
         self._load_error = None
+        self._session_headers: Dict[str, bytes] = {}
+        self._session_headers_lock = threading.Lock()
 
     def check_dependency(self) -> bool:
         """Verifica se a biblioteca faster-whisper está instalada sem bloquear startup."""
@@ -195,6 +197,26 @@ class STTService:
         if not ext.startswith("."):
             ext = f".{ext}"
 
+        # Suporte a chunks WebM streaming (MediaRecorder timeslice)
+        # Chunk 0 contém o cabeçalho EBML/Tracks do container WebM.
+        # Chunks 1+ contêm apenas Clusters brutos e necessitam do cabeçalho do container para decodificação pelo PyAV/Whisper.
+        EBML_MAGIC = b"\x1a\x45\xdf\xa3"
+        CLUSTER_MAGIC = b"\x1f\x43\xb6\x75"
+
+        if session_id:
+            with self._session_headers_lock:
+                if audio_bytes.startswith(EBML_MAGIC):
+                    cluster_idx = audio_bytes.find(CLUSTER_MAGIC)
+                    if cluster_idx > 0:
+                        self._session_headers[session_id] = audio_bytes[:cluster_idx]
+                        if len(self._session_headers) > 200:
+                            oldest = next(iter(self._session_headers))
+                            del self._session_headers[oldest]
+                elif session_id in self._session_headers:
+                    # Se o chunk não possui o cabeçalho EBML e não é outro formato independente (WAV/MP3)
+                    if not (audio_bytes.startswith(b"RIFF") or audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb")):
+                        audio_bytes = self._session_headers[session_id] + audio_bytes
+
         temp_path = None
         t_start = time.perf_counter()
 
@@ -276,6 +298,11 @@ class STTService:
             session_id=session_id,
             sequence=sequence,
         )
+
+    def clear_session(self, session_id: str):
+        """Remove cabeçalho em cache da sessão para liberação segura de recursos."""
+        with self._session_headers_lock:
+            self._session_headers.pop(session_id, None)
 
 
 # Singleton do serviço

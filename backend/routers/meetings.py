@@ -496,6 +496,9 @@ async def upload_live_meeting_audio_chunk(
 
     accumulated = record_result.get("transcript", "") if record_result else ""
 
+    if is_final:
+        stt.clear_session(session_id)
+
     return {
         "status": "success",
         "meeting_id": meeting_id,

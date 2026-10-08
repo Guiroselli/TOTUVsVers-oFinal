@@ -838,3 +838,114 @@ def test_35_audio_chunk_validation_404_and_non_live():
         assert r_400.status_code == 400
 
 
+def test_36_stt_status_endpoint_and_webm_header_assembly():
+    """36: GET /api/stt/status retorna available=true e montagem de container WebM em chunks subsequentes."""
+    from stt_service import get_stt_service
+    stt = get_stt_service()
+    status_res = client.get("/api/stt/status")
+    assert status_res.status_code == 200
+    status_data = status_res.json()
+    assert status_data["enabled"] is True
+    assert status_data["available"] is True
+    assert status_data["provider"] == "faster_whisper"
+
+    # Testa montagem de cabeçalho WebM para streaming de múltiplos chunks
+    sess_id = "sess_header_test_99"
+    ebml_header = b"\x1a\x45\xdf\xa3\x01\x00\x00\x00"
+    cluster_magic = b"\x1f\x43\xb6\x75"
+    chunk_0 = ebml_header + b"tracks_info" + cluster_magic + b"payload0"
+    chunk_1 = cluster_magic + b"payload1"
+
+    # Inicia mock temporário para validar a lógica de agregação do stt_service sem custo de inferência
+    class InspectMockModel:
+        def __init__(self):
+            self.last_audio_bytes = None
+
+        def transcribe(self, path, language="pt", beam_size=1, vad_filter=True):
+            with open(path, "rb") as f:
+                self.last_audio_bytes = f.read()
+
+            class Seg:
+                text = "fala reconhecida"
+                start = 0.0
+                end = 2.0
+
+            class Inf:
+                language = "pt"
+                language_probability = 1.0
+                duration = 2.0
+
+            return [Seg()], Inf()
+
+    mock = InspectMockModel()
+    stt.set_mock_model(mock)
+    try:
+        # Chunk 0: salva o cabeçalho
+        res0 = stt.transcribe_audio_bytes(chunk_0, filename_hint="c0.webm", session_id=sess_id, sequence=0)
+        assert res0["text"] == "fala reconhecida"
+        assert sess_id in stt._session_headers
+        assert stt._session_headers[sess_id] == ebml_header + b"tracks_info"
+
+        # Chunk 1: sem cabeçalho EBML, deve receber o cabeçalho prepended automaticamente
+        res1 = stt.transcribe_audio_bytes(chunk_1, filename_hint="c1.webm", session_id=sess_id, sequence=1)
+        assert res1["text"] == "fala reconhecida"
+        assert mock.last_audio_bytes.startswith(ebml_header + b"tracks_info" + cluster_magic)
+
+        # Limpeza explícita da sessão
+        stt.clear_session(sess_id)
+        assert sess_id not in stt._session_headers
+    finally:
+        stt._mock_model = None
+        stt._dependency_checked = False
+
+
+def test_37_simultaneous_real_audio_and_zero_retention():
+    """37: Isolamento de duas reuniões simultâneas com áudio e retenção zero de arquivos temporários."""
+    import io
+    import wave
+    import os
+    import tempfile
+    from stt_service import get_stt_service
+
+    # Gera um pequeno buffer WAV válido de 0.2s em memória
+    def generate_wav_bytes():
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            wf.writeframes(b"\x00\x00" * 3200)
+        return buf.getvalue()
+
+    wav_rh = generate_wav_bytes()
+    wav_ti = generate_wav_bytes()
+
+    # Cria reuniões simultâneas às 10:20
+    m_rh = client.post("/api/live/meetings", json=make_payload("RH 10:20 Audio", departamento="RH", horario="10:20", iniciar_agora=True)).json()["meeting"]
+    m_ti = client.post("/api/live/meetings", json=make_payload("TI 10:20 Audio", departamento="TI", horario="10:20", iniciar_agora=True)).json()["meeting"]
+
+    id_rh = m_rh["ID_MEETING"]
+    id_ti = m_ti["ID_MEETING"]
+
+    # Ingestão de áudio simultâneo
+    r_rh = client.post(
+        f"/api/live/meetings/{id_rh}/transcript/audio",
+        files={"audio": ("audio_rh.wav", wav_rh, "audio/wav")},
+        data={"session_id": "sess_rh_wav", "sequence": "0", "is_final": "true"}
+    )
+    r_ti = client.post(
+        f"/api/live/meetings/{id_ti}/transcript/audio",
+        files={"audio": ("audio_ti.wav", wav_ti, "audio/wav")},
+        data={"session_id": "sess_ti_wav", "sequence": "0", "is_final": "true"}
+    )
+
+    assert r_rh.status_code == 200
+    assert r_ti.status_code == 200
+
+    # Confirma que nenhum arquivo pf_chunk_ sobrou no diretório temporário
+    tempdir = tempfile.gettempdir()
+    leftovers = [f for f in os.listdir(tempdir) if f.startswith("pf_chunk_")]
+    assert len(leftovers) == 0
+
+
+
