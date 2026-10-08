@@ -1,5 +1,40 @@
 [
   {
+    "ID_MEETING": "3b29b5e2-c4c2-47d7-b1a8-5358c41de669",
+    "TITULO_REUNIAO": "aa2",
+    "DEPARTAMENTO": "Operações",
+    "NOME_SEGMENTO": "Operações",
+    "DT_MEETING": "2026-10-08",
+    "HORARIO_AGENDADO": "13:25",
+    "PARTICIPANTES": [],
+    "FONTE_AUDIO": "Padrão - Microphone (Realtek(R) Audio)",
+    "ORIGEM": "live",
+    "STATUS_MEETING": "ao_vivo",
+    "STATUS_ANALISE": "aguardando_analise",
+    "STATUS_REVISAO": "revisao_pendente",
+    "ANON_TRANSCRICAO": "",
+    "NIVEL_URGENCIA": "Não Definido",
+    "RESPONSAVEL_REUNIAO": "",
+    "TEM_PDF": false,
+    "FORMATO_MEETING": "VIDEO",
+    "EVENTOS_SESSAO": [
+      {
+        "tipo": "criada",
+        "timestamp": "2026-10-08T14:30:23.547544"
+      },
+      {
+        "tipo": "iniciada",
+        "timestamp": "2026-10-08T14:30:23.547544"
+      }
+    ],
+    "CREATED_AT": "2026-10-08T14:30:23.547544",
+    "STARTED_AT": "2026-10-08T14:30:23.547544",
+    "PAUSED_AT": null,
+    "FINISHED_AT": null,
+    "RESUMO_IA": null,
+    "RESUMO_EXECUTIVO": null
+  },
+  {
     "ID_MEETING": "dbf06dd9-0755-490c-a781-833a26245246",
     "TITULO_REUNIAO": "aa3",
     "DEPARTAMENTO": "Comercial",

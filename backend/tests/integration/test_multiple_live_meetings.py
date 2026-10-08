@@ -581,3 +581,70 @@ def test_26_transcript_sync_status_and_incremental():
     assert get_m1["ANON_TRANSCRICAO"] == "Início da reunião do RH. Continuação da pauta do RH."
     assert get_m2["ANON_TRANSCRICAO"] == "Discussão de infraestrutura TI."
 
+
+def test_27_backend_does_not_expose_fake_stt_fallback():
+    """27: Garantir que não há endpoint fictício de STT de áudio sem transcritor configurado."""
+    # Chamadas para rotas inexistentes de upload de chunks de áudio retornam 404
+    r1 = client.post("/api/audio/transcribe", json={"audio": "fake_data"})
+    assert r1.status_code == 404
+
+    r2 = client.post("/api/live/audio-chunk", json={"chunk": "base64..."})
+    assert r2.status_code == 404
+
+
+def test_28_live_meeting_manual_notes_persistence():
+    """28: Persistir anotações manuais quando o usuário digita na reunião ao vivo."""
+    payload = make_payload("Reunião com Notas Manuais", departamento="Financeiro", horario="14:00", data="2026-10-08", iniciar_agora=True)
+    res = client.post("/api/live/meetings", json=payload)
+    assert res.status_code == 200
+    mid = res.json()["meeting"]["ID_MEETING"]
+
+    # Salva anotação manual
+    manual_text = "Pauta discutida: Fechamento contábil e auditoria interna do 3º trimestre."
+    save_res = client.post(
+        f"/api/live/meetings/{mid}/transcript",
+        json={"transcript": manual_text, "is_incremental": False, "session_id": "manual_input_session"}
+    )
+    assert save_res.status_code == 200
+    assert save_res.json()["meeting"]["ANON_TRANSCRICAO"] == manual_text
+
+    # Recupera reunião e valida persistência
+    get_res = client.get(f"/api/live/meetings/{mid}")
+    assert get_res.status_code == 200
+    assert get_res.json()["ANON_TRANSCRICAO"] == manual_text
+
+
+def test_29_session_isolation_and_simultaneous_transcripts():
+    """29: Isolamento estrito entre reuniões simultâneas às 10h20 (RH e TI)."""
+    p_rh = make_payload("RH 10:20 Sim", departamento="RH", horario="10:20", data="2026-10-08", iniciar_agora=True)
+    p_ti = make_payload("TI 10:20 Sim", departamento="TI", horario="10:20", data="2026-10-08", iniciar_agora=True)
+
+    m_rh = client.post("/api/live/meetings", json=p_rh).json()["meeting"]
+    m_ti = client.post("/api/live/meetings", json=p_ti).json()["meeting"]
+
+    id_rh = m_rh["ID_MEETING"]
+    id_ti = m_ti["ID_MEETING"]
+
+    assert id_rh != id_ti
+
+    # Sessão 1 do RH
+    client.post(
+        f"/api/live/meetings/{id_rh}/transcript",
+        json={"transcript": "Plano de capacitação RH.", "is_incremental": False, "session_id": "sess_rh_01"}
+    )
+
+    # Sessão 1 do TI
+    client.post(
+        f"/api/live/meetings/{id_ti}/transcript",
+        json={"transcript": "Migração de banco de dados TI.", "is_incremental": False, "session_id": "sess_ti_01"}
+    )
+
+    res_rh = client.get(f"/api/live/meetings/{id_rh}").json()
+    res_ti = client.get(f"/api/live/meetings/{id_ti}").json()
+
+    assert res_rh["ANON_TRANSCRICAO"] == "Plano de capacitação RH."
+    assert res_ti["ANON_TRANSCRICAO"] == "Migração de banco de dados TI."
+    assert "TI" not in res_rh["ANON_TRANSCRICAO"]
+    assert "RH" not in res_ti["ANON_TRANSCRICAO"]
+
+
