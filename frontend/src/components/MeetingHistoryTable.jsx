@@ -13,8 +13,7 @@ import {
   User,
   Calendar,
   AlertTriangle,
-  CheckCircle2,
-  Clock
+  CheckCircle2
 } from 'lucide-react';
 
 export default function MeetingHistoryTable({
@@ -95,7 +94,7 @@ export default function MeetingHistoryTable({
       if (parts.length === 3) {
         return `${parts[2]}/${parts[1]}/${parts[0]}`;
       }
-    } catch (e) {}
+    } catch {}
     return String(dateStr);
   };
 

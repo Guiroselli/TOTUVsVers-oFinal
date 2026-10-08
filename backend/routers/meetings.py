@@ -328,11 +328,14 @@ def get_live_meetings(
 def create_live_meeting(req: LiveMeetingCreateRequest):
     """
     Cria uma nova reunião independente com UUID único e estável.
-    Valida obrigatoriedade de título, data e horário sem defaults arbitrários.
+    Valida obrigatoriedade de título, departamento, data e horário sem defaults arbitrários.
     Não invoca LLM nem inicia transcrição/análise na criação.
     Permite cadastrar reuniões no mesmo horário sem conflito.
     """
-    created = repo.create_live_meeting(req.model_dump())
+    try:
+        created = repo.create_live_meeting(req.model_dump())
+    except ValueError as err:
+        raise HTTPException(status_code=422, detail=str(err))
     return {"status": "success", "meeting": created}
 
 

@@ -1,7 +1,6 @@
 import {
   FileText,
   Radio,
-  Layers,
   Sun,
   Moon,
   Building2,

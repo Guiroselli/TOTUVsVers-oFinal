@@ -11,8 +11,7 @@ import {
   Building2,
   Search,
   FileText,
-  Copy,
-  ExternalLink
+  Copy
 } from 'lucide-react';
 
 /**
@@ -157,7 +156,7 @@ function parseEvidenceItem(rawStr) {
   const isTask = rawStr.includes('📋 Pendente:') || rawStr.includes('⚠️ Vencida:');
   if (isTask) {
     const isOverdue = rawStr.includes('⚠️ Vencida:');
-    let str = rawStr.replace(/^[📋⚠️]\s*(Pendente|Vencida):\s*/, '').trim();
+    let str = rawStr.replace(/^(?:📋|⚠️)\s*(Pendente|Vencida):\s*/u, '').trim();
 
     // Extrair responsável entre colchetes
     let responsavel = null;
@@ -233,13 +232,14 @@ export default function EvidenceModal({ isOpen, onClose, drilldownData, onOpenMe
   const [copiedId, setCopiedId] = useState(null);
 
   // Filtragem rápida dentro do modal (Hooks chamados incondicionalmente no topo)
-  const items = drilldownData?.items || [];
+  const items = drilldownData?.items;
   const filteredItems = useMemo(() => {
-    if (!items || items.length === 0) return [];
-    if (!searchTerm.trim()) return items;
+    const list = items || [];
+    if (list.length === 0) return [];
+    if (!searchTerm.trim()) return list;
 
     const term = searchTerm.toLowerCase();
-    return items.filter((item) => {
+    return list.filter((item) => {
       const idMatch = (item.meeting_id || '').toLowerCase().includes(term);
       const clientMatch = (item.cliente || '').toLowerCase().includes(term);
       const temaMatch = (item.tema || '').toLowerCase().includes(term);

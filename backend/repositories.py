@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import math
 import uuid
@@ -320,12 +321,43 @@ class MeetingRepository:
             new_id = str(meeting_data.get("ID_MEETING") or meeting_data.get("meeting_id") or uuid.uuid4())
             now_iso = datetime.now().isoformat()
             
-            titulo = str(meeting_data.get("titulo") or meeting_data.get("title") or meeting_data.get("TITULO_REUNIAO") or "").strip()
-            depto = str(meeting_data.get("departamento") or meeting_data.get("team") or meeting_data.get("DEPARTAMENTO") or "Geral").strip()
-            horario = str(meeting_data.get("horario") or meeting_data.get("time") or meeting_data.get("HORARIO_AGENDADO") or "").strip()
-            
+            # 1. Título (Obrigatório, min 2 chars)
+            raw_titulo = meeting_data.get("titulo") or meeting_data.get("title") or meeting_data.get("TITULO_REUNIAO")
+            if not raw_titulo or not str(raw_titulo).strip():
+                raise ValueError("O título da reunião é obrigatório.")
+            titulo = str(raw_titulo).strip()
+            if len(titulo) < 2:
+                raise ValueError("O título da reunião deve conter ao menos 2 caracteres.")
+
+            # 2. Departamento / Equipe (Obrigatório, sem fallback silencioso para Geral)
+            raw_dept = meeting_data.get("departamento") or meeting_data.get("team") or meeting_data.get("DEPARTAMENTO")
+            if not raw_dept or not str(raw_dept).strip():
+                raise ValueError("A área/equipe da reunião é obrigatória.")
+            depto = str(raw_dept).strip()
+
+            # 3. Horário (Obrigatório, formato HH:MM)
+            raw_horario = meeting_data.get("horario") or meeting_data.get("time") or meeting_data.get("HORARIO_AGENDADO")
+            if not raw_horario or not str(raw_horario).strip():
+                raise ValueError("O horário da reunião é obrigatório.")
+            horario_str = str(raw_horario).strip()
+            time_match = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$", horario_str)
+            if not time_match:
+                raise ValueError("Formato de horário inválido. Use HH:MM.")
+            horario = horario_str[:5]
+
+            # 4. Data (Obrigatória, sem fallback para data atual ou fixa)
             raw_date = meeting_data.get("data") or meeting_data.get("date") or meeting_data.get("DT_MEETING")
-            date_str = normalize_date_iso(raw_date) if raw_date else datetime.now().strftime("%Y-%m-%d")
+            if not raw_date or not str(raw_date).strip():
+                raise ValueError("A data da reunião é obrigatória.")
+            norm_date = normalize_date_iso(raw_date)
+            if not norm_date:
+                raise ValueError("A data da reunião é obrigatória.")
+            date_only = norm_date.split(" ")[0].split("T")[0]
+            try:
+                valid_dt = datetime.strptime(date_only, "%Y-%m-%d")
+                date_str = valid_dt.strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                raise ValueError("A data da reunião é obrigatória.")
             
             raw_parts = meeting_data.get("participantes") or meeting_data.get("participants") or meeting_data.get("PARTICIPANTES") or []
             if isinstance(raw_parts, str):

@@ -489,3 +489,36 @@ def test_23_live_hub_only_returns_live_origin_meetings():
 
     # Reunião histórica não pode aparecer no Hub Ao Vivo
     assert hist_id not in live_ids
+
+
+def test_24_reject_missing_date_and_departamento():
+    """Valida rejeição com HTTP 422 se data ou departamento vierem ausentes, vazios ou inválidos."""
+    valid_base = {
+        "titulo": "Reunião de Operações",
+        "departamento": "Operações",
+        "data": "2026-10-08",
+        "horario": "10:20"
+    }
+
+    # Sem data
+    no_date = {k: v for k, v in valid_base.items() if k != "data"}
+    res1 = client.post("/api/live/meetings", json=no_date)
+    assert res1.status_code == 422
+
+    # Data vazia
+    res2 = client.post("/api/live/meetings", json={**valid_base, "data": "   "})
+    assert res2.status_code == 422
+
+    # Data impossível no calendário (ex: 31 de fevereiro)
+    res3 = client.post("/api/live/meetings", json={**valid_base, "data": "2026-02-31"})
+    assert res3.status_code == 422
+
+    # Sem departamento
+    no_dept = {k: v for k, v in valid_base.items() if k != "departamento"}
+    res4 = client.post("/api/live/meetings", json=no_dept)
+    assert res4.status_code == 422
+
+    # Departamento vazio
+    res5 = client.post("/api/live/meetings", json={**valid_base, "departamento": "   "})
+    assert res5.status_code == 422
+

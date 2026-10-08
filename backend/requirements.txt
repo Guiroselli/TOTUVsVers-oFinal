@@ -4,3 +4,5 @@ python-multipart
 faster-whisper
 requests
 pydantic
+pytest
+httpx

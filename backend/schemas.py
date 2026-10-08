@@ -3,6 +3,8 @@ from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 
+from normalization import normalize_date_iso
+
 
 class TaskSchema(BaseModel):
     responsavel: str = "Não identificado"
@@ -306,7 +308,7 @@ class SaveMeetingRequest(BaseModel):
 class LiveMeetingCreateRequest(BaseModel):
     titulo: str = Field(..., description="Nome ou título da reunião informado pelo usuário")
     title: Optional[str] = None
-    departamento: Optional[str] = Field("Geral", description="Área ou equipe (ex: RH, TI)")
+    departamento: str = Field(..., description="Área ou equipe obrigatória (ex: RH, TI)")
     team: Optional[str] = None
     data: str = Field(..., description="Data da reunião no formato YYYY-MM-DD ou DD/MM/AAAA")
     date: Optional[str] = None
@@ -333,22 +335,28 @@ class LiveMeetingCreateRequest(BaseModel):
         if len(clean_title) < 2:
             raise ValueError("O título da reunião deve conter ao menos 2 caracteres.")
 
-        # 2. Data / Date (Obrigatória, formato válido)
+        # 2. Departamento / Equipe / Team (Obrigatório, sem espaços vazios, sem fallback silencioso)
+        raw_dept = data.get("departamento") if data.get("departamento") is not None else data.get("team")
+        if raw_dept is None or not str(raw_dept).strip():
+            raise ValueError("A área/equipe da reunião é obrigatória.")
+        clean_dept = str(raw_dept).strip()
+
+        # 3. Data / Date (Obrigatória, ISO YYYY-MM-DD válido, sem fallback para data atual)
         raw_date = data.get("data") if data.get("data") is not None else data.get("date")
         if raw_date is None or not str(raw_date).strip():
             raise ValueError("A data da reunião é obrigatória.")
         clean_date = str(raw_date).strip()
-        iso_match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", clean_date)
-        br_match = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", clean_date)
-        if iso_match:
-            norm_date = clean_date
-        elif br_match:
-            d, m, y = br_match.groups()
-            norm_date = f"{y}-{m}-{d}"
-        else:
-            raise ValueError("Formato de data inválido. Use AAAA-MM-DD ou DD/MM/AAAA.")
+        norm_date = normalize_date_iso(clean_date)
+        if not norm_date:
+            raise ValueError("A data da reunião é obrigatória.")
+        date_only = norm_date.split(" ")[0].split("T")[0]
+        try:
+            valid_dt = datetime.strptime(date_only, "%Y-%m-%d")
+            norm_date = valid_dt.strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            raise ValueError("A data da reunião é obrigatória.")
 
-        # 3. Horário / Time (Obrigatório, formato válido HH:MM)
+        # 4. Horário / Time (Obrigatório, formato válido HH:MM)
         raw_time = data.get("horario") if data.get("horario") is not None else data.get("time")
         if raw_time is None or not str(raw_time).strip():
             raise ValueError("O horário da reunião é obrigatório.")
@@ -357,10 +365,6 @@ class LiveMeetingCreateRequest(BaseModel):
         if not time_match:
             raise ValueError("Formato de horário inválido. Use HH:MM.")
         norm_time = clean_time[:5]
-
-        # 4. Departamento / Equipe / Team
-        raw_dept = data.get("departamento") if data.get("departamento") is not None else data.get("team")
-        clean_dept = str(raw_dept).strip() if raw_dept and str(raw_dept).strip() else "Geral"
 
         # 5. Participantes
         raw_parts = data.get("participantes") if data.get("participantes") is not None else data.get("participants", [])

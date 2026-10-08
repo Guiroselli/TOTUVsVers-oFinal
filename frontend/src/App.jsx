@@ -6,8 +6,6 @@ import MeetingHistoryTable from './components/MeetingHistoryTable';
 import TotvsIntegrationModal from './components/TotvsIntegrationModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
 import {
-  BarChart3,
-  RotateCcw,
   Radio,
   Search,
   Sun,
@@ -36,7 +34,7 @@ export default function MeetingApp() {
   const [currentView, setCurrentView] = useState(
     initialViewParam === 'meeting' ? 'meeting' : (initialViewParam === 'analytics' ? 'analytics' : 'dashboard')
   );
-  const [initialLiveMeetingId, setInitialLiveMeetingId] = useState(initialMeetingIdParam || null);
+  const [initialLiveMeetingId] = useState(initialMeetingIdParam || null);
 
   // Theme State (Branco / Light como Primário) com persistência em localStorage
   const [theme, setTheme] = useState(() => {
@@ -99,14 +97,14 @@ export default function MeetingApp() {
   });
 
   // 1. Carrega sistemas TOTVS
-  const loadSistemasTotvs = async () => {
+  const loadSistemasTotvs = useCallback(async () => {
     try {
       const data = await api.getSistemasTotvs();
       setSistemasTotvs(data || {});
     } catch (err) {
       console.error('Erro ao carregar sistemas TOTVS:', err);
     }
-  };
+  }, []);
 
   // 2. Carrega lista paginada de reuniões (com proteção contra stale responses)
   const loadMeetings = useCallback(async (page = 1, pageSize = 10, filterOverrides = null) => {
@@ -148,11 +146,16 @@ export default function MeetingApp() {
     }
   }, [searchQuery, clientFilter, segmentFilter, onlyUnanalyzed]);
 
+  const loadMeetingsOnMountRef = useRef(loadMeetings);
+  useEffect(() => {
+    loadMeetingsOnMountRef.current = loadMeetings;
+  });
+
   // Carregamento inicial do dashboard e sistemas TOTVS
   useEffect(() => {
     loadSistemasTotvs();
-    loadMeetings(1, 10);
-  }, []);
+    loadMeetingsOnMountRef.current(1, 10);
+  }, [loadSistemasTotvs]);
 
   // Debounce suave (350ms): pesquisa automaticamente ao pausar a digitação na barra de busca
   useEffect(() => {
@@ -362,7 +365,7 @@ export default function MeetingApp() {
             await loadMeetings(pagination.page, pagination.page_size);
             setIsGeneratingPDF(false);
           }
-        } catch (e) {
+        } catch {
           // Ignora erros transitórios durante o polling
         }
       }, 2500);
@@ -388,7 +391,7 @@ export default function MeetingApp() {
           await loadMeetings(pagination.page, pagination.page_size);
           return;
         }
-      } catch (e) {
+      } catch {
         // Fallback
       }
 
@@ -1281,6 +1284,8 @@ export default function MeetingApp() {
 
         children.push(new Paragraph(`- Método de Síntese: ${isFallback ? 'Fallback determinístico de contingência' : 'Ollama / Llama (Inteligência Artificial)'}`));
         children.push(new Paragraph(`- Modelo / Versão: ${meta.model_name || meta.model || (isFallback ? 'Regras Determinísticas' : 'llama3:latest')} (Prompt v${meta.prompt_version || '2.1.0'})`));
+        children.push(new Paragraph(`- Confiança Técnica: ${confTecnica}`));
+        children.push(new Paragraph(`- Confiança Semântica: ${confSemantica}`));
         const temaTxt = totalTemas === 1 ? '1 tema' : `${totalTemas} temas`;
         const dorTxt = totalDores === 1 ? '1 dor' : `${totalDores} dores`;
         const tarefaTxt = totalTarefas === 1 ? '1 tarefa' : `${totalTarefas} tarefas`;

@@ -3,7 +3,6 @@ import {
   Radio,
   Plus,
   Search,
-  Filter,
   Calendar,
   Clock,
   Users,
@@ -17,14 +16,11 @@ import {
   AlertCircle,
   ExternalLink,
   FileText,
-  ChevronRight,
   RefreshCw,
   ArrowLeft,
   CheckCircle2,
-  Trash2,
   Sparkles,
   Info,
-  Layers,
   Volume2
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -33,7 +29,7 @@ export default function LiveMeetingPage({
   onLeaveMeeting,
   onOpenDocumentViewer,
   onAnalyzeMeeting,
-  onNavigateToDashboard,
+  _onNavigateToDashboard,
   initialMeetingId = null
 }) {
   // Lista de reuniões e estado geral
@@ -242,7 +238,7 @@ export default function LiveMeetingPage({
       let stream = null;
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioConstraints });
-      } catch (camErr) {
+      } catch {
         // Se a câmera falhar ou não estiver disponível, tenta apenas áudio
         stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
         setIsCamOff(true);
@@ -258,7 +254,7 @@ export default function LiveMeetingPage({
         if (recognitionRef.current) {
           try {
             recognitionRef.current.stop();
-          } catch (e) {}
+          } catch {}
         }
 
         const recognition = new SpeechRecognition();
@@ -302,7 +298,7 @@ export default function LiveMeetingPage({
           if (isRecording && recognitionRef.current) {
             try {
               recognitionRef.current.start();
-            } catch (e) {}
+            } catch {}
           }
         };
 
@@ -323,7 +319,7 @@ export default function LiveMeetingPage({
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch (e) {}
+      } catch {}
       recognitionRef.current = null;
     }
     if (streamRef.current) {
