@@ -17,9 +17,19 @@ backend/tests/__pycache__/
 .coverage
 htmlcov/
 .env
+backend/.env
 .venv/
+backend/.venv/
 venv/
 ENV/
+
+# Modelos Whisper e Caches Persistentes
+.cache/
+backend/.cache/
+*.cache/
+pf_chunk_*
+*.log
+backend/*.log
 
 # PDFs & Temp Files
 backend/pdfs/

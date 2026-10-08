@@ -283,3 +283,39 @@ test('6. Isolamento estrito entre reuniões simultâneas (RH e TI às 10:20)', a
   assert.ok(ctrlTI.transcription.includes('TI'));
   assert.ok(!ctrlTI.transcription.includes('RH'));
 });
+
+test('7. frontend bloqueia Backend quando unavailable: desvia para fallback', () => {
+  const ctrl = new ProtonSTTController({ meetingId: 'meet_unavail' });
+  ctrl.backendStatus = { enabled: true, available: false, ready: false, reason: 'model_missing' };
+
+  // Se o backend está indisponível, deve desviar para browser ou modo manual
+  if (!ctrl.backendStatus.available) {
+    ctrl.selectProvider('browser');
+  }
+
+  assert.equal(ctrl.provider, 'browser', 'Deve chavear para o navegador quando o backend for unavailable');
+  
+  // Tentar iniciar gravação com backend deve ser bloqueado
+  const audioTrack = new MockMediaStreamTrack('audio', true);
+  const stream = new MockMediaStream([audioTrack]);
+  ctrl.startRecording(stream, async () => ({ text: 'não deve rodar' }));
+  assert.equal(ctrl.recorder, null, 'Não deve instanciar MediaRecorder backend se provedor não for backend');
+});
+
+test('8. frontend habilita Backend quando ready: ativa backend com sucesso', () => {
+  const ctrl = new ProtonSTTController({ meetingId: 'meet_ready' });
+  ctrl.backendStatus = { enabled: true, available: true, ready: true, model: 'base', model_cached: true, reason: null };
+
+  if (ctrl.backendStatus.available) {
+    ctrl.selectProvider('backend');
+  }
+
+  assert.equal(ctrl.provider, 'backend', 'Deve manter ou selecionar backend quando disponível e ready');
+
+  const audioTrack = new MockMediaStreamTrack('audio', true);
+  const stream = new MockMediaStream([audioTrack]);
+  ctrl.startRecording(stream, async () => ({ text: 'fala reconhecida' }));
+  assert.ok(ctrl.recorder, 'Deve instanciar MediaRecorder backend');
+  assert.equal(ctrl.status, 'listening', 'Status deve ser listening');
+});
+

@@ -157,6 +157,39 @@ Acesse a interface no navegador em `http://localhost:5173`.
 
 ---
 
+### 3. 🎙️ Configuração e Reproducibilidade do STT (Speech-to-Text)
+
+> **O modelo é baixado uma vez por máquina ou por volume persistente. Depois é reutilizado nas próximas execuções.**
+> Não é necessário baixar o modelo a cada inicialização. Reinstalação ou download só ocorre se o ambiente for apagado ou o cache removido.
+
+- **Setup de uma Máquina Nova (executar uma única vez):**
+  ```bash
+  python scripts/setup_stt.py
+  ```
+  O script detecta o sistema operacional, valida o Python (>= 3.10), instala dependências faltantes sem reinstalar o que já existe, cria o `backend/.env` local a partir de `backend/.env.example`, verifica se o modelo já está no cache e realiza o download apenas se ausente.
+
+- **Diagnóstico de Prontidão:**
+  ```bash
+  python scripts/check_stt_environment.py
+  ```
+  Verifica interpretador Python, versões de `faster-whisper` e `av` (< 19), subsistema PyAV libav, variáveis e cache local, informando `READY` ou `NOT_READY`.
+
+- **Warm-up Opcional do Motor STT:**
+  ```bash
+  python scripts/warmup_stt.py
+  ```
+  Carrega os pesos do modelo na memória RAM antes de abrir a primeira reunião ao vivo, garantindo resposta sub-segundo desde o primeiro chunk de áudio.
+
+- **Inicialização de Desenvolvimento:**
+  ```bash
+  python scripts/start_dev.py
+  ```
+  Valida o status do STT e do cache, checa se as portas (8000 e 5173) estão livres e exibe as URLs do sistema.
+
+- **Cache Persistente:**
+  Os pesos do modelo Whisper são persistidos localmente (por padrão em `~/.cache/huggingface/hub` ou no caminho definido por `STT_MODEL_CACHE_DIR`). Esse diretório é ignorado pelo Git (`.gitignore`) e nunca é incluído em pacotes ou commits.
+
+
 ## 🧪 Executando os Testes Automatizados
 
 O projeto conta com uma suíte de testes cobrindo normalização, regras determinísticas, agregações trimestrais, compatibilidade retroativa, concorrência e endpoints da API.

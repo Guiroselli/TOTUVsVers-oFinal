@@ -13,9 +13,15 @@ import threading
 import asyncio
 from typing import Dict, Any, Optional, List, Tuple
 
+# Garante carregamento automático do .env local se presente
+try:
+    import env_loader  # noqa: F401
+except ImportError:
+    pass
+
 logger = logging.getLogger("stt_service")
 
-# Variáveis de ambiente configuráveis (PARTE 2)
+# Variáveis de ambiente configuráveis (PARTE 2 e PARTE 4)
 STT_PROVIDER = os.getenv("STT_PROVIDER", "faster_whisper")
 STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "base")
 STT_DEVICE = os.getenv("STT_DEVICE", "cpu")
@@ -28,13 +34,14 @@ STT_MAX_CHUNK_BYTES = int(os.getenv("STT_MAX_CHUNK_BYTES", str(10 * 1024 * 1024)
 STT_TEMP_DIR = os.getenv("STT_TEMP_DIR", tempfile.gettempdir())
 STT_ENABLED = os.getenv("STT_ENABLED", "true").lower() in ("true", "1", "yes")
 STT_MAX_CONCURRENT_TRANSCRIBES = int(os.getenv("STT_MAX_CONCURRENT_TRANSCRIBES", "3"))
+STT_MODEL_CACHE_DIR = os.getenv("STT_MODEL_CACHE_DIR", "")
 
 
 class STTService:
     """
     Gerenciador thread-safe de Speech-to-Text com faster-whisper.
-    Garante ausência de vazamento de arquivos temporários, limite de concorrência e
-    degradação graciosa caso faster-whisper não esteja instalado.
+    Garante ausência de vazamento de arquivos temporários, limite de concorrência,
+    cache persistente de modelo e degradação graciosa caso faster-whisper não esteja instalado.
     """
 
     def __init__(
@@ -50,6 +57,7 @@ class STTService:
         temp_dir: str = STT_TEMP_DIR,
         enabled: bool = STT_ENABLED,
         max_concurrent: int = STT_MAX_CONCURRENT_TRANSCRIBES,
+        model_cache_dir: Optional[str] = STT_MODEL_CACHE_DIR,
     ):
         self.provider = provider
         self.model_size = model_size
@@ -62,6 +70,7 @@ class STTService:
         self.temp_dir = temp_dir
         self.enabled = enabled
         self.max_concurrent = max_concurrent
+        self.model_cache_dir = model_cache_dir or ""
 
         self._model = None
         self._mock_model = None
@@ -70,16 +79,19 @@ class STTService:
         self._dependency_checked = False
         self._dependency_available = False
         self._load_error = None
+        self._is_loading = False
+        self._is_downloading = False
         self._session_headers: Dict[str, bytes] = {}
         self._session_headers_lock = threading.Lock()
 
     def check_dependency(self) -> bool:
-        """Verifica se a biblioteca faster-whisper está instalada sem bloquear startup."""
+        """Verifica se a biblioteca faster-whisper e av estão instaladas sem bloquear startup."""
         if self._mock_model is not None:
             return True
         if not self._dependency_checked:
             try:
                 import faster_whisper  # noqa: F401
+                import av  # noqa: F401
                 self._dependency_available = True
             except (ImportError, ModuleNotFoundError) as err:
                 self._dependency_available = False
@@ -90,11 +102,39 @@ class STTService:
             self._dependency_checked = True
         return self._dependency_available
 
+    def is_model_cached(self) -> bool:
+        """Verifica se os pesos do modelo estão presentes no cache local sem chamadas de rede (PARTE 4)."""
+        if self._mock_model is not None:
+            return True
+        if not self.check_dependency():
+            return False
+        try:
+            from faster_whisper.utils import download_model
+            # 1. Se diretório customizado foi especificado e existe:
+            if self.model_cache_dir and os.path.exists(self.model_cache_dir):
+                try:
+                    download_model(self.model_size, output_dir=self.model_cache_dir, local_files_only=True)
+                    return True
+                except Exception:
+                    pass
+            # 2. Verifica no cache padrão do HuggingFace
+            download_model(self.model_size, local_files_only=True)
+            return True
+        except Exception:
+            return False
+
     def is_available(self) -> bool:
-        """Informa se o serviço está habilitado e a dependência está pronta para uso."""
+        """Informa se o serviço está habilitado, a dependência está pronta e o modelo está disponível."""
         if not self.enabled:
             return False
-        return self.check_dependency()
+        if not self.check_dependency():
+            return False
+        if self._load_error:
+            return False
+        if self._mock_model is not None or self._model is not None:
+            return True
+        # Disponível se o modelo já estiver baixado em cache local
+        return self.is_model_cached()
 
     def get_unavailable_reason(self) -> Optional[str]:
         if not self.enabled:
@@ -103,6 +143,12 @@ class STTService:
             return "dependency_missing"
         if self._load_error:
             return "model_load_error"
+        if self._is_downloading:
+            return "model_downloading"
+        if self._is_loading:
+            return "model_loading"
+        if not self.is_model_cached():
+            return "model_missing"
         return None
 
     def set_mock_model(self, mock_model: Any):
@@ -112,7 +158,7 @@ class STTService:
         self._dependency_available = True
 
     def _get_or_load_model(self):
-        """Carregamento lazy e thread-safe do modelo WhisperModel."""
+        """Carregamento lazy e thread-safe do modelo WhisperModel com suporte a download_root."""
         if self._mock_model is not None:
             return self._mock_model
 
@@ -124,14 +170,17 @@ class STTService:
                 return self._model
 
             try:
+                self._is_loading = True
                 from faster_whisper import WhisperModel
+                download_root = self.model_cache_dir if self.model_cache_dir else None
                 logger.info(
-                    f"Carregando faster-whisper (model={self.model_size}, device={self.device}, compute_type={self.compute_type})..."
+                    f"Carregando faster-whisper (model={self.model_size}, device={self.device}, compute_type={self.compute_type}, download_root={download_root})..."
                 )
                 self._model = WhisperModel(
                     self.model_size,
                     device=self.device,
-                    compute_type=self.compute_type
+                    compute_type=self.compute_type,
+                    download_root=download_root
                 )
                 logger.info("Modelo faster-whisper carregado com sucesso.")
                 return self._model
@@ -139,18 +188,43 @@ class STTService:
                 self._load_error = str(err)
                 logger.error(f"Falha ao carregar modelo faster-whisper: {err}")
                 raise RuntimeError(f"Erro ao inicializar faster-whisper: {err}")
+            finally:
+                self._is_loading = False
+
+    def warmup(self) -> Dict[str, Any]:
+        """Pré-carrega o modelo e valida inferência básica para warm-up (PARTE 7)."""
+        if not self.is_available():
+            raise RuntimeError(f"STT indisponível para warm-up: {self.get_unavailable_reason()}")
+        self._get_or_load_model()
+        return {
+            "status": "ok",
+            "model": self.model_size,
+            "device": self.device,
+            "compute_type": self.compute_type,
+            "ready": True
+        }
 
     def get_status(self) -> Dict[str, Any]:
-        """Retorna metadados de status para consumo do frontend (PARTE 4)."""
-        available = self.is_available()
+        """Retorna metadados detalhados de status para consumo do frontend e scripts (PARTE 4, 6)."""
+        is_avail = self.is_available()
+        cached = self.is_model_cached()
+        is_ready = is_avail and (self._model is not None or self._mock_model is not None)
+        reason = self.get_unavailable_reason()
+
+        safe_cache_dir = self.model_cache_dir if self.model_cache_dir else "default_hf_cache"
+
         return {
             "enabled": self.enabled,
-            "available": available,
+            "available": is_avail,
+            "ready": is_ready,
             "provider": self.provider,
             "model": self.model_size,
             "device": self.device,
+            "compute_type": self.compute_type,
             "language": self.language,
-            "reason": self.get_unavailable_reason() if not available else None
+            "cache_dir": safe_cache_dir,
+            "model_cached": cached,
+            "reason": reason if not is_avail else (reason if not is_ready else None)
         }
 
     def transcribe_audio_bytes(
