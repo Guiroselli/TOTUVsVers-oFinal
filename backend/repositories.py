@@ -39,6 +39,73 @@ def _apply_pdf_state(item: Dict[str, Any]) -> Dict[str, Any]:
     return item
 
 
+def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Garante que campos de reunião ao vivo (título, departamento, horário agendado,
+    participantes, fonte de áudio, status canônico, eventos e timestamps) existam
+    de forma consistente e com retrocompatibilidade total com registros antigos.
+    """
+    if not isinstance(item, dict):
+        return item
+
+    meeting_id = str(item.get("ID_MEETING") or "")
+    resumo_ia = item.get("RESUMO_IA") if isinstance(item.get("RESUMO_IA"), dict) else {}
+    tema_ia = resumo_ia.get("tema") if isinstance(resumo_ia.get("tema"), str) else ""
+
+    # Título da Reunião (Preserva estritamente o informado pelo usuário; fallback neutro sem IA)
+    if not item.get("TITULO_REUNIAO"):
+        if item.get("NOME_SEGMENTO") and str(item.get("NOME_SEGMENTO")).strip() not in ["", "Geral", "Ao Vivo"]:
+            item["TITULO_REUNIAO"] = f"Reunião {item.get('NOME_SEGMENTO')}"
+        else:
+            item["TITULO_REUNIAO"] = f"Reunião #{meeting_id[:8]}" if meeting_id else "Reunião Sem Título"
+
+    # Departamento / Equipe
+    if not item.get("DEPARTAMENTO"):
+        item["DEPARTAMENTO"] = item.get("NOME_SEGMENTO") or "Geral"
+
+    # Horário Agendado (Não injeta horários arbitrários como 10:20)
+    if not item.get("HORARIO_AGENDADO"):
+        item["HORARIO_AGENDADO"] = ""
+
+    # Participantes
+    parts = item.get("PARTICIPANTES")
+    if parts is None:
+        item["PARTICIPANTES"] = []
+    elif isinstance(parts, str):
+        item["PARTICIPANTES"] = [p.strip() for p in parts.split(",") if p.strip()]
+
+    # Fonte de Áudio
+    if not item.get("FONTE_AUDIO"):
+        item["FONTE_AUDIO"] = "Microfone Padrão"
+
+    # Origem ("live" | "historico" | "importacao") - Só é live se cadastrado explicitamente como tal
+    if not item.get("ORIGEM"):
+        item["ORIGEM"] = "historico"
+
+    # Status Canônico da Reunião
+    raw_status = item.get("STATUS_MEETING")
+    if not raw_status:
+        if item.get("RESUMO_IA"):
+            item["STATUS_MEETING"] = "concluida"
+        else:
+            item["STATUS_MEETING"] = "agendada"
+    else:
+        st = str(raw_status).lower().strip()
+        if st in ["ao vivo", "aovivo", "gravando", "iniciada"]:
+            item["STATUS_MEETING"] = "ao_vivo"
+        elif st in ["concluída", "finalizada"]:
+            item["STATUS_MEETING"] = "concluida"
+
+    # Timestamps & Eventos
+    if "EVENTOS_SESSAO" not in item or not isinstance(item.get("EVENTOS_SESSAO"), list):
+        item["EVENTOS_SESSAO"] = []
+
+    if not item.get("CREATED_AT"):
+        item["CREATED_AT"] = item.get("DT_MEETING") or datetime.now().strftime("%Y-%m-%d")
+
+    return item
+
+
 def _atomic_write_json(path: str, data: Any):
     """Grava JSON de forma atômica usando arquivo temporário + replace."""
     dir_name = os.path.dirname(os.path.abspath(path))
@@ -156,13 +223,18 @@ class MeetingRepository:
                     if isinstance(item.get("RESUMO_IA"), dict):
                         tema_str = str(item.get("RESUMO_IA", {}).get("tema", "")).lower()
                     
+                    titulo_str = str(item.get("TITULO_REUNIAO", "")).lower()
+                    depto_str = str(item.get("DEPARTAMENTO", "")).lower()
+                    
                     if (search_lower not in transcript and 
                         search_lower not in client_str and 
                         search_lower not in resp_str and 
-                        search_lower not in tema_str):
+                        search_lower not in tema_str and
+                        search_lower not in titulo_str and
+                        search_lower not in depto_str):
                         continue
 
-                filtered.append(_apply_pdf_state(item))
+                filtered.append(_normalize_live_fields(_apply_pdf_state(item)))
 
             return filtered
 
@@ -203,7 +275,7 @@ class MeetingRepository:
             data = _read_json(self.dataset_path, [])
             for item in data:
                 if str(item.get("ID_MEETING")) == str(meeting_id):
-                    return _apply_pdf_state(item)
+                    return _normalize_live_fields(_apply_pdf_state(item))
             return None
 
     def save_meeting(self, meeting_dict: Dict[str, Any]) -> str:
@@ -236,6 +308,261 @@ class MeetingRepository:
 
             _atomic_write_json(self.dataset_path, data)
             return meeting_id
+
+    def create_live_meeting(self, meeting_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Cadastra uma reunião independente com UUID único e estável.
+        Suporta múltiplas reuniões com o mesmo horário (ex: RH às 10h20 e TI às 10h20)
+        sem nenhum conflito de identificador ou sobrescrita de dados.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            new_id = str(meeting_data.get("ID_MEETING") or meeting_data.get("meeting_id") or uuid.uuid4())
+            now_iso = datetime.now().isoformat()
+            
+            titulo = str(meeting_data.get("titulo") or meeting_data.get("title") or meeting_data.get("TITULO_REUNIAO") or "").strip()
+            depto = str(meeting_data.get("departamento") or meeting_data.get("team") or meeting_data.get("DEPARTAMENTO") or "Geral").strip()
+            horario = str(meeting_data.get("horario") or meeting_data.get("time") or meeting_data.get("HORARIO_AGENDADO") or "").strip()
+            
+            raw_date = meeting_data.get("data") or meeting_data.get("date") or meeting_data.get("DT_MEETING")
+            date_str = normalize_date_iso(raw_date) if raw_date else datetime.now().strftime("%Y-%m-%d")
+            
+            raw_parts = meeting_data.get("participantes") or meeting_data.get("participants") or meeting_data.get("PARTICIPANTES") or []
+            if isinstance(raw_parts, str):
+                participantes = [p.strip() for p in raw_parts.split(",") if p.strip()]
+            elif isinstance(raw_parts, list):
+                participantes = [str(p).strip() for p in raw_parts if str(p).strip()]
+            else:
+                participantes = []
+
+            fonte_audio = str(meeting_data.get("fonte_audio") or meeting_data.get("audio_source") or meeting_data.get("FONTE_AUDIO") or "Microfone Padrão").strip()
+            iniciar_agora = bool(meeting_data.get("iniciar_agora") or meeting_data.get("start_now") or False)
+            status_meeting = "ao_vivo" if iniciar_agora else "agendada"
+
+            eventos = [{"tipo": "criada", "timestamp": now_iso}]
+            started_at = None
+            if iniciar_agora:
+                started_at = now_iso
+                eventos.append({"tipo": "iniciada", "timestamp": now_iso})
+
+            item = {
+                "ID_MEETING": new_id,
+                "TITULO_REUNIAO": titulo,
+                "DEPARTAMENTO": depto,
+                "NOME_SEGMENTO": depto,  # retrocompatibilidade
+                "DT_MEETING": date_str,
+                "HORARIO_AGENDADO": horario,
+                "PARTICIPANTES": participantes,
+                "FONTE_AUDIO": fonte_audio,
+                "ORIGEM": "live",
+                "STATUS_MEETING": status_meeting,
+                "STATUS_ANALISE": "aguardando_analise",
+                "STATUS_REVISAO": "revisao_pendente",
+                "ANON_TRANSCRICAO": "",
+                "NIVEL_URGENCIA": "Não Definido",
+                "RESPONSAVEL_REUNIAO": "",
+                "TEM_PDF": False,
+                "FORMATO_MEETING": "VIDEO",
+                "EVENTOS_SESSAO": eventos,
+                "CREATED_AT": now_iso,
+                "STARTED_AT": started_at,
+                "PAUSED_AT": None,
+                "FINISHED_AT": None,
+                "RESUMO_IA": None,
+                "RESUMO_EXECUTIVO": None
+            }
+
+            data.insert(0, item)
+            _atomic_write_json(self.dataset_path, data)
+            
+            self.log_audit_event(
+                meeting_id=new_id,
+                action="live_meeting_created",
+                details={"titulo": titulo, "departamento": depto, "horario": horario, "status": status_meeting},
+                author=meeting_data.get("author") or "user"
+            )
+            return _normalize_live_fields(_apply_pdf_state(item))
+
+    def update_live_meeting_status(self, meeting_id: str, action: str, author: str = "user") -> Optional[Dict[str, Any]]:
+        """
+        Atualiza o status canônico da reunião ao vivo de forma atômica e auditada:
+        'iniciar' -> 'ao_vivo'
+        'pausar'  -> 'pausada'
+        'retomar' -> 'ao_vivo'
+        'finalizar' -> 'concluida'
+        'cancelar'  -> 'cancelada'
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            now_iso = datetime.now().isoformat()
+            target_item = None
+
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    target_item = item
+                    break
+
+            if not target_item:
+                return None
+
+            old_status = target_item.get("STATUS_MEETING", "agendada")
+            eventos = target_item.setdefault("EVENTOS_SESSAO", [])
+            act = action.lower().strip()
+
+            if act == "iniciar":
+                target_item["STATUS_MEETING"] = "ao_vivo"
+                if not target_item.get("STARTED_AT"):
+                    target_item["STARTED_AT"] = now_iso
+                target_item["PAUSED_AT"] = None
+                eventos.append({"tipo": "iniciada", "timestamp": now_iso})
+            elif act == "pausar":
+                target_item["STATUS_MEETING"] = "pausada"
+                target_item["PAUSED_AT"] = now_iso
+                eventos.append({"tipo": "pausada", "timestamp": now_iso})
+            elif act == "retomar":
+                target_item["STATUS_MEETING"] = "ao_vivo"
+                target_item["PAUSED_AT"] = None
+                eventos.append({"tipo": "retomada", "timestamp": now_iso})
+            elif act == "finalizar":
+                target_item["STATUS_MEETING"] = "concluida"
+                target_item["FINISHED_AT"] = now_iso
+                target_item["PAUSED_AT"] = None
+                if not target_item.get("STATUS_ANALISE") or target_item.get("STATUS_ANALISE") == "aguardando_analise":
+                    target_item["STATUS_ANALISE"] = "aguardando_analise"
+                eventos.append({"tipo": "finalizada", "timestamp": now_iso})
+            elif act == "cancelar":
+                target_item["STATUS_MEETING"] = "cancelada"
+                target_item["PAUSED_AT"] = None
+                eventos.append({"tipo": "cancelada", "timestamp": now_iso})
+            else:
+                return None
+
+            _atomic_write_json(self.dataset_path, data)
+            self.log_audit_event(
+                meeting_id=meeting_id,
+                action="live_status_change",
+                details={"old_status": old_status, "new_status": target_item["STATUS_MEETING"], "action": act},
+                author=author
+            )
+            return _normalize_live_fields(_apply_pdf_state(target_item))
+
+    def update_live_transcript(self, meeting_id: str, transcript: str, is_incremental: bool = False, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Atualiza ou anexa transcrição à reunião especificada, garantindo isolamento total por meeting_id.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target_item = None
+
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    target_item = item
+                    break
+
+            if not target_item:
+                return None
+
+            clean_text = (transcript or "").strip()
+            if is_incremental and clean_text:
+                prev = (target_item.get("ANON_TRANSCRICAO") or "").strip()
+                target_item["ANON_TRANSCRICAO"] = f"{prev} {clean_text}".strip() if prev else clean_text
+            else:
+                target_item["ANON_TRANSCRICAO"] = clean_text
+
+            _atomic_write_json(self.dataset_path, data)
+            return _normalize_live_fields(_apply_pdf_state(target_item))
+
+    def get_live_meetings(self, status_filter: Optional[str] = None, departamento: Optional[str] = None, search: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retorna SOMENTE reuniões ao vivo criadas pelo usuário (ORIGEM == 'live'),
+        com campos normalizados, filtrando opcionalmente por status de ciclo de vida ou área.
+        Não vaza nem converte reuniões históricas corporativas.
+        """
+        with self._lock:
+            all_meetings = _read_json(self.dataset_path, [])
+
+        results = []
+        for m in all_meetings:
+            origem = str(m.get("ORIGEM") or "").lower().strip()
+            if origem != "live":
+                continue
+
+            norm_m = _normalize_live_fields(m)
+            st = str(norm_m.get("STATUS_MEETING") or "").lower().strip()
+            if status_filter:
+                sf = status_filter.lower().strip()
+                if sf not in ["todos", "todas", ""] and st != sf:
+                    continue
+
+            dept = str(norm_m.get("DEPARTAMENTO") or norm_m.get("NOME_SEGMENTO") or "").lower().strip()
+            if departamento:
+                df = departamento.lower().strip()
+                if df not in ["todos", "todas", ""] and dept != df:
+                    continue
+
+            if search and search.strip():
+                s = search.lower().strip()
+                title = str(norm_m.get("TITULO_REUNIAO") or "").lower()
+                transcript = str(norm_m.get("ANON_TRANSCRICAO") or "").lower()
+                if s not in title and s not in transcript and s not in dept:
+                    continue
+
+            results.append(norm_m)
+        return results
+
+    def purge_synthetic_live_meetings(self, dry_run: bool = False) -> List[str]:
+        """
+        Identifica e remove com segurança estritamente os registros sintéticos de demonstração
+        ou testes automáticos ('Reunião do RH' e 'Reunião do time de TI')
+        criados com ORIGEM == 'live', preservando 100% dos registros reais
+        do histórico corporativo. Idempotente.
+        """
+        synthetic_titles = {
+            "reunião do rh",
+            "reuniao do rh",
+            "reunião do time de ti",
+            "reuniao do time de ti"
+        }
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            purged_ids = []
+            cleaned_data = []
+
+            for item in data:
+                titulo = str(item.get("TITULO_REUNIAO") or "").lower().strip()
+                origem = str(item.get("ORIGEM") or "").lower().strip()
+                if origem == "live" and titulo in synthetic_titles:
+                    purged_ids.append(str(item.get("ID_MEETING")))
+                else:
+                    cleaned_data.append(item)
+
+            if not dry_run and purged_ids:
+                _atomic_write_json(self.dataset_path, cleaned_data)
+                self.log_audit_event(
+                    meeting_id="SYSTEM_PURGE",
+                    action="purge_synthetic_live_meetings",
+                    details={"purged_count": len(purged_ids), "purged_ids": purged_ids},
+                    author="system"
+                )
+            return purged_ids
+
+    def delete_meeting(self, meeting_id: str, author: str = "user") -> bool:
+        """
+        Exclui uma reunião do dataset de forma atômica e segura.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            idx_found = -1
+            for i, item in enumerate(data):
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    idx_found = i
+                    break
+            if idx_found >= 0:
+                data.pop(idx_found)
+                _atomic_write_json(self.dataset_path, data)
+                self.log_audit_event(meeting_id=meeting_id, action="meeting_deleted", details={}, author=author)
+                return True
+            return False
 
     def update_analysis(self, meeting_id: str, analysis_data: Dict[str, Any]) -> bool:
         with self._lock:

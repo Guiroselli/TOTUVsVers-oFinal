@@ -1,5 +1,6 @@
+import re
 from typing import Optional, List, Dict, Any, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from datetime import datetime
 
 
@@ -225,6 +226,18 @@ class MeetingAnalysisResult(BaseModel):
 
 class MeetingSchema(BaseModel):
     ID_MEETING: str
+    TITULO_REUNIAO: Optional[str] = None
+    DEPARTAMENTO: Optional[str] = None
+    HORARIO_AGENDADO: Optional[str] = None
+    PARTICIPANTES: Optional[Union[List[str], str]] = None
+    FONTE_AUDIO: Optional[str] = None
+    ORIGEM: Optional[str] = "historico"  # "live" | "historico" | "importacao"
+    EVENTOS_SESSAO: Optional[List[Dict[str, Any]]] = None
+    METADADOS_ERRO: Optional[Dict[str, Any]] = None
+    CREATED_AT: Optional[str] = None
+    STARTED_AT: Optional[str] = None
+    PAUSED_AT: Optional[str] = None
+    FINISHED_AT: Optional[str] = None
     DT_MEETING: Optional[str] = None
     FORMATO_MEETING: Optional[str] = "VIDEO"
     DURACAO_MEETING: Optional[str] = ""
@@ -288,6 +301,109 @@ class SaveMeetingRequest(BaseModel):
     transcript: str
     meeting_id: Optional[str] = None
     segmento: Optional[str] = "Ao Vivo"
+
+
+class LiveMeetingCreateRequest(BaseModel):
+    titulo: str = Field(..., description="Nome ou título da reunião informado pelo usuário")
+    title: Optional[str] = None
+    departamento: Optional[str] = Field("Geral", description="Área ou equipe (ex: RH, TI)")
+    team: Optional[str] = None
+    data: str = Field(..., description="Data da reunião no formato YYYY-MM-DD ou DD/MM/AAAA")
+    date: Optional[str] = None
+    horario: str = Field(..., description="Horário agendado no formato HH:MM")
+    time: Optional[str] = None
+    participantes: Optional[Union[List[str], str]] = Field(default_factory=list, description="Lista ou texto de participantes")
+    participants: Optional[Union[List[str], str]] = None
+    fonte_audio: Optional[str] = Field("Microfone Padrão", description="Identificador ou rótulo do dispositivo de áudio")
+    audio_source: Optional[str] = None
+    iniciar_agora: Optional[bool] = Field(False, description="Iniciar imediatamente em status ao_vivo")
+    start_now: Optional[bool] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_and_normalize(cls, data: Any):
+        if not isinstance(data, dict):
+            raise ValueError("Payload de criação deve ser um objeto JSON.")
+
+        # 1. Título / Title (Obrigatório, sem espaços vazios, mínimo 2 caracteres)
+        raw_title = data.get("titulo") if data.get("titulo") is not None else data.get("title")
+        if raw_title is None or not str(raw_title).strip():
+            raise ValueError("O título da reunião é obrigatório.")
+        clean_title = str(raw_title).strip()
+        if len(clean_title) < 2:
+            raise ValueError("O título da reunião deve conter ao menos 2 caracteres.")
+
+        # 2. Data / Date (Obrigatória, formato válido)
+        raw_date = data.get("data") if data.get("data") is not None else data.get("date")
+        if raw_date is None or not str(raw_date).strip():
+            raise ValueError("A data da reunião é obrigatória.")
+        clean_date = str(raw_date).strip()
+        iso_match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", clean_date)
+        br_match = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", clean_date)
+        if iso_match:
+            norm_date = clean_date
+        elif br_match:
+            d, m, y = br_match.groups()
+            norm_date = f"{y}-{m}-{d}"
+        else:
+            raise ValueError("Formato de data inválido. Use AAAA-MM-DD ou DD/MM/AAAA.")
+
+        # 3. Horário / Time (Obrigatório, formato válido HH:MM)
+        raw_time = data.get("horario") if data.get("horario") is not None else data.get("time")
+        if raw_time is None or not str(raw_time).strip():
+            raise ValueError("O horário da reunião é obrigatório.")
+        clean_time = str(raw_time).strip()
+        time_match = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$", clean_time)
+        if not time_match:
+            raise ValueError("Formato de horário inválido. Use HH:MM.")
+        norm_time = clean_time[:5]
+
+        # 4. Departamento / Equipe / Team
+        raw_dept = data.get("departamento") if data.get("departamento") is not None else data.get("team")
+        clean_dept = str(raw_dept).strip() if raw_dept and str(raw_dept).strip() else "Geral"
+
+        # 5. Participantes
+        raw_parts = data.get("participantes") if data.get("participantes") is not None else data.get("participants", [])
+        if isinstance(raw_parts, str):
+            clean_parts = [p.strip() for p in raw_parts.split(",") if p.strip()]
+        elif isinstance(raw_parts, list):
+            clean_parts = [str(p).strip() for p in raw_parts if str(p).strip()]
+        else:
+            clean_parts = []
+
+        # 6. Fonte de Áudio
+        clean_audio = data.get("fonte_audio") or data.get("audio_source") or "Microfone Padrão"
+
+        # 7. Iniciar agora
+        start_now_val = data.get("iniciar_agora") if data.get("iniciar_agora") is not None else data.get("start_now", False)
+
+        return {
+            "titulo": clean_title,
+            "title": clean_title,
+            "data": norm_date,
+            "date": norm_date,
+            "horario": norm_time,
+            "time": norm_time,
+            "departamento": clean_dept,
+            "team": clean_dept,
+            "participantes": clean_parts,
+            "participants": clean_parts,
+            "fonte_audio": clean_audio,
+            "audio_source": clean_audio,
+            "iniciar_agora": bool(start_now_val),
+            "start_now": bool(start_now_val)
+        }
+
+
+class LiveMeetingStatusUpdateRequest(BaseModel):
+    action: str = Field(..., description="Ação canônica: iniciar | pausar | retomar | finalizar | cancelar")
+    author: Optional[str] = "user"
+
+
+class LiveMeetingTranscriptUpdateRequest(BaseModel):
+    transcript: str = Field(..., description="Texto da transcrição acumulada ou trecho incremental")
+    is_incremental: Optional[bool] = Field(False, description="Se True, anexa ao texto existente; se False, substitui")
+    session_id: Optional[str] = None
 
 
 class SuggestionActionRequest(BaseModel):

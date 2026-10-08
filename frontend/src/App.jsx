@@ -29,7 +29,14 @@ const QuarterlyAnalyticsPage = lazy(() => import('./components/QuarterlyAnalytic
 const LiveMeetingPage = lazy(() => import('./components/LiveMeetingPage'));
 
 export default function MeetingApp() {
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'analytics' | 'meeting'
+  const initialParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const initialViewParam = initialParams ? initialParams.get('view') : null;
+  const initialMeetingIdParam = initialParams ? initialParams.get('id') : null;
+
+  const [currentView, setCurrentView] = useState(
+    initialViewParam === 'meeting' ? 'meeting' : (initialViewParam === 'analytics' ? 'analytics' : 'dashboard')
+  );
+  const [initialLiveMeetingId, setInitialLiveMeetingId] = useState(initialMeetingIdParam || null);
 
   // Theme State (Branco / Light como Primário) com persistência em localStorage
   const [theme, setTheme] = useState(() => {
@@ -1873,9 +1880,20 @@ export default function MeetingApp() {
   };
 
   // Handler de encerramento da Reunião Ao Vivo (Salva e volta ao dashboard de forma desacoplada)
-  const handleLeaveLiveMeeting = async (transcript) => {
+  const handleLeaveLiveMeeting = async (transcript, meetingId) => {
     try {
-      await api.saveMeeting(transcript || 'Reunião sem transcrição capturada.');
+      if (meetingId) {
+        if (transcript) {
+          try {
+            await api.updateLiveTranscript(meetingId, transcript);
+          } catch (tErr) {
+            console.warn('Erro ao sincronizar transcrição final:', tErr);
+          }
+        }
+        await handleAnalyzeMeeting(meetingId);
+      } else {
+        await api.saveMeeting(transcript || 'Reunião sem transcrição capturada.');
+      }
       setCurrentView('dashboard');
       await loadMeetings(1, pagination.page_size);
     } catch (err) {
@@ -2335,7 +2353,14 @@ export default function MeetingApp() {
           </div>
         }>
           <LiveMeetingPage
+            initialMeetingId={initialLiveMeetingId}
             onLeaveMeeting={handleLeaveLiveMeeting}
+            onOpenDocumentViewer={handleOpenDocumentViewer}
+            onAnalyzeMeeting={async (meetingId) => {
+              await handleAnalyzeMeeting(meetingId);
+              await loadMeetings(1, pagination.page_size);
+            }}
+            onNavigateToDashboard={() => setCurrentView('dashboard')}
           />
         </Suspense>
       )}

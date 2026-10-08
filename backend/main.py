@@ -1,7 +1,10 @@
 import os
 import sys
 import tempfile
-from typing import Optional
+import json
+import uuid
+import asyncio
+from typing import Optional, Dict, Set, Any
 from datetime import datetime
 
 # Garante que o diretório backend esteja no sys.path
@@ -140,35 +143,125 @@ async def analyze_text(request: TranscriptionRequest):
     return result
 
 
-@app.websocket("/ws/transcribe")
-async def websocket_transcribe(websocket: WebSocket):
-    """
-    Endpoint WebSocket para transcrição ao vivo por streaming de chunks de áudio com Whisper.
-    """
-    await websocket.accept()
-    if not whisper_model:
-        await websocket.send_json({"error": "Modelo Whisper não está carregado no servidor."})
-        await websocket.close()
-        return
+from collections import defaultdict
+from typing import Set
+
+class MeetingConnectionManager:
+    """Gerencia conexões WebSocket isoladas estritamente por meeting_id."""
+    def __init__(self):
+        self._connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        self._lock = asyncio.Lock()
+
+    async def connect(self, meeting_id: str, websocket: WebSocket):
+        await websocket.accept()
+        async with self._lock:
+            self._connections[meeting_id].add(websocket)
+
+    async def disconnect(self, meeting_id: str, websocket: WebSocket):
+        async with self._lock:
+            if meeting_id in self._connections:
+                self._connections[meeting_id].discard(websocket)
+                if not self._connections[meeting_id]:
+                    del self._connections[meeting_id]
+
+    async def broadcast_to_meeting(self, meeting_id: str, message: dict):
+        async with self._lock:
+            sockets = list(self._connections.get(meeting_id, set()))
+        for ws in sockets:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                pass
+
+ws_manager = MeetingConnectionManager()
+
+
+async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, session_id: Optional[str] = None):
+    """Lógica central de WebSocket com isolamento estrito por reunião."""
+    await ws_manager.connect(meeting_id, websocket)
+    await websocket.send_json({
+        "type": "connected",
+        "meeting_id": meeting_id,
+        "session_id": session_id or str(uuid.uuid4()),
+        "whisper_available": whisper_model is not None
+    })
 
     try:
         while True:
-            data = await websocket.receive_bytes()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_file:
-                temp_file.write(data)
-                temp_path = temp_file.name
+            message = await websocket.receive()
+            if "bytes" in message and message["bytes"]:
+                data = message["bytes"]
+                if whisper_model:
+                    temp_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, prefix=f"chunk_{meeting_id[:8]}_", suffix=".webm") as temp_file:
+                            temp_file.write(data)
+                            temp_path = temp_file.name
 
-            try:
-                segments, info = whisper_model.transcribe(temp_path, beam_size=5)
-                text = " ".join([segment.text for segment in segments]).strip()
-                if text:
-                    await websocket.send_json({"text": text})
-            except Exception as e:
-                print(f"Erro na transcrição do chunk: {e}")
-            finally:
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
+                        segments, info = whisper_model.transcribe(temp_path, beam_size=5)
+                        text = " ".join([segment.text for segment in segments]).strip()
+                        if text:
+                            # Atualiza transcrição de forma isolada no repositório
+                            meeting_repo.update_live_transcript(meeting_id, text, is_incremental=True)
+                            await ws_manager.broadcast_to_meeting(meeting_id, {
+                                "type": "transcript_chunk",
+                                "meeting_id": meeting_id,
+                                "text": text
+                            })
+                    except Exception as e:
+                        print(f"Erro na transcrição Whisper para reunião {meeting_id}: {e}")
+                    finally:
+                        if temp_path and os.path.exists(temp_path):
+                            try:
+                                os.remove(temp_path)
+                            except Exception:
+                                pass
+                else:
+                    await websocket.send_json({
+                        "type": "warning",
+                        "meeting_id": meeting_id,
+                        "message": "Whisper offline no servidor. Transcrição via navegador ativa."
+                    })
+            elif "text" in message and message["text"]:
+                try:
+                    payload = json.loads(message["text"])
+                    p_type = payload.get("type")
+                    if p_type == "transcript":
+                        txt = payload.get("text", "")
+                        is_inc = payload.get("is_incremental", False)
+                        meeting_repo.update_live_transcript(meeting_id, txt, is_incremental=is_inc)
+                        await ws_manager.broadcast_to_meeting(meeting_id, {
+                            "type": "transcript_update",
+                            "meeting_id": meeting_id,
+                            "text": txt
+                        })
+                    elif p_type == "status":
+                        action = payload.get("action", "")
+                        updated = meeting_repo.update_live_meeting_status(meeting_id, action)
+                        if updated:
+                            await ws_manager.broadcast_to_meeting(meeting_id, {
+                                "type": "status_update",
+                                "meeting_id": meeting_id,
+                                "status": updated.get("STATUS_MEETING")
+                            })
+                except json.JSONDecodeError:
+                    pass
     except WebSocketDisconnect:
         pass
     except Exception as e:
-        print(f"Erro na conexão WebSocket: {e}")
+        print(f"Erro na conexão WebSocket da reunião {meeting_id}: {e}")
+    finally:
+        await ws_manager.disconnect(meeting_id, websocket)
+
+
+@app.websocket("/ws/transcribe/{meeting_id}")
+async def websocket_transcribe_by_id(websocket: WebSocket, meeting_id: str, session_id: Optional[str] = None):
+    """Endpoint WebSocket isolado por ID estável de reunião."""
+    await _handle_meeting_websocket(websocket, meeting_id, session_id)
+
+
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe_legacy(websocket: WebSocket, meeting_id: Optional[str] = None, session_id: Optional[str] = None):
+    """Endpoint WebSocket com compatibilidade retroativa suportando query param meeting_id."""
+    effective_id = meeting_id or "default_live_meeting"
+    await _handle_meeting_websocket(websocket, effective_id, session_id)

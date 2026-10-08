@@ -16,7 +16,10 @@ from schemas import (
     TaskStatusRequest,
     ExecutiveSummarySchema,
     GenerateExecutiveSummaryRequest,
-    ExecutiveStatusUpdateRequest
+    ExecutiveStatusUpdateRequest,
+    LiveMeetingCreateRequest,
+    LiveMeetingStatusUpdateRequest,
+    LiveMeetingTranscriptUpdateRequest
 )
 from normalization import normalize_client_code, normalize_urgency
 from analysis_service import AnalysisService
@@ -306,6 +309,96 @@ def update_meeting_metadata(meeting_id: str, req: MetadataUpdateRequest):
     if not updated:
         raise HTTPException(status_code=404, detail="Reunião não encontrada.")
     return {"status": "success", "message": "Metadados atualizados com sucesso."}
+
+
+@router.get("/live/meetings")
+def get_live_meetings(
+    status: Optional[str] = Query(None, description="Filtro de status canônico"),
+    departamento: Optional[str] = Query(None, description="Filtro por área ou equipe (ex: RH, TI)"),
+    search: Optional[str] = Query(None, description="Busca textual")
+):
+    """
+    Lista reuniões ao vivo e agendadas com filtros canônicos de status e equipe.
+    """
+    return repo.get_live_meetings(status_filter=status, departamento=departamento, search=search)
+
+
+@router.post("/live/meetings")
+@router.post("/live-meetings")
+def create_live_meeting(req: LiveMeetingCreateRequest):
+    """
+    Cria uma nova reunião independente com UUID único e estável.
+    Valida obrigatoriedade de título, data e horário sem defaults arbitrários.
+    Não invoca LLM nem inicia transcrição/análise na criação.
+    Permite cadastrar reuniões no mesmo horário sem conflito.
+    """
+    created = repo.create_live_meeting(req.model_dump())
+    return {"status": "success", "meeting": created}
+
+
+@router.post("/live/meetings/cleanup")
+def cleanup_synthetic_meetings(dry_run: bool = Query(False)):
+    """
+    Limpeza administrativa segura e idempotente que remove registros sintéticos
+    ou de teste automático ('Reunião do RH' e 'Reunião do time de TI')
+    criados como live meetings, preservando 100% dos dados históricos reais.
+    """
+    purged_ids = repo.purge_synthetic_live_meetings(dry_run=dry_run)
+    return {
+        "status": "success",
+        "dry_run": dry_run,
+        "purged_count": len(purged_ids),
+        "purged_ids": purged_ids
+    }
+
+
+@router.get("/live/meetings/{meeting_id}")
+def get_live_meeting(meeting_id: str):
+    """
+    Retorna os detalhes e estado atual de uma reunião específica.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    return meeting
+
+
+@router.patch("/live/meetings/{meeting_id}/status")
+def update_live_meeting_status(meeting_id: str, req: LiveMeetingStatusUpdateRequest):
+    """
+    Atualiza o status canônico do ciclo de vida da reunião (iniciar | pausar | retomar | finalizar | cancelar).
+    """
+    updated = repo.update_live_meeting_status(meeting_id, action=req.action, author=req.author or "user")
+    if not updated:
+        raise HTTPException(status_code=400, detail="Reunião não encontrada ou ação inválida.")
+    return {"status": "success", "meeting": updated}
+
+
+@router.post("/live/meetings/{meeting_id}/transcript")
+def update_live_meeting_transcript(meeting_id: str, req: LiveMeetingTranscriptUpdateRequest):
+    """
+    Atualiza ou anexa a transcrição em tempo real para a reunião isolada especificada.
+    """
+    updated = repo.update_live_transcript(
+        meeting_id=meeting_id,
+        transcript=req.transcript,
+        is_incremental=req.is_incremental,
+        session_id=req.session_id
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    return {"status": "success", "meeting": updated}
+
+
+@router.delete("/live/meetings/{meeting_id}")
+def delete_live_meeting(meeting_id: str):
+    """
+    Exclui uma reunião do sistema.
+    """
+    success = repo.delete_meeting(meeting_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    return {"status": "success", "message": f"Reunião {meeting_id} excluída com sucesso."}
 
 
 @router.post("/save_meeting")

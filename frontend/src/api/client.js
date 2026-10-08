@@ -48,6 +48,43 @@ export const api = {
 
   getMeeting: (meetingId) => request(`/api/meetings/${meetingId}`),
 
+  // Live Meetings (Múltiplas Reuniões Ao Vivo no mesmo horário)
+  getLiveMeetings: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        searchParams.append(key, val);
+      }
+    });
+    const qs = searchParams.toString();
+    return request(`/api/live/meetings${qs ? `?${qs}` : ''}`);
+  },
+
+  createLiveMeeting: (data) =>
+    request('/api/live/meetings', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getLiveMeeting: (meetingId) => request(`/api/live/meetings/${meetingId}`),
+
+  updateLiveMeetingStatus: (meetingId, action) =>
+    request(`/api/live/meetings/${meetingId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ action }),
+    }),
+
+  updateLiveTranscript: (meetingId, transcript, isIncremental = false, sessionId = null) =>
+    request(`/api/live/meetings/${meetingId}/transcript`, {
+      method: 'POST',
+      body: JSON.stringify({ transcript, is_incremental: isIncremental, session_id: sessionId }),
+    }),
+
+  deleteLiveMeeting: (meetingId) =>
+    request(`/api/live/meetings/${meetingId}`, {
+      method: 'DELETE',
+    }),
+
   getHistory: () => request('/api/history'),
 
   saveMeeting: (transcript, meetingId = null, segmento = 'Ao Vivo') =>

@@ -1,5 +1,44 @@
 [
   {
+    "ID_MEETING": "4afb6fc4-70d0-48e8-ace7-cd80895d3452",
+    "TITULO_REUNIAO": "aa",
+    "DEPARTAMENTO": "RH",
+    "NOME_SEGMENTO": "RH",
+    "DT_MEETING": "2000-12-02",
+    "HORARIO_AGENDADO": "10:20",
+    "PARTICIPANTES": [],
+    "FONTE_AUDIO": "Microfone Padrão",
+    "ORIGEM": "live",
+    "STATUS_MEETING": "pausada",
+    "STATUS_ANALISE": "aguardando_analise",
+    "STATUS_REVISAO": "revisao_pendente",
+    "ANON_TRANSCRICAO": "",
+    "NIVEL_URGENCIA": "Não Definido",
+    "RESPONSAVEL_REUNIAO": "",
+    "TEM_PDF": false,
+    "FORMATO_MEETING": "VIDEO",
+    "EVENTOS_SESSAO": [
+      {
+        "tipo": "criada",
+        "timestamp": "2026-10-07T23:05:15.934039"
+      },
+      {
+        "tipo": "iniciada",
+        "timestamp": "2026-10-07T23:05:19.371577"
+      },
+      {
+        "tipo": "pausada",
+        "timestamp": "2026-10-07T23:05:21.494251"
+      }
+    ],
+    "CREATED_AT": "2026-10-07T23:05:15.934039",
+    "STARTED_AT": "2026-10-07T23:05:19.371577",
+    "PAUSED_AT": "2026-10-07T23:05:21.494251",
+    "FINISHED_AT": null,
+    "RESUMO_IA": null,
+    "RESUMO_EXECUTIVO": null
+  },
+  {
     "ID_MEETING": "bebf7dc0-fb14-4881-b712-d078cbd5ff4a",
     "ANON_TRANSCRICAO": "Reunião sem transcrição capturada.",
     "NOME_SEGMENTO": "Ao Vivo",
