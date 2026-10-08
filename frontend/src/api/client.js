@@ -80,6 +80,32 @@ export const api = {
       body: JSON.stringify({ transcript, is_incremental: isIncremental, session_id: sessionId }),
     }),
 
+  getSttStatus: () => request('/api/stt/status'),
+
+  uploadAudioChunk: async (meetingId, audioBlob, { sessionId, sequence, isFinal = false, mimeType = null, language = 'pt' } = {}) => {
+    const formData = new FormData();
+    formData.append('audio', audioBlob, `chunk_${sequence}.webm`);
+    formData.append('session_id', String(sessionId));
+    formData.append('sequence', String(sequence));
+    formData.append('is_final', String(Boolean(isFinal)));
+    if (mimeType) formData.append('mime_type', mimeType);
+    if (language) formData.append('language', language);
+
+    const url = `${BASE_URL}/api/live/meetings/${meetingId}/transcript/audio`;
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const err = new Error(errorData.message || errorData.detail || `Erro no upload do chunk: ${response.status}`);
+      err.status = response.status;
+      err.reason = errorData.reason;
+      throw err;
+    }
+    return await response.json();
+  },
+
   deleteLiveMeeting: (meetingId) =>
     request(`/api/live/meetings/${meetingId}`, {
       method: 'DELETE',

@@ -507,6 +507,67 @@ class MeetingRepository:
             _atomic_write_json(self.dataset_path, data)
             return _normalize_live_fields(_apply_pdf_state(target_item))
 
+    def record_live_audio_chunk(
+        self,
+        meeting_id: str,
+        session_id: str,
+        sequence: int,
+        text: str,
+        duration: float = 0.0,
+        author: str = "stt_backend"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Registra um chunk de áudio transcrito com controle estrito de idempotência e ordenação.
+        Evita duplicação caso o mesmo chunk (session_id + sequence) seja reenviado.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target_item = None
+
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    target_item = item
+                    break
+
+            if not target_item:
+                return None
+
+            # Rastreamento de chunks processados para idempotência por sessão e sequência
+            processed_chunks = target_item.setdefault("CHUNKS_PROCESSADOS", {})
+            chunk_key = f"{session_id}:{sequence}"
+
+            clean_text = (text or "").strip()
+            already_processed = chunk_key in processed_chunks
+
+            if not already_processed:
+                processed_chunks[chunk_key] = {
+                    "session_id": str(session_id),
+                    "sequence": int(sequence),
+                    "text_len": len(clean_text),
+                    "duration": duration,
+                    "processed_at": datetime.now().isoformat()
+                }
+
+                if clean_text:
+                    prev = (target_item.get("ANON_TRANSCRICAO") or "").strip()
+                    target_item["ANON_TRANSCRICAO"] = f"{prev} {clean_text}".strip() if prev else clean_text
+
+                now_iso = datetime.now().isoformat()
+                target_item["LAST_CHUNK_SEQUENCE"] = sequence
+                target_item["LAST_CHUNK_SESSION_ID"] = str(session_id)
+                target_item["LAST_TRANSCRIPT_UPDATE_AT"] = now_iso
+                target_item["LAST_TRANSCRIPT_SESSION_ID"] = str(session_id)
+                target_item["LAST_TRANSCRIPT_SEQUENCE"] = sequence
+
+                _atomic_write_json(self.dataset_path, data)
+
+            return {
+                "meeting": _normalize_live_fields(_apply_pdf_state(target_item)),
+                "already_processed": already_processed,
+                "text": clean_text,
+                "transcript": target_item.get("ANON_TRANSCRICAO", "")
+            }
+
     def get_live_meetings(self, status_filter: Optional[str] = None, departamento: Optional[str] = None, search: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Retorna SOMENTE reuniões ao vivo criadas pelo usuário (ORIGEM == 'live'),

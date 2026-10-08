@@ -648,3 +648,193 @@ def test_29_session_isolation_and_simultaneous_transcripts():
     assert "RH" not in res_ti["ANON_TRANSCRICAO"]
 
 
+def test_30_stt_status_endpoint():
+    """30: Valida endpoint GET /api/stt/status com metadados do provedor."""
+    res = client.get("/api/stt/status")
+    assert res.status_code == 200
+    data = res.json()
+    assert "enabled" in data
+    assert "available" in data
+    assert "provider" in data
+    assert "model" in data
+    assert "device" in data
+    assert "language" in data
+
+
+def test_31_audio_chunk_upload_stt_unavailable(monkeypatch):
+    """31: Valida retorno HTTP 503 com reason claro quando STT está indisponível."""
+    from stt_service import get_stt_service
+    stt = get_stt_service()
+    
+    # Simula indisponibilidade
+    old_enabled = stt.enabled
+    old_mock = stt._mock_model
+    try:
+        stt.enabled = False
+        stt._mock_model = None
+
+        res_create = client.post("/api/live/meetings", json=make_payload("Reunião Falha STT", iniciar_agora=True))
+        assert res_create.status_code == 200
+        mid = res_create.json()["meeting"]["ID_MEETING"]
+
+        files = {"audio": ("chunk_0.webm", b"\x1a\x45\xdf\xa3fakeaudiobytes", "audio/webm")}
+        data = {"session_id": "sess_err", "sequence": "0", "is_final": "false"}
+        res = client.post(f"/api/live/meetings/{mid}/transcript/audio", files=files, data=data)
+
+        assert res.status_code == 503
+        body = res.json()
+        assert body["status"] == "unavailable"
+        assert body["reason"] == "stt_disabled"
+        assert "message" in body
+    finally:
+        stt.enabled = old_enabled
+        stt._mock_model = old_mock
+
+
+def test_32_and_33_audio_chunk_upload_and_idempotency():
+    """32 & 33: Upload de chunks com STT simulado, ordenação e idempotência por sequence."""
+    from stt_service import get_stt_service
+
+    class MockSegment:
+        def __init__(self, text):
+            self.text = text
+            self.start = 0.0
+            self.end = 4.0
+
+    class MockInfo:
+        def __init__(self):
+            self.language = "pt"
+            self.language_probability = 0.98
+            self.duration = 4.0
+
+    class MockModel:
+        def __init__(self):
+            self.calls = 0
+
+        def transcribe(self, path, language="pt", beam_size=1, vad_filter=True):
+            self.calls += 1
+            return [MockSegment(f"Segmento {self.calls} capturado")], MockInfo()
+
+    stt = get_stt_service()
+    mock_model = MockModel()
+    stt.set_mock_model(mock_model)
+    stt.enabled = True
+
+    try:
+        res_create = client.post("/api/live/meetings", json=make_payload("Reunião Chunks STT", iniciar_agora=True))
+        assert res_create.status_code == 200
+        mid = res_create.json()["meeting"]["ID_MEETING"]
+
+        # Chunk 0
+        f0 = {"audio": ("chunk_0.webm", b"audiochunk0bytes", "audio/webm")}
+        d0 = {"session_id": "sess_123", "sequence": "0", "is_final": "false"}
+        r0 = client.post(f"/api/live/meetings/{mid}/transcript/audio", files=f0, data=d0)
+        assert r0.status_code == 200
+        body0 = r0.json()
+        assert body0["status"] == "success"
+        assert body0["sequence"] == 0
+        assert "Segmento 1" in body0["text"]
+        assert "Segmento 1" in body0["transcript"]
+        assert body0["already_processed"] is False
+
+        # Chunk 1
+        f1 = {"audio": ("chunk_1.webm", b"audiochunk1bytes", "audio/webm")}
+        d1 = {"session_id": "sess_123", "sequence": "1", "is_final": "false"}
+        r1 = client.post(f"/api/live/meetings/{mid}/transcript/audio", files=f1, data=d1)
+        assert r1.status_code == 200
+        body1 = r1.json()
+        assert body1["sequence"] == 1
+        assert "Segmento 1" in body1["transcript"]
+        assert "Segmento 2" in body1["transcript"]
+
+        # Reenvio do Chunk 1 (deve ser idempotente: não duplica no texto acumulado)
+        f1_dup = {"audio": ("chunk_1.webm", b"audiochunk1bytes", "audio/webm")}
+        d1_dup = {"session_id": "sess_123", "sequence": "1", "is_final": "false"}
+        r1_dup = client.post(f"/api/live/meetings/{mid}/transcript/audio", files=f1_dup, data=d1_dup)
+        assert r1_dup.status_code == 200
+        body1_dup = r1_dup.json()
+        assert body1_dup["already_processed"] is True
+        # Texto não deve ter sido duplicado
+        transcript = body1_dup["transcript"]
+        assert transcript.count("Segmento 2") == 1
+    finally:
+        stt._mock_model = None
+        stt._dependency_checked = False
+
+
+def test_34_audio_chunk_meeting_isolation():
+    """34: Valida isolamento estrito de áudio entre duas reuniões distintas."""
+    from stt_service import get_stt_service
+
+    class MockSegment:
+        def __init__(self, text):
+            self.text = text
+            self.start = 0.0
+            self.end = 3.5
+
+    class MockInfo:
+        def __init__(self):
+            self.language = "pt"
+            self.language_probability = 0.99
+            self.duration = 3.5
+
+    class EchoMockModel:
+        def transcribe(self, path, language="pt", beam_size=1, vad_filter=True):
+            # Lê os bytes gravados no arquivo temporário para ecoar o texto
+            with open(path, "rb") as f:
+                content = f.read().decode("latin1", errors="ignore")
+            return [MockSegment(content)], MockInfo()
+
+    stt = get_stt_service()
+    stt.set_mock_model(EchoMockModel())
+    stt.enabled = True
+
+    try:
+        r_rh = client.post("/api/live/meetings", json=make_payload("RH Isolamento Audio", iniciar_agora=True)).json()["meeting"]
+        r_ti = client.post("/api/live/meetings", json=make_payload("TI Isolamento Audio", iniciar_agora=True)).json()["meeting"]
+        id_rh = r_rh["ID_MEETING"]
+        id_ti = r_ti["ID_MEETING"]
+
+        # Upload no RH
+        client.post(
+            f"/api/live/meetings/{id_rh}/transcript/audio",
+            files={"audio": ("c.webm", b"RH_SECRET_DATA", "audio/webm")},
+            data={"session_id": "s_rh", "sequence": "0"}
+        )
+        # Upload no TI
+        client.post(
+            f"/api/live/meetings/{id_ti}/transcript/audio",
+            files={"audio": ("c.webm", b"TI_SECRET_DATA", "audio/webm")},
+            data={"session_id": "s_ti", "sequence": "0"}
+        )
+
+        get_rh = client.get(f"/api/live/meetings/{id_rh}").json()
+        get_ti = client.get(f"/api/live/meetings/{id_ti}").json()
+
+        assert "RH_SECRET_DATA" in get_rh["ANON_TRANSCRICAO"]
+        assert "TI_SECRET_DATA" not in get_rh["ANON_TRANSCRICAO"]
+
+        assert "TI_SECRET_DATA" in get_ti["ANON_TRANSCRICAO"]
+        assert "RH_SECRET_DATA" not in get_ti["ANON_TRANSCRICAO"]
+    finally:
+        stt._mock_model = None
+        stt._dependency_checked = False
+
+
+def test_35_audio_chunk_validation_404_and_non_live():
+    """35: Erro 404 para reunião inexistente e 400 para reunião não live."""
+    files = {"audio": ("chunk.webm", b"fake", "audio/webm")}
+    data = {"session_id": "s", "sequence": "0"}
+
+    # Inexistente -> 404
+    r_404 = client.post("/api/live/meetings/non-existent-id-9999/transcript/audio", files=files, data=data)
+    assert r_404.status_code == 404
+
+    # Histórica -> 400
+    all_meetings = client.get("/api/meetings?page=1&page_size=20").json()["items"]
+    hist = next((m for m in all_meetings if m.get("ORIGEM") == "historico"), None)
+    if hist:
+        r_400 = client.post(f"/api/live/meetings/{hist['ID_MEETING']}/transcript/audio", files=files, data=data)
+        assert r_400.status_code == 400
+
+

@@ -59,15 +59,7 @@ meeting_repo = MeetingRepository()
 profile_repo = ProfileRepository()
 integrations_repo = IntegrationsRepository()
 analysis_service = AnalysisService()
-
-# Inicialização segura do Whisper
-whisper_model = None
-try:
-    from faster_whisper import WhisperModel
-    print("Iniciando modelo Whisper...")
-    whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-except Exception as e:
-    print(f"Aviso: Faster-Whisper não pôde ser carregado: {e}")
+from stt_service import get_stt_service
 
 
 @app.get("/health")
@@ -183,7 +175,7 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
         "type": "connected",
         "meeting_id": meeting_id,
         "session_id": session_id or str(uuid.uuid4()),
-        "whisper_available": whisper_model is not None
+        "whisper_available": get_stt_service().is_available()
     })
 
     try:
@@ -191,15 +183,15 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
             message = await websocket.receive()
             if "bytes" in message and message["bytes"]:
                 data = message["bytes"]
-                if whisper_model:
-                    temp_path = None
+                stt = get_stt_service()
+                if stt.is_available():
                     try:
-                        with tempfile.NamedTemporaryFile(delete=False, prefix=f"chunk_{meeting_id[:8]}_", suffix=".webm") as temp_file:
-                            temp_file.write(data)
-                            temp_path = temp_file.name
-
-                        segments, info = whisper_model.transcribe(temp_path, beam_size=5)
-                        text = " ".join([segment.text for segment in segments]).strip()
+                        res = await stt.transcribe_audio_async(
+                            audio_bytes=data,
+                            filename_hint=f"chunk_{meeting_id[:8]}.webm",
+                            session_id=session_id
+                        )
+                        text = res.get("text", "")
                         if text:
                             # Atualiza transcrição de forma isolada no repositório
                             meeting_repo.update_live_transcript(meeting_id, text, is_incremental=True)
@@ -209,18 +201,12 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
                                 "text": text
                             })
                     except Exception as e:
-                        print(f"Erro na transcrição Whisper para reunião {meeting_id}: {e}")
-                    finally:
-                        if temp_path and os.path.exists(temp_path):
-                            try:
-                                os.remove(temp_path)
-                            except Exception:
-                                pass
+                        print(f"Erro na transcrição STT para reunião {meeting_id}: {e}")
                 else:
                     await websocket.send_json({
                         "type": "warning",
                         "meeting_id": meeting_id,
-                        "message": "Whisper offline no servidor. Transcrição via navegador ativa."
+                        "message": "STT backend offline no servidor. Transcrição via navegador ou digitação manual ativa."
                     })
             elif "text" in message and message["text"]:
                 try:

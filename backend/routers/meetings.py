@@ -2,7 +2,9 @@ import os
 import uuid
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form, Depends
+from fastapi.responses import JSONResponse
 
+from stt_service import get_stt_service
 from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository, PDF_DIR, pdf_path_for
 from schemas import (
     PaginatedMeetingsResponse, 
@@ -391,6 +393,120 @@ def update_live_meeting_transcript(meeting_id: str, req: LiveMeetingTranscriptUp
     if not updated:
         raise HTTPException(status_code=404, detail="Reunião não encontrada.")
     return {"status": "success", "meeting": updated}
+
+
+@router.get("/stt/status")
+@router.get("/live/stt/status")
+def get_stt_status():
+    """
+    Retorna metadados de status e prontidão do provedor Speech-to-Text backend.
+    """
+    stt = get_stt_service()
+    return stt.get_status()
+
+
+@router.post("/live/meetings/{meeting_id}/transcript/audio")
+async def upload_live_meeting_audio_chunk(
+    meeting_id: str,
+    audio: UploadFile = File(...),
+    session_id: str = Form(...),
+    sequence: int = Form(...),
+    is_final: bool = Form(False),
+    mime_type: Optional[str] = Form(None),
+    language: Optional[str] = Form("pt"),
+):
+    """
+    Ingestão assíncrona de chunk de áudio para transcrição via STT backend.
+    - Valida existência e isolamento estrito da reunião live.
+    - Trata indisponibilidade graciosa com 503 claro (sem crash).
+    - Idempotência por (meeting_id, session_id, sequence).
+    - Retorno estruturado em quase tempo real com duração e latência.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+
+    if meeting.get("ORIGEM") != "live":
+        raise HTTPException(status_code=400, detail="Apenas reuniões ao vivo aceitam upload de áudio incremental.")
+
+    current_status = str(meeting.get("STATUS_MEETING", "")).lower().strip()
+    if current_status not in ["ao_vivo", "pausada", "agendada"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reunião com status '{current_status}' não aceita envio de áudio ao vivo."
+        )
+
+    stt = get_stt_service()
+    if not stt.is_available():
+        reason = stt.get_unavailable_reason() or "stt_unavailable"
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unavailable",
+                "reason": reason,
+                "message": "Serviço de transcrição backend indisponível. Utilize o fallback do navegador ou digitação manual."
+            }
+        )
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        return {
+            "status": "success",
+            "meeting_id": meeting_id,
+            "session_id": session_id,
+            "sequence": sequence,
+            "text": "",
+            "transcript": meeting.get("ANON_TRANSCRICAO", ""),
+            "duration": 0.0,
+            "processing_time_ms": 0.0,
+            "already_processed": False
+        }
+
+    filename_hint = audio.filename or "chunk.webm"
+    try:
+        result = await stt.transcribe_audio_async(
+            audio_bytes=audio_bytes,
+            filename_hint=filename_hint,
+            language=language or "pt",
+            session_id=session_id,
+            sequence=sequence,
+        )
+    except Exception as err:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "meeting_id": meeting_id,
+                "session_id": session_id,
+                "sequence": sequence,
+                "message": f"Falha ao transcrever chunk: {str(err)}"
+            }
+        )
+
+    transcribed_text = result.get("text", "")
+    chunk_duration = result.get("duration", 0.0)
+
+    record_result = repo.record_live_audio_chunk(
+        meeting_id=meeting_id,
+        session_id=session_id,
+        sequence=sequence,
+        text=transcribed_text,
+        duration=chunk_duration
+    )
+
+    accumulated = record_result.get("transcript", "") if record_result else ""
+
+    return {
+        "status": "success",
+        "meeting_id": meeting_id,
+        "session_id": session_id,
+        "sequence": sequence,
+        "text": transcribed_text,
+        "transcript": accumulated,
+        "duration": chunk_duration,
+        "processing_time_ms": result.get("processing_time_ms", 0.0),
+        "already_processed": record_result.get("already_processed", False) if record_result else False
+    }
 
 
 @router.delete("/live/meetings/{meeting_id}")

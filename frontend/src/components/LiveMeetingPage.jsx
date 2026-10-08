@@ -85,6 +85,23 @@ export default function LiveMeetingPage({
   const [_videoDevices, setVideoDevices] = useState([]);
   const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'saving' | 'synced' | 'unsaved'
   const [showTechnicalDiagnostics, setShowTechnicalDiagnostics] = useState(false);
+  // STT Provider (PARTE 7, 8, 11)
+  const [sttProvider, setSttProvider] = useState('backend'); // 'backend' | 'browser' | 'manual'
+  const [backendSttStatus, setBackendSttStatus] = useState({
+    enabled: true,
+    available: false,
+    provider: 'faster_whisper',
+    model: 'small',
+    device: 'cpu',
+    language: 'pt',
+    reason: null
+  });
+  const [backendChunkStats, setBackendChunkStats] = useState({
+    chunkCount: 0,
+    lastProcessingTimeMs: 0,
+    lastDuration: 0,
+    latencyHistory: []
+  });
   const [diagnosticInfo, setDiagnosticInfo] = useState({
     engine: 'Não inicializado',
     lang: 'pt-BR',
@@ -135,6 +152,10 @@ export default function LiveMeetingPage({
   const transcriptionStatusRef = useRef('idle');
   const currentMeetingRef = useRef(null);
   const isPausedRef = useRef(false);
+  const sttProviderRef = useRef('backend');
+  const mediaRecorderRef = useRef(null);
+  const chunkSequenceRef = useRef(0);
+  const backendSessionIdRef = useRef(null);
 
   // 1. Carrega lista de dispositivos de áudio e vídeo disponíveis
   const loadAudioDevices = useCallback(async () => {
@@ -181,10 +202,33 @@ export default function LiveMeetingPage({
     }
   }, []);
 
+  // 3. Carrega status do serviço STT backend
+  const loadSttStatus = useCallback(async () => {
+    try {
+      const res = await api.getSttStatus();
+      if (res) {
+        setBackendSttStatus(res);
+        if (res.available) {
+          setSttProvider('backend');
+          sttProviderRef.current = 'backend';
+        } else {
+          setSttProvider('browser');
+          sttProviderRef.current = 'browser';
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar /api/stt/status:', err);
+      setBackendSttStatus((prev) => ({ ...prev, available: false, reason: 'error_fetching_status' }));
+      setSttProvider('browser');
+      sttProviderRef.current = 'browser';
+    }
+  }, []);
+
   // Efeito inicial
   useEffect(() => {
     loadLiveMeetings();
     loadAudioDevices();
+    loadSttStatus();
 
     // Se tiver initialMeetingId pela URL, seleciona
     const urlParams = new URLSearchParams(window.location.search);
@@ -192,7 +236,7 @@ export default function LiveMeetingPage({
     if (pId) {
       setActiveMeetingId(pId);
     }
-  }, [loadLiveMeetings, loadAudioDevices, initialMeetingId]);
+  }, [loadLiveMeetings, loadAudioDevices, loadSttStatus, initialMeetingId]);
 
   // Reunião atualmente selecionada para a sala
   const currentMeeting = useMemo(() => {
@@ -376,7 +420,9 @@ Chamadas start(): ${diagnosticInfo.startCalledCount}
 Último Erro: ${diagnosticInfo.lastError || 'Nenhum'}
 Resultados Recebidos: ${diagnosticInfo.resultsCount}
 Caracteres Acumulados: ${diagnosticInfo.finalCharsCount}
-Fallback Backend STT: Indisponível no servidor local (faster-whisper não instalado / sem endpoint de áudio)
+Provedor STT Ativo: ${sttProvider}
+Backend STT (faster-whisper): ${backendSttStatus.available ? `Disponível (${backendSttStatus.provider}, model=${backendSttStatus.model}, device=${backendSttStatus.device})` : `Indisponível (${backendSttStatus.reason || 'ausente'})`}
+Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backendChunkStats.lastProcessingTimeMs}ms)
 -------------------------------------------------------`;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -387,7 +433,7 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
         console.warn('Erro ao copiar diagnóstico:', e);
       });
     }
-  }, [diagnosticInfo, transcriptionStatus, engineState, recognitionServiceState, audioStatus]);
+  }, [diagnosticInfo, transcriptionStatus, engineState, recognitionServiceState, audioStatus, sttProvider, backendSttStatus, backendChunkStats]);
 
   // Salvamento automático da transcrição no backend (com debounce e sessão)
   const saveTranscriptToBackend = useCallback(
@@ -466,6 +512,166 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
       console.warn('Não foi possível iniciar AudioAnalyser:', err);
     }
   }, []);
+
+  // Suporte a formatos de áudio do MediaRecorder (PARTE 8)
+  const getSupportedAudioMimeType = useCallback(() => {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const candidates = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/mp4',
+      'audio/wav'
+    ];
+    for (const c of candidates) {
+      if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) {
+        return c;
+      }
+    }
+    return '';
+  }, []);
+
+  // Parada limpa do MediaRecorder de backend
+  const stopBackendRecorder = useCallback(() => {
+    if (mediaRecorderRef.current) {
+      try {
+        if (mediaRecorderRef.current.state !== 'inactive') {
+          mediaRecorderRef.current.stop();
+        }
+      } catch (err) {
+        console.warn('Erro ao parar MediaRecorder:', err);
+      }
+      mediaRecorderRef.current = null;
+    }
+  }, []);
+
+  // Início do MediaRecorder para chunks backend de áudio (PARTE 8, 9, 10)
+  const startBackendRecorder = useCallback((stream) => {
+    const targetMeetingId = activeMeetingIdRef.current;
+    if (!targetMeetingId || !stream) return;
+
+    // Regra estrita: apenas trilha de áudio, nunca vídeo no recorder do STT
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      console.warn('[STT Backend] Nenhuma trilha de áudio no stream');
+      return;
+    }
+
+    const audioOnlyStream = new MediaStream(audioTracks);
+
+    stopBackendRecorder();
+
+    const mimeType = getSupportedAudioMimeType();
+    let recorder;
+    try {
+      recorder = mimeType ? new MediaRecorder(audioOnlyStream, { mimeType }) : new MediaRecorder(audioOnlyStream);
+    } catch (e) {
+      console.warn('[STT Backend] Falha com mimeType, tentando padrão:', e);
+      try {
+        recorder = new MediaRecorder(audioOnlyStream);
+      } catch (e2) {
+        console.error('[STT Backend] MediaRecorder indisponível:', e2);
+        setError('MediaRecorder de áudio não suportado no navegador.');
+        return;
+      }
+    }
+
+    const sessionId = `stt_${targetMeetingId.slice(0, 8)}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    backendSessionIdRef.current = sessionId;
+    chunkSequenceRef.current = 0;
+    isPausedRef.current = false;
+
+    setDiagnosticInfo((prev) => ({
+      ...prev,
+      engine: 'Backend STT (faster-whisper)',
+      activeSessionId: sessionId,
+      lastEvent: 'media_recorder_started',
+      lastEventTime: new Date().toLocaleTimeString('pt-BR'),
+      lastError: null
+    }));
+
+    recorder.ondataavailable = async (event) => {
+      if (!event.data || event.data.size === 0) return;
+      if (activeMeetingIdRef.current !== targetMeetingId) return;
+      if (isPausedRef.current) return;
+
+      const currentSeq = chunkSequenceRef.current++;
+      const blob = event.data;
+
+      const uploadChunk = async (attemptsLeft = 2) => {
+        try {
+          setTranscriptionStatus('receiving_speech');
+          transcriptionStatusRef.current = 'receiving_speech';
+
+          const res = await api.uploadAudioChunk(targetMeetingId, blob, {
+            sessionId,
+            sequence: currentSeq,
+            mimeType: recorder.mimeType || mimeType,
+            language: 'pt'
+          });
+
+          if (activeMeetingIdRef.current !== targetMeetingId) return;
+
+          if (res && res.text && res.text.trim()) {
+            const chunkText = res.text.trim();
+            setTranscription((prev) => {
+              const currentFull = (prev || '').trim();
+              if (currentFull.endsWith(chunkText)) return currentFull;
+              return currentFull ? `${currentFull} ${chunkText}` : chunkText;
+            });
+            finalTranscriptRef.current = (finalTranscriptRef.current ? `${finalTranscriptRef.current.trim()} ` : '') + `${chunkText} `;
+          } else if (res && res.transcript) {
+            if (res.transcript.length > finalTranscriptRef.current.length) {
+              setTranscription(res.transcript);
+              finalTranscriptRef.current = res.transcript;
+            }
+          }
+
+          setBackendChunkStats((prev) => ({
+            chunkCount: currentSeq + 1,
+            lastProcessingTimeMs: res.processing_time_ms || 0,
+            lastDuration: res.duration || 4.0,
+            latencyHistory: [...(prev.latencyHistory || []).slice(-9), res.processing_time_ms || 0]
+          }));
+
+          setTranscriptionStatus('listening');
+          transcriptionStatusRef.current = 'listening';
+          setError('');
+        } catch (err) {
+          console.warn(`[STT Backend] Falha no chunk seq=${currentSeq}:`, err);
+          if (err.status === 503) {
+            setTranscriptionStatus('service_unavailable');
+            transcriptionStatusRef.current = 'service_unavailable';
+            setBackendSttStatus((prev) => ({ ...prev, available: false, reason: err.reason || 'stt_unavailable' }));
+            setError('O serviço de transcrição backend (faster-whisper) está indisponível. Alterne para o reconhecimento do navegador ou modo manual.');
+            return;
+          }
+
+          if (attemptsLeft > 0) {
+            await new Promise((r) => setTimeout(r, 600));
+            return uploadChunk(attemptsLeft - 1);
+          }
+        }
+      };
+
+      uploadChunk();
+    };
+
+    recorder.onerror = (e) => {
+      console.warn('[STT Backend] Erro no MediaRecorder:', e);
+    };
+
+    try {
+      recorder.start(4000); // Envia chunk a cada 4 segundos
+      mediaRecorderRef.current = recorder;
+      setTranscriptionStatus('listening');
+      transcriptionStatusRef.current = 'listening';
+      setEngineState('ativa');
+    } catch (err) {
+      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(4000):', err);
+    }
+  }, [getSupportedAudioMimeType, stopBackendRecorder]);
 
   // Inicia o motor Web Speech API de forma resiliente e instrumentada (PARTES 3, 4, 5, 6, 7)
   const startSpeechRecognition = useCallback((_isManualGesture = false) => {
@@ -881,12 +1087,45 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
     }
   }, [saveTranscriptToBackend]);
 
+  // Alternância transparente entre provedores de transcrição (PARTE 7, 11)
+  const handleSelectProvider = useCallback((newProvider) => {
+    setSttProvider(newProvider);
+    sttProviderRef.current = newProvider;
+    setError('');
+
+    if (newProvider === 'backend') {
+      setIsManualEditMode(false);
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+        recognitionRef.current = null;
+      }
+      if (streamRef.current && isRecordingRef.current) {
+        startBackendRecorder(streamRef.current);
+      }
+    } else if (newProvider === 'browser') {
+      setIsManualEditMode(false);
+      stopBackendRecorder();
+      if (streamRef.current && isRecordingRef.current) {
+        startSpeechRecognition(true);
+      }
+    } else if (newProvider === 'manual') {
+      stopBackendRecorder();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+        recognitionRef.current = null;
+      }
+      setIsManualEditMode(true);
+    }
+  }, [startBackendRecorder, stopBackendRecorder, startSpeechRecognition]);
+
   // Parar mídia e reconhecimento de forma estrita e segura
   const stopMediaAndRecognition = useCallback(() => {
     isRecordingRef.current = false;
     isListeningRef.current = false;
     isRequestingMediaRef.current = false;
     isPausedRef.current = true;
+
+    stopBackendRecorder();
 
     if (startingTimeoutRef.current) {
       clearTimeout(startingTimeoutRef.current);
@@ -945,7 +1184,7 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
     sessionTokenRef.current = null;
     setEngineState('encerrada');
     setIsManualEditMode(false);
-  }, []);
+  }, [stopBackendRecorder]);
 
   // Iniciar reconhecimento de voz e mídia na sala ativa com resiliência total
   const startMediaAndRecognition = useCallback(async () => {
@@ -1082,9 +1321,21 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
     // Inicia VU meter
     setupAudioAnalyser(stream);
 
-    // Inicia reconhecimento de voz integrado
-    startSpeechRecognition(false);
-  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition]);
+    // Inicia reconhecimento de voz com base no provedor ativo
+    if (sttProviderRef.current === 'backend' && backendSttStatus.available) {
+      startBackendRecorder(stream);
+    } else if (sttProviderRef.current === 'browser') {
+      startSpeechRecognition(false);
+    } else if (sttProviderRef.current === 'manual') {
+      setIsManualEditMode(true);
+    } else {
+      if (backendSttStatus.available) {
+        startBackendRecorder(stream);
+      } else {
+        startSpeechRecognition(false);
+      }
+    }
+  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, backendSttStatus.available]);
 
   // Controles de áudio e vídeo
   const toggleMute = () => {
@@ -1323,6 +1574,22 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
         return { label: 'Cancelada', color: '#64748b', bg: 'rgba(100, 116, 139, 0.15)', border: 'rgba(100, 116, 139, 0.4)' };
       default:
         return { label: status || 'Desconhecido', color: '#64748b', bg: 'rgba(100, 116, 139, 0.15)', border: 'rgba(100, 116, 139, 0.3)' };
+    }
+  };
+
+  const handleActivateTranscription = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (e && e.stopPropagation) e.stopPropagation();
+    if (sttProvider === 'backend') {
+      if (streamRef.current) {
+        startBackendRecorder(streamRef.current);
+      } else {
+        startMediaAndRecognition();
+      }
+    } else if (sttProvider === 'browser') {
+      startSpeechRecognition(true);
+    } else {
+      setIsManualEditMode(true);
     }
   };
 
@@ -1584,11 +1851,66 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
 
           {/* Botões de Ação na Barra */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Seletor Rápido de Provedor STT */}
+            <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', padding: '2px', gap: '2px' }} title="Alternar motor de transcrição">
+              <button
+                type="button"
+                onClick={() => handleSelectProvider('backend')}
+                style={{
+                  fontSize: '10.5px',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  background: sttProvider === 'backend' ? 'var(--primary-color)' : 'transparent',
+                  color: sttProvider === 'backend' ? '#ffffff' : 'var(--text-muted)'
+                }}
+                title="STT Backend via faster-whisper com chunks de áudio"
+              >
+                STT Backend {backendSttStatus.available ? '●' : '○'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectProvider('browser')}
+                style={{
+                  fontSize: '10.5px',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  background: sttProvider === 'browser' ? 'var(--primary-color)' : 'transparent',
+                  color: sttProvider === 'browser' ? '#ffffff' : 'var(--text-muted)'
+                }}
+                title="Reconhecimento de voz nativo do navegador (Web Speech API)"
+              >
+                Navegador
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectProvider('manual')}
+                style={{
+                  fontSize: '10.5px',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  background: sttProvider === 'manual' ? 'var(--primary-color)' : 'transparent',
+                  color: sttProvider === 'manual' ? '#ffffff' : 'var(--text-muted)'
+                }}
+                title="Digitação e edição manual de texto"
+              >
+                Manual
+              </button>
+            </div>
+
             {/* Ativar ou Tentar Novamente */}
             {(transcriptionStatus === 'service_unavailable' || transcriptionStatus === 'browser_blocked' || transcriptionStatus === 'error') ? (
               <button
                 type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); startSpeechRecognition(true); }}
+                onClick={handleActivateTranscription}
                 className="btn btn-secondary"
                 style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: 'var(--primary-color)', color: 'var(--primary-color)', fontWeight: 600 }}
                 title="Tentar reiniciar o reconhecimento de voz"
@@ -1599,7 +1921,7 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
             ) : transcriptionStatus !== 'listening' && transcriptionStatus !== 'receiving_speech' ? (
               <button
                 type="button"
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); startSpeechRecognition(true); }}
+                onClick={handleActivateTranscription}
                 className="btn btn-primary"
                 style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
                 title="Iniciar reconhecimento de voz com gesto explícito de clique"
@@ -1612,7 +1934,7 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
             {/* Alternar Digitação Manual */}
             <button
               type="button"
-              onClick={() => setIsManualEditMode(!isManualEditMode)}
+              onClick={() => handleSelectProvider(isManualEditMode ? (backendSttStatus.available ? 'backend' : 'browser') : 'manual')}
               className="btn btn-secondary"
               style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               title="Permite digitar notas e transcrição manualmente sem depender da Web Speech API"
@@ -1684,7 +2006,20 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
               <div><strong>Último Evento:</strong> <span style={{ color: '#10b981', fontWeight: 600 }}>{diagnosticInfo.lastEvent}</span> ({diagnosticInfo.lastEventTime || 'nenhum'})</div>
               <div><strong>Sinal Microfone:</strong> <span style={{ color: audioLevel > 4 ? '#10b981' : '#f87171' }}>{audioLevel}% ({audioLevel > 4 ? 'Sinal detectado' : 'Sem sinal'})</span></div>
               <div><strong>Trilha de Áudio:</strong> <span style={{ color: 'var(--text-main)', fontSize: '10px' }}>{diagnosticInfo.audioTrackState}</span></div>
-              <div><strong>Fallback Backend STT:</strong> <span style={{ color: '#94a3b8' }}>Não configurado no servidor (faster-whisper ausente)</span></div>
+              <div>
+                <strong>STT Backend (faster-whisper):</strong>{' '}
+                <span style={{ color: backendSttStatus.available ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
+                  {backendSttStatus.available
+                    ? `Disponível (${backendSttStatus.provider}, ${backendSttStatus.model})`
+                    : `Indisponível (${backendSttStatus.reason || 'ausente'})`}
+                </span>
+              </div>
+              <div>
+                <strong>Chunks Enviados:</strong>{' '}
+                <span style={{ color: 'var(--text-main)' }}>
+                  {backendChunkStats.chunkCount} {backendChunkStats.lastProcessingTimeMs ? `(${backendChunkStats.lastProcessingTimeMs}ms)` : ''}
+                </span>
+              </div>
               {diagnosticInfo.lastException && (
                 <div style={{ color: '#f87171', gridColumn: '1 / -1' }}><strong>Exceção em start():</strong> {diagnosticInfo.lastException}</div>
               )}
@@ -2003,6 +2338,195 @@ Fallback Backend STT: Indisponível no servidor local (faster-whisper não insta
                   <span>{error}</span>
                 </div>
               )}
+
+              {/* Seletor de Provedor de Transcrição (PARTE 7, 11) */}
+              <div style={{
+                marginBottom: '10px',
+                padding: '8px',
+                background: 'var(--panel-hover)',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '6px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                  <span>Provedor de Transcrição:</span>
+                  <span style={{
+                    fontSize: '10px',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    fontWeight: 700,
+                    background: sttProvider === 'backend' ? (backendSttStatus.available ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)') : sttProvider === 'browser' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
+                    color: sttProvider === 'backend' ? (backendSttStatus.available ? '#10b981' : '#eab308') : sttProvider === 'browser' ? '#38bdf8' : '#c084fc',
+                    border: `1px solid ${sttProvider === 'backend' ? (backendSttStatus.available ? '#10b981' : '#eab308') : sttProvider === 'browser' ? '#38bdf8' : '#c084fc'}`
+                  }}>
+                    {sttProvider === 'backend' ? (backendSttStatus.available ? 'STT Backend Ativo (faster-whisper)' : 'STT Backend Indisponível') : sttProvider === 'browser' ? 'STT Navegador Ativo' : 'Digitação Manual'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('backend')}
+                    style={{
+                      fontSize: '11px',
+                      padding: '5px 4px',
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '2px',
+                      background: sttProvider === 'backend' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.04)',
+                      borderColor: sttProvider === 'backend' ? 'var(--primary-color)' : 'var(--border-color)',
+                      color: sttProvider === 'backend' ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                    title="Processamento no servidor com modelo faster-whisper"
+                  >
+                    <span>🎙️ STT Backend</span>
+                    <span style={{ fontSize: '9px', opacity: 0.85 }}>faster-whisper</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('browser')}
+                    style={{
+                      fontSize: '11px',
+                      padding: '5px 4px',
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '2px',
+                      background: sttProvider === 'browser' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.04)',
+                      borderColor: sttProvider === 'browser' ? 'var(--primary-color)' : 'var(--border-color)',
+                      color: sttProvider === 'browser' ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                    title="Reconhecimento de voz do navegador (Web Speech API)"
+                  >
+                    <span>🌐 Navegador</span>
+                    <span style={{ fontSize: '9px', opacity: 0.85 }}>Web Speech</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSelectProvider('manual')}
+                    style={{
+                      fontSize: '11px',
+                      padding: '5px 4px',
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '2px',
+                      background: sttProvider === 'manual' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.04)',
+                      borderColor: sttProvider === 'manual' ? 'var(--primary-color)' : 'var(--border-color)',
+                      color: sttProvider === 'manual' ? '#ffffff' : 'var(--text-muted)'
+                    }}
+                    title="Digitação manual sem motores de voz"
+                  >
+                    <span>✏️ Manual</span>
+                    <span style={{ fontSize: '9px', opacity: 0.85 }}>Digitar Notas</span>
+                  </button>
+                </div>
+
+                {/* Status específico do modo ativo */}
+                {sttProvider === 'backend' && (
+                  <div style={{
+                    fontSize: '10.5px',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    background: backendSttStatus.available ? 'rgba(16, 185, 129, 0.08)' : 'rgba(234, 179, 8, 0.1)',
+                    border: `1px solid ${backendSttStatus.available ? 'rgba(16, 185, 129, 0.25)' : 'rgba(234, 179, 8, 0.3)'}`,
+                    color: backendSttStatus.available ? '#34d399' : '#fbbf24',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '4px'
+                  }}>
+                    {backendSttStatus.available ? (
+                      <>
+                        <span>Gravando áudio • Chunks via faster-whisper (chunk #{backendChunkStats.chunkCount})</span>
+                        {backendChunkStats.lastProcessingTimeMs > 0 && (
+                          <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
+                            Último: {backendChunkStats.lastProcessingTimeMs}ms • {backendChunkStats.lastDuration}s
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+                        <span>Fallback Backend STT: faster-whisper indisponível ({backendSttStatus.reason || 'não instalado'}).</span>
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectProvider('browser')}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '10px', padding: '2px 6px', color: '#38bdf8', borderColor: '#38bdf8' }}
+                          >
+                            Usar Navegador
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectProvider('manual')}
+                            className="btn btn-secondary"
+                            style={{ fontSize: '10px', padding: '2px 6px' }}
+                          >
+                            Digitar Manualmente
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {sttProvider === 'browser' && (
+                  <div style={{
+                    fontSize: '10.5px',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    background: 'rgba(56, 189, 248, 0.08)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    color: '#38bdf8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}>
+                    <span>Ouvindo microfone • Reconhecimento nativo do navegador</span>
+                    {backendSttStatus.available && (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectProvider('backend')}
+                        style={{ background: 'transparent', border: 'none', color: '#34d399', fontSize: '10px', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Alternar para STT Backend
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {sttProvider === 'manual' && (
+                  <div style={{
+                    fontSize: '10.5px',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    background: 'rgba(168, 85, 247, 0.08)',
+                    border: '1px solid rgba(168, 85, 247, 0.25)',
+                    color: '#c084fc'
+                  }}>
+                    <span>Modo manual ativo • Digite e edite o texto da ata diretamente</span>
+                  </div>
+                )}
+              </div>
 
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
