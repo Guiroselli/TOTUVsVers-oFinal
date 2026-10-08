@@ -2352,22 +2352,35 @@ export default function MeetingApp() {
       )}
 
       {currentView === 'meeting' && (
-        <Suspense fallback={
-          <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            Iniciando módulo de gravação ao vivo...
-          </div>
-        }>
-          <LiveMeetingPage
-            initialMeetingId={initialLiveMeetingId}
-            onLeaveMeeting={handleLeaveLiveMeeting}
-            onOpenDocumentViewer={handleOpenDocumentViewer}
-            onAnalyzeMeeting={async (meetingId) => {
-              await handleAnalyzeMeeting(meetingId);
-              await loadMeetings(1, pagination.page_size);
-            }}
-            onNavigateToDashboard={() => setCurrentView('dashboard')}
-          />
-        </Suspense>
+        <main
+          className="meeting-page-container"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            maxWidth: '100%',
+            height: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
+          }}
+        >
+          <Suspense fallback={
+            <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Iniciando módulo de gravação ao vivo...
+            </div>
+          }>
+            <LiveMeetingPage
+              initialMeetingId={initialLiveMeetingId}
+              onLeaveMeeting={handleLeaveLiveMeeting}
+              onOpenDocumentViewer={handleOpenDocumentViewer}
+              onAnalyzeMeeting={async (meetingId) => {
+                await handleAnalyzeMeeting(meetingId);
+                await loadMeetings(1, pagination.page_size);
+              }}
+              _onNavigateToDashboard={() => setCurrentView('dashboard')}
+            />
+          </Suspense>
+        </main>
       )}
 
       {/* Modal de Integrações TOTVS */}

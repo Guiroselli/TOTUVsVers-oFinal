@@ -67,29 +67,63 @@ export default function LiveMeetingPage({
   const [isCamOff, setIsCamOff] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState(0);
 
-  // Refs de mídia e timers
+  // Estados granulares de diagnóstico de mídia e hardware (PART 2, 4, 6, 7)
+  const [mediaPermission, setMediaPermission] = useState('idle'); // 'idle' | 'requesting' | 'granted' | 'denied' | 'unavailable'
+  const [audioStatus, setAudioStatus] = useState('unavailable'); // 'unavailable' | 'requesting' | 'active' | 'muted' | 'denied' | 'ended'
+  const [videoStatus, setVideoStatus] = useState('unavailable'); // 'unavailable' | 'requesting' | 'active' | 'disabled' | 'denied' | 'ended'
+  const [transcriptionStatus, setTranscriptionStatus] = useState('idle'); // 'unsupported' | 'idle' | 'starting' | 'listening' | 'paused' | 'error'
+  const [mediaError, setMediaError] = useState('');
+  const [cameraNotice, setCameraNotice] = useState('');
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [videoDevices, setVideoDevices] = useState([]);
+
+  // Refs de mídia e timers com isolamento estrito
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const scrollRef = useRef(null);
   const recognitionRef = useRef(null);
   const autoSaveTimerRef = useRef(null);
   const durationTimerRef = useRef(null);
+  const activeMeetingIdRef = useRef(activeMeetingId);
+  const isRecordingRef = useRef(false);
+  const isListeningRef = useRef(false);
+  const isRequestingMediaRef = useRef(false);
+  const finalTranscriptRef = useRef('');
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animFrameRef = useRef(null);
 
-  // 1. Carrega lista de dispositivos de áudio disponíveis
+  // 1. Carrega lista de dispositivos de áudio e vídeo disponíveis
   const loadAudioDevices = useCallback(async () => {
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+        const videoInputs = devices.filter((d) => d.kind === 'videoinput');
         setAudioDevices(audioInputs);
-        if (audioInputs.length > 0 && !selectedAudioDeviceId) {
-          setSelectedAudioDeviceId(audioInputs[0].deviceId || 'default');
+        setVideoDevices(videoInputs);
+        if (audioInputs.length > 0) {
+          setSelectedAudioDeviceId((prev) => {
+            const exists = audioInputs.some((d) => d.deviceId === prev);
+            if (exists && prev && prev !== 'default') return prev;
+            const valid = audioInputs.find((d) => d.deviceId && d.deviceId !== 'default');
+            return valid ? valid.deviceId : (audioInputs[0].deviceId || 'default');
+          });
         }
       }
     } catch (e) {
       console.warn('Erro ao listar dispositivos de áudio:', e);
     }
-  }, [selectedAudioDeviceId]);
+  }, []);
+
+  useEffect(() => {
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', loadAudioDevices);
+      return () => {
+        navigator.mediaDevices.removeEventListener('devicechange', loadAudioDevices);
+      };
+    }
+  }, [loadAudioDevices]);
 
   // 2. Carrega lista de reuniões ao vivo do backend
   const loadLiveMeetings = useCallback(async () => {
@@ -176,19 +210,16 @@ export default function LiveMeetingPage({
     });
   }, [meetings, statusFilter, deptFilter, searchQuery]);
 
-  // Atualiza transcrição local quando carrega a reunião selecionada
+  // Sincroniza referências de reunião e texto inicial ao carregar ou trocar de reunião
   useEffect(() => {
+    activeMeetingIdRef.current = activeMeetingId;
     if (currentMeeting) {
-      setTranscription(currentMeeting.ANON_TRANSCRICAO || '');
-      // Se a reunião estiver ao vivo, inicia o contador
-      if (currentMeeting.STATUS_MEETING === 'ao_vivo') {
-        setIsRecording(true);
-      } else {
-        setIsRecording(false);
-      }
+      const initialText = currentMeeting.ANON_TRANSCRICAO || '';
+      setTranscription(initialText);
+      finalTranscriptRef.current = initialText;
     } else {
       setTranscription('');
-      setIsRecording(false);
+      finalTranscriptRef.current = '';
     }
   }, [activeMeetingId, currentMeeting]);
 
@@ -226,137 +257,425 @@ export default function LiveMeetingPage({
     [activeMeetingId]
   );
 
-  // Iniciar reconhecimento de voz e mídia na sala ativa
-  const startMediaAndRecognition = useCallback(async () => {
-    if (!activeMeetingId) return;
+  // VU Meter & Analyser de Áudio para diagnóstico visual de captação
+  const setupAudioAnalyser = useCallback((stream) => {
     try {
-      setError('');
-      const audioConstraints = selectedAudioDeviceId
-        ? { deviceId: { exact: selectedAudioDeviceId } }
-        : true;
-
-      let stream = null;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioConstraints });
-      } catch {
-        // Se a câmera falhar ou não estiver disponível, tenta apenas áudio
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        setIsCamOff(true);
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
+      }
+      if (audioContextRef.current) {
+        try {
+          audioContextRef.current.close();
+        } catch {}
+        audioContextRef.current = null;
       }
 
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const audioTracks = stream ? stream.getAudioTracks() : [];
+      if (!AudioCtx || audioTracks.length === 0) return;
 
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.stop();
-          } catch {}
+      const audioCtx = new AudioCtx();
+      audioContextRef.current = audioCtx;
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+      analyserRef.current = analyser;
+
+      const source = audioCtx.createMediaStreamSource(stream);
+      // NUNCA conectar ao audioCtx.destination para evitar eco/microfonia local no alto-falante
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const updateVolume = () => {
+        if (!analyserRef.current || !isRecordingRef.current) {
+          setAudioLevel(0);
+          return;
         }
-
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'pt-BR';
-
-        let accumulated = transcription || '';
-
-        recognition.onresult = (event) => {
-          let interim = '';
-          let finalPiece = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalPiece += event.results[i][0].transcript + ' ';
-            } else {
-              interim += event.results[i][0].transcript;
-            }
-          }
-          if (finalPiece) {
-            accumulated += finalPiece;
-          }
-          const fullText = accumulated + interim;
-          setTranscription(fullText);
-
-          // Dispara salvamento com debounce
-          if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-          autoSaveTimerRef.current = setTimeout(() => {
-            saveTranscriptToBackend(fullText);
-          }, 3000);
-        };
-
-        recognition.onerror = (event) => {
-          console.warn('SpeechRecognition erro:', event.error);
-          if (event.error === 'not-allowed') {
-            setError('Permissão de microfone negada pelo navegador.');
-          }
-        };
-
-        recognition.onend = () => {
-          if (isRecording && recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-            } catch {}
-          }
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-        setIsRecording(true);
-      } else {
-        setError('Navegador não possui suporte ao Web Speech API nativo. Conecte microfone com Whisper.');
-      }
+        analyserRef.current.getByteFrequencyData(dataArray);
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        // Normaliza valor de 0 a 100
+        const level = Math.min(100, Math.round((avg / 128) * 100));
+        setAudioLevel(level);
+        animFrameRef.current = requestAnimationFrame(updateVolume);
+      };
+      animFrameRef.current = requestAnimationFrame(updateVolume);
     } catch (err) {
-      console.error('Erro de permissão de mídia:', err);
-      setError('Permissão de microfone ou câmera negada.');
+      console.warn('Não foi possível iniciar AudioAnalyser:', err);
     }
-  }, [activeMeetingId, transcription, selectedAudioDeviceId, isRecording, saveTranscriptToBackend]);
+  }, []);
 
-  // Parar mídia e reconhecimento
+  // Parar mídia e reconhecimento de forma estrita e segura
   const stopMediaAndRecognition = useCallback(() => {
+    isRecordingRef.current = false;
+    isListeningRef.current = false;
+    isRequestingMediaRef.current = false;
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch {}
+      audioContextRef.current = null;
+    }
+    setAudioLevel(0);
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
       } catch {}
       recognitionRef.current = null;
     }
+
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
       streamRef.current = null;
     }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
     setIsRecording(false);
+    setAudioStatus('unavailable');
+    setVideoStatus('unavailable');
+    setTranscriptionStatus('idle');
   }, []);
 
-  // Limpeza ao trocar de reunião ou desmontar
-  useEffect(() => {
-    return () => {
-      stopMediaAndRecognition();
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    };
-  }, [activeMeetingId, stopMediaAndRecognition]);
+  // Iniciar reconhecimento de voz e mídia na sala ativa com resiliência total
+  const startMediaAndRecognition = useCallback(async () => {
+    if (!activeMeetingId) return;
+    if (isRequestingMediaRef.current) return;
+    isRequestingMediaRef.current = true;
+
+    setMediaPermission('requesting');
+    setAudioStatus('requesting');
+    setVideoStatus('requesting');
+    setMediaError('');
+    setCameraNotice('');
+
+    // Validação de contexto seguro e suporte nativo a mediaDevices
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      const errMsg = 'Seu navegador não suporta captura de mídia via navigator.mediaDevices.getUserMedia. Utilize HTTPS ou localhost.';
+      setMediaError(errMsg);
+      setMediaPermission('unavailable');
+      setAudioStatus('unavailable');
+      setVideoStatus('unavailable');
+      setTranscriptionStatus('unsupported');
+      isRequestingMediaRef.current = false;
+      return;
+    }
+
+    // Constraints de áudio seguras (evita OverconstrainedError com 'default')
+    let audioConstraints = true;
+    if (selectedAudioDeviceId && selectedAudioDeviceId !== 'default') {
+      audioConstraints = { deviceId: { ideal: selectedAudioDeviceId } };
+    }
+
+    let stream = null;
+    let cameraAcquired = false;
+
+    // Tentativa 1: Obter Áudio e Vídeo conjuntamente
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      cameraAcquired = true;
+    } catch (primaryErr) {
+      console.warn('Não foi possível obter vídeo e áudio juntos:', primaryErr);
+      // Tentativa 2: Fallback gracioso para apenas Áudio
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioConstraints,
+          video: false
+        });
+        cameraAcquired = false;
+        setCameraNotice('Câmera não detectada ou ocupada por outro aplicativo. A reunião prosseguirá apenas com áudio.');
+      } catch (audioErr) {
+        console.error('Falha crítica ao obter áudio:', audioErr);
+        isRequestingMediaRef.current = false;
+        let translatedError = 'Não foi possível acessar o microfone.';
+        if (audioErr.name === 'NotAllowedError' || audioErr.name === 'PermissionDeniedError') {
+          translatedError = 'Permissão de microfone negada no navegador. Permita o acesso ao microfone nas configurações da página para que sua voz seja capturada e transcrita.';
+          setMediaPermission('denied');
+          setAudioStatus('denied');
+        } else if (audioErr.name === 'NotFoundError' || audioErr.name === 'DevicesNotFoundError') {
+          translatedError = 'Nenhum microfone encontrado. Conecte um microfone para participar da reunião.';
+          setMediaPermission('unavailable');
+          setAudioStatus('unavailable');
+        } else if (audioErr.name === 'NotReadableError' || audioErr.name === 'TrackStartError') {
+          translatedError = 'O microfone está em uso exclusivo por outro programa ou pelo sistema operacional.';
+          setMediaPermission('unavailable');
+          setAudioStatus('unavailable');
+        } else {
+          translatedError = `Erro ao capturar microfone: ${audioErr.message || audioErr.name}`;
+          setMediaPermission('unavailable');
+          setAudioStatus('unavailable');
+        }
+        setVideoStatus('unavailable');
+        setMediaError(translatedError);
+        setError(translatedError);
+        return;
+      }
+    }
+
+    isRequestingMediaRef.current = false;
+    setMediaPermission('granted');
+
+    // Validação e listeners da trilha de áudio
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      setAudioStatus('unavailable');
+      setMediaError('O fluxo de áudio foi aberto, mas nenhuma trilha ativa foi retornada.');
+    } else {
+      setAudioStatus(audioTracks[0].enabled ? 'active' : 'muted');
+      setIsMuted(!audioTracks[0].enabled);
+      audioTracks[0].onended = () => {
+        console.warn('Trilha de áudio finalizada pelo sistema');
+        setAudioStatus('ended');
+      };
+      audioTracks[0].onmute = () => {
+        setAudioStatus('muted');
+      };
+      audioTracks[0].onunmute = () => {
+        setAudioStatus('active');
+      };
+    }
+
+    // Validação e listeners da trilha de vídeo
+    const videoTracks = stream.getVideoTracks();
+    if (cameraAcquired && videoTracks.length > 0) {
+      setVideoStatus('active');
+      setIsCamOff(false);
+      videoTracks[0].onended = () => {
+        console.warn('Trilha de vídeo finalizada');
+        setVideoStatus('ended');
+        setIsCamOff(true);
+      };
+    } else {
+      setVideoStatus('disabled');
+      setIsCamOff(true);
+    }
+
+    streamRef.current = stream;
+    isRecordingRef.current = true;
+    setIsRecording(true);
+
+    // Conecta stream ao elemento <video>
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.onloadedmetadata = () => {
+        if (videoRef.current) {
+          videoRef.current.play().catch((e) => console.warn('Erro ao reproduzir vídeo:', e));
+        }
+      };
+    }
+
+    // Inicia VU meter
+    setupAudioAnalyser(stream);
+
+    // Inicia SpeechRecognition para transcrição em tempo real
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {}
+        recognitionRef.current = null;
+      }
+
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'pt-BR';
+      recognition.maxAlternatives = 1;
+
+      const currentMeetingTargetId = activeMeetingId;
+
+      recognition.onstart = () => {
+        if (activeMeetingIdRef.current === currentMeetingTargetId) {
+          isListeningRef.current = true;
+          setTranscriptionStatus('listening');
+        }
+      };
+
+      recognition.onresult = (event) => {
+        // Isolamento estrito por reunião ativa
+        if (activeMeetingIdRef.current !== currentMeetingTargetId) return;
+
+        let interim = '';
+        let newlyFinal = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            newlyFinal += res[0].transcript + ' ';
+          } else {
+            interim += res[0].transcript;
+          }
+        }
+
+        if (newlyFinal) {
+          finalTranscriptRef.current = (finalTranscriptRef.current ? finalTranscriptRef.current.trim() + ' ' : '') + newlyFinal.trim() + ' ';
+        }
+
+        const fullDisplay = (finalTranscriptRef.current + interim).trim();
+        setTranscription(fullDisplay);
+
+        // Auto-save com debounce
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = setTimeout(() => {
+          if (activeMeetingIdRef.current === currentMeetingTargetId && fullDisplay) {
+            saveTranscriptToBackend(fullDisplay);
+          }
+        }, 3000);
+      };
+
+      recognition.onerror = (event) => {
+        if (activeMeetingIdRef.current !== currentMeetingTargetId) return;
+        console.warn('SpeechRecognition erro:', event.error);
+        if (event.error === 'not-allowed') {
+          setTranscriptionStatus('error');
+          setError('Acesso ao reconhecimento de voz negado pelo navegador.');
+          isListeningRef.current = false;
+        } else if (event.error === 'audio-capture') {
+          setTranscriptionStatus('error');
+          setError('Nenhum microfone capturado pelo reconhecimento de voz.');
+          isListeningRef.current = false;
+        } else if (event.error === 'network') {
+          setTranscriptionStatus('error');
+          setError('Erro de conexão do serviço de reconhecimento de voz.');
+        } else if (event.error === 'no-speech') {
+          // Silêncio momentâneo normal
+          setTranscriptionStatus('listening');
+        } else if (event.error === 'aborted') {
+          isListeningRef.current = false;
+        }
+      };
+
+      recognition.onend = () => {
+        isListeningRef.current = false;
+        // Reinicia continuamente enquanto a reunião estiver ativa e for a mesma
+        if (
+          isRecordingRef.current &&
+          activeMeetingIdRef.current === currentMeetingTargetId &&
+          recognitionRef.current
+        ) {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.warn('Erro ao reiniciar SpeechRecognition:', e);
+          }
+        } else {
+          setTranscriptionStatus('paused');
+        }
+      };
+
+      recognitionRef.current = recognition;
+      try {
+        setTranscriptionStatus('starting');
+        recognition.start();
+      } catch (e) {
+        console.warn('Erro ao iniciar reconhecimento:', e);
+        setTranscriptionStatus('error');
+      }
+    } else {
+      setTranscriptionStatus('unsupported');
+      setError('Seu navegador não possui suporte nativo ao Web Speech API (recomendado Google Chrome ou Microsoft Edge). A reunião continua normalmente.');
+    }
+  }, [activeMeetingId, selectedAudioDeviceId, saveTranscriptToBackend, setupAudioAnalyser]);
 
   // Controles de áudio e vídeo
   const toggleMute = () => {
     if (streamRef.current) {
       const audioTrack = streamRef.current.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = isMuted;
-        setIsMuted(!isMuted);
+        const nextState = !audioTrack.enabled;
+        audioTrack.enabled = nextState;
+        setIsMuted(!nextState);
+        setAudioStatus(nextState ? 'active' : 'muted');
       }
     }
   };
 
-  const toggleCamera = () => {
-    if (streamRef.current) {
-      const videoTrack = streamRef.current.getVideoTracks()[0];
-      if (videoTrack) {
-        videoTrack.enabled = isCamOff;
-        setIsCamOff(!isCamOff);
+  const toggleCamera = async () => {
+    if (!streamRef.current) return;
+    const videoTrack = streamRef.current.getVideoTracks()[0];
+    if (videoTrack) {
+      const nextState = !videoTrack.enabled;
+      videoTrack.enabled = nextState;
+      setIsCamOff(!nextState);
+      setVideoStatus(nextState ? 'active' : 'disabled');
+      if (nextState && videoRef.current) {
+        videoRef.current.play().catch(() => {});
+      }
+    } else {
+      // Se a reunião começou sem vídeo, tenta adquirir câmera dinamicamente agora
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        if (newVideoTrack) {
+          streamRef.current.addTrack(newVideoTrack);
+          setIsCamOff(false);
+          setVideoStatus('active');
+          setCameraNotice('');
+          if (videoRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            videoRef.current.play().catch(() => {});
+          }
+          newVideoTrack.onended = () => {
+            setIsCamOff(true);
+            setVideoStatus('ended');
+          };
+        }
+      } catch (err) {
+        console.warn('Não foi possível ativar câmera sob demanda:', err);
+        setCameraNotice('Não foi possível ativar a câmera: verifique permissões ou se o dispositivo está em uso.');
       }
     }
   };
+
+  // Gerencia ciclo de vida da reunião (iniciar automaticamente se ao vivo ao entrar na sala)
+  useEffect(() => {
+    if (currentMeeting) {
+      if (currentMeeting.STATUS_MEETING === 'ao_vivo') {
+        setIsRecording(true);
+        isRecordingRef.current = true;
+        if (!streamRef.current) {
+          startMediaAndRecognition();
+        }
+      } else {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+        stopMediaAndRecognition();
+      }
+    } else {
+      setIsRecording(false);
+      isRecordingRef.current = false;
+      stopMediaAndRecognition();
+    }
+  }, [activeMeetingId, currentMeeting, startMediaAndRecognition, stopMediaAndRecognition]);
+
+  // Limpeza estrita ao desmontar o componente
+  useEffect(() => {
+    return () => {
+      stopMediaAndRecognition();
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [stopMediaAndRecognition]);
 
   // Transição de status da reunião
   const handleMeetingAction = async (meetingId, action) => {
@@ -663,8 +982,161 @@ export default function LiveMeetingPage({
           </div>
         </div>
 
+        {/* Barra de Diagnóstico em Tempo Real */}
+        <div className="live-diagnostic-bar" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 20px',
+          background: 'rgba(15, 23, 42, 0.85)',
+          borderBottom: '1px solid var(--border-color)',
+          fontSize: '11px',
+          flexWrap: 'wrap',
+          gap: '8px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            {/* Microfone Status & VU Meter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Microfone:</span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 600,
+                color: audioStatus === 'active' ? '#10b981' : audioStatus === 'muted' ? '#eab308' : '#ef4444'
+              }}>
+                <span style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: audioStatus === 'active' ? '#10b981' : audioStatus === 'muted' ? '#eab308' : '#ef4444'
+                }}></span>
+                {audioStatus === 'active' ? 'Conectado' : audioStatus === 'muted' ? 'Mutado' : audioStatus === 'denied' ? 'Sem Permissão' : audioStatus === 'requesting' ? 'Conectando...' : 'Desconectado'}
+              </span>
+              {/* VU Meter */}
+              {audioStatus === 'active' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '3px', marginLeft: 4 }} title={`Nível de voz: ${audioLevel}%`}>
+                  <div style={{ width: '40px', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div style={{
+                      width: `${audioLevel}%`,
+                      height: '100%',
+                      background: audioLevel > 60 ? '#ef4444' : audioLevel > 20 ? '#10b981' : '#38bdf8',
+                      transition: 'width 0.08s ease'
+                    }}></div>
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', minWidth: '22px' }}>{audioLevel}%</span>
+                </div>
+              )}
+            </div>
+
+            {/* Câmera Status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Câmera:</span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 600,
+                color: videoStatus === 'active' && !isCamOff ? '#10b981' : isCamOff || videoStatus === 'disabled' ? '#94a3b8' : '#ef4444'
+              }}>
+                <span style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: videoStatus === 'active' && !isCamOff ? '#10b981' : isCamOff || videoStatus === 'disabled' ? '#94a3b8' : '#ef4444'
+                }}></span>
+                {videoStatus === 'active' && !isCamOff ? 'Conectada' : isCamOff || videoStatus === 'disabled' ? 'Desligada' : videoStatus === 'denied' ? 'Sem Permissão' : 'Indisponível'}
+              </span>
+              {videoDevices.length > 0 && (
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({videoDevices.length} disp.)</span>
+              )}
+            </div>
+
+            {/* Transcrição Status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Transcrição:</span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontWeight: 600,
+                color: transcriptionStatus === 'listening' ? '#38bdf8' : transcriptionStatus === 'starting' ? '#eab308' : transcriptionStatus === 'error' ? '#ef4444' : '#94a3b8'
+              }}>
+                {transcriptionStatus === 'listening' ? 'Ouvindo...' : transcriptionStatus === 'starting' ? 'Iniciando...' : transcriptionStatus === 'error' ? 'Erro' : transcriptionStatus === 'unsupported' ? 'Não Suportada' : 'Pausada'}
+              </span>
+            </div>
+          </div>
+
+          {/* Ação de Reconexão se necessário */}
+          {(mediaPermission === 'denied' || mediaPermission === 'unavailable' || audioStatus === 'denied' || audioStatus === 'unavailable' || mediaError) && (
+            <button
+              type="button"
+              onClick={startMediaAndRecognition}
+              className="btn btn-secondary"
+              style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: 'var(--danger)', color: 'var(--danger)' }}
+            >
+              <RefreshCw size={11} />
+              Tentar Reconectar Mídia
+            </button>
+          )}
+        </div>
+
+        {/* Notificação de Câmera Desconectada / Ocupada (Fallback Gracioso) */}
+        {cameraNotice && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 16px',
+            background: 'rgba(234, 179, 8, 0.12)',
+            borderBottom: '1px solid rgba(234, 179, 8, 0.3)',
+            color: '#fbbf24',
+            fontSize: '11.5px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Info size={14} />
+              <span>{cameraNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCameraNotice('')}
+              style={{ background: 'transparent', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '13px' }}
+              title="Fechar aviso"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Notificação de Erro Crítico de Mídia / Microfone */}
+        {mediaError && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 16px',
+            background: 'rgba(239, 68, 68, 0.15)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
+            color: '#f87171',
+            fontSize: '11.5px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AlertCircle size={14} />
+              <span>{mediaError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMediaError('')}
+              style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '13px' }}
+              title="Fechar aviso"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Layout da Sala de Reunião (Palco de Vídeo + Transcrição Lateral) */}
-        <div className="meeting-layout" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div className="meeting-layout">
           {/* Palco Principal */}
           <div className="main-stage">
             <div className="video-container">
@@ -675,10 +1147,15 @@ export default function LiveMeetingPage({
                 autoPlay
                 playsInline
                 muted
-                style={{ display: isCamOff ? 'none' : 'block' }}
+                style={{
+                  display: isCamOff || videoStatus !== 'active' ? 'none' : 'block',
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain'
+                }}
               ></video>
 
-              {isCamOff && (
+              {(isCamOff || videoStatus !== 'active') && (
                 <div
                   id="cam-placeholder"
                   style={{
@@ -690,39 +1167,79 @@ export default function LiveMeetingPage({
                     justifyContent: 'center',
                     background: '#090d16',
                     borderRadius: '12px',
-                    gap: '12px'
+                    gap: '14px',
+                    padding: '20px',
+                    textAlign: 'center'
                   }}
                 >
                   <div style={{
+                    position: 'relative',
                     width: 90,
                     height: 90,
                     borderRadius: '50%',
-                    background: 'var(--panel-bg)',
+                    background: 'rgba(30, 41, 59, 0.8)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '2rem',
                     fontWeight: 700,
                     color: 'var(--primary-color)',
-                    border: '2px solid var(--border-color)'
+                    border: '2px solid rgba(56, 189, 248, 0.3)',
+                    boxShadow: '0 0 24px rgba(56, 189, 248, 0.1)'
                   }}>
                     {(currentMeeting.DEPARTAMENTO || 'TOTVS').substring(0, 2).toUpperCase()}
+                    {audioStatus === 'active' && audioLevel > 15 && (
+                      <div style={{
+                        position: 'absolute',
+                        inset: -4,
+                        borderRadius: '50%',
+                        border: '2px solid #10b981',
+                        pointerEvents: 'none'
+                      }}></div>
+                    )}
                   </div>
-                  <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                    Câmera desligada • Transcrição ativa
-                  </span>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-main)' }}>
+                      {isCamOff ? 'Câmera desativada' : videoStatus === 'denied' ? 'Permissão de câmera não concedida' : 'Câmera não detectada'}
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                      {audioStatus === 'active'
+                        ? 'Reunião em modo de voz • Microfone e transcrição funcionando normalmente'
+                        : audioStatus === 'muted'
+                        ? 'Microfone mutado'
+                        : 'Aguardando conexão do microfone...'}
+                    </span>
+                  </div>
+
+                  {audioStatus === 'active' && (
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      fontSize: '11px',
+                      color: '#10b981'
+                    }}>
+                      <Mic size={12} />
+                      <span>Captação de voz ativa ({audioLevel}%)</span>
+                    </div>
+                  )}
                 </div>
               )}
 
               <div className="video-overlay-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span>Você ({currentMeeting.DEPARTAMENTO})</span>
+                <span>Você ({currentMeeting.DEPARTAMENTO || 'TOTVS'})</span>
                 {isMuted && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 4px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 4px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }} title="Microfone mutado">
                     <MicOff size={11} color="#f87171" />
                   </span>
                 )}
                 {isRecording && (
-                  <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.5)', padding: '2px 6px', borderRadius: '4px', color: '#38bdf8' }}>
+                  <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', color: '#38bdf8', fontWeight: 600 }}>
                     {formatTimer(durationSeconds)}
                   </span>
                 )}
