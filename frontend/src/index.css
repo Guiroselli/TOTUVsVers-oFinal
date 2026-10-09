@@ -4632,3 +4632,130 @@ input[type="text"].command-search-input::placeholder,
   white-space: nowrap;
 }
 
+/* ========================================================
+   SISTEMA GLOBAL DE BOTÕES EXECUTIVOS (TOTVS ENTERPRISE)
+   ======================================================== */
+.btn,
+.btn-pf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 0.815rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0 14px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  white-space: nowrap;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.btn:active,
+.btn-pf:active {
+  transform: scale(0.98);
+}
+
+.btn:disabled,
+.btn-pf:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Primary Button (Azul Corporativo TOTVS) */
+.btn-primary,
+.btn-pf-primary {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff !important;
+  border: 1px solid rgba(2, 132, 199, 0.4);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+}
+
+.btn-primary:hover,
+.btn-pf-primary:hover {
+  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  border-color: #0369a1;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Secondary Button (Neutro com Borda Suave e Hover Corporativo) */
+.btn-secondary,
+.btn-pf-secondary {
+  background-color: var(--panel-hover);
+  color: var(--text-main) !important;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.btn-secondary:hover,
+.btn-pf-secondary:hover {
+  background-color: var(--panel-bg);
+  border-color: var(--primary-color);
+  color: var(--primary-color) !important;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.15);
+  transform: translateY(-1px);
+}
+
+/* Danger Button */
+.btn-danger,
+.btn-pf-danger {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: #ffffff !important;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger:hover,
+.btn-pf-danger:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Success Button */
+.btn-success,
+.btn-pf-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff !important;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.btn-success:hover,
+.btn-pf-success:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Small Button Variant */
+.btn-sm,
+.btn-pf-sm {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 0.765rem;
+  border-radius: 6px;
+}
+
+/* Spin Animation */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+

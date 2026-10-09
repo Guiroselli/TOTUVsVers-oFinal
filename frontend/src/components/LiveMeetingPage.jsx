@@ -2718,25 +2718,27 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
       {/* Top Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
-              width: 38,
-              height: 38,
-              borderRadius: '10px',
-              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(2, 132, 199, 0.2) 100%)',
+              width: 42,
+              height: 42,
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(2, 132, 199, 0.12) 100%)',
               border: '1px solid rgba(239, 68, 68, 0.3)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#ef4444'
+              color: '#ef4444',
+              boxShadow: '0 2px 10px rgba(239, 68, 68, 0.15)',
+              flexShrink: 0
             }}>
               <Radio size={20} />
             </div>
             <div>
-              <h1 style={{ fontSize: '1.4rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+              <h1 style={{ fontSize: '1.45rem', fontWeight: 800, margin: 0, color: 'var(--text-main)', letterSpacing: '-0.02em', fontFamily: "'Outfit', sans-serif" }}>
                 Central de Reuniões Ao Vivo
               </h1>
-              <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-muted)' }}>
+              <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: 'var(--text-muted)' }}>
                 Gerencie múltiplas salas simultâneas com transcrição e isolamento completo de áudio.
               </p>
             </div>
@@ -2748,21 +2750,21 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
             type="button"
             onClick={loadLiveMeetings}
             className="btn btn-secondary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12.5px' }}
-            title="Atualizar lista de reuniões"
+            title="Atualizar lista de reuniões ao vivo"
+            disabled={loading}
           >
-            <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            Atualizar
+            <RefreshCw size={14} className={loading ? 'spin' : ''} style={{ color: 'var(--primary-color)' }} />
+            <span>Atualizar</span>
           </button>
 
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
             className="btn btn-primary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}
+            title="Criar nova sala de reunião ao vivo"
           >
             <Plus size={16} />
-            Nova Reunião Ao Vivo
+            <span>Nova Reunião Ao Vivo</span>
           </button>
         </div>
       </div>
