@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Settings,
   X
 } from 'lucide-react';
@@ -58,48 +59,72 @@ export default function Sidebar({
       )}
 
       {/* Header com Logo */}
-      <div className="logo-area">
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: isCollapsed ? 'center' : 'flex-start',
-          gap: '10px',
-          width: '100%'
-        }}>
-          <div
-            onClick={isCollapsed ? onToggleCollapse : undefined}
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '9px',
-              background: 'linear-gradient(135deg, #0284c7 0%, #004b87 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              fontWeight: 800,
-              fontSize: '14px',
-              boxShadow: '0 3px 10px rgba(2, 132, 199, 0.3)',
-              flexShrink: 0,
-              cursor: isCollapsed ? 'pointer' : 'default'
-            }}
-            title={isCollapsed ? 'Clique para expandir o menu lateral' : 'Proton Flow - TOTVS Ready'}
-          >
-            PF
-          </div>
-          {!isCollapsed && (
-            <div className="logo-text-wrapper" style={{ overflow: 'hidden' }}>
-              <h1 className="logo-title" style={{ margin: 0, fontSize: '1.05rem', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
-                Proton Flow
-              </h1>
-              <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--primary-color)', fontWeight: 700, whiteSpace: 'nowrap', display: 'block' }}>
-                TOTVS Ready
-              </span>
+      <div className="logo-area" style={{ padding: isCollapsed ? '0.75rem 0.5rem' : '0.85rem 1rem' }}>
+        <div
+          onClick={isCollapsed ? onToggleCollapse : undefined}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: isCollapsed ? 'center' : 'space-between',
+            gap: '10px',
+            width: '100%',
+            cursor: isCollapsed ? 'pointer' : 'default',
+            borderRadius: '8px',
+            padding: isCollapsed ? '0' : '4px',
+            transition: 'background-color 0.15s ease'
+          }}
+          title={isCollapsed ? 'Clique para expandir o menu lateral' : 'Proton Flow - TOTVS Enterprise'}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {/* Ícone Vetorial Geométrico Moderno */}
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                display: 'grid',
+                placeContent: 'center',
+                boxShadow: '0 3px 12px rgba(2, 132, 199, 0.35)',
+                flexShrink: 0
+              }}
+            >
+              <svg
+                width="20"
+                height="16"
+                viewBox="0 0 50 39"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M16.4992 2H37.5808L22.0816 24.9729H1L16.4992 2Z"
+                  fill="#ffffff"
+                />
+                <path
+                  d="M17.4224 27.102L11.4192 36H33.5008L49 13.0271H32.7024L23.2064 27.102H17.4224Z"
+                  fill="#ffffff"
+                />
+              </svg>
             </div>
+
+            {!isCollapsed && (
+              <div className="logo-text-wrapper" style={{ overflow: 'hidden' }}>
+                <h1 className="logo-title" style={{ margin: 0, fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
+                  Proton Flow
+                </h1>
+                <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--primary-color)', fontWeight: 700, whiteSpace: 'nowrap', display: 'block' }}>
+                  TOTVS Ready
+                </span>
+              </div>
+            )}
+          </div>
+
+          {!isCollapsed && (
+            <ChevronDown size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
           )}
         </div>
         {!isCollapsed && (
-          <span className="logo-subtitle">Inteligência Gerencial Corporativa</span>
+          <span className="logo-subtitle" style={{ marginTop: '6px' }}>Inteligência Gerencial Corporativa</span>
         )}
       </div>
 
@@ -133,7 +158,7 @@ export default function Sidebar({
           <button
             className={`nav-btn ${currentView === 'dashboard' ? 'active' : ''}`}
             onClick={() => handleNavClick('dashboard')}
-            title="Histórico de Reuniões e Atas Corporativas"
+            title="Histórico de Reuniões e Atas Geradas"
           >
             <FileText size={18} style={{ flexShrink: 0 }} />
             {!isCollapsed && <span className="nav-btn-text">Histórico de Reuniões</span>}
@@ -142,17 +167,13 @@ export default function Sidebar({
           <button
             className={`nav-btn ${currentView === 'meeting' ? 'active' : ''}`}
             onClick={() => handleNavClick('meeting')}
-            title="Reunião Ao Vivo com Transcrição Inteligente"
+            title="Reunião Ao Vivo: Gravação, Transcrição Whisper e Síntese em Tempo Real"
           >
             <Radio size={18} style={{ flexShrink: 0 }} />
             {!isCollapsed && (
               <>
                 <span className="nav-btn-text">Reunião Ao Vivo</span>
-                <span style={{
-                  marginLeft: 'auto',
-                  fontSize: '9px',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
+                <span className="nav-pill-badge" style={{
                   background: 'rgba(239, 68, 68, 0.15)',
                   color: '#ef4444',
                   fontWeight: 700,

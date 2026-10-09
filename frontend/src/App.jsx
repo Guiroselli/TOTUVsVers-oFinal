@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import MeetingHistoryTable from './components/MeetingHistoryTable';
 import TotvsIntegrationModal from './components/TotvsIntegrationModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
+import ExecutiveDashboardOverview from './components/ExecutiveDashboardOverview';
 import {
   Radio,
   Search,
@@ -19,7 +20,9 @@ import {
   SlidersHorizontal,
   RefreshCw,
   Menu,
-  Settings
+  Settings,
+  Bell,
+  User
 } from 'lucide-react';
 
 // Code Splitting / Lazy Loading de páginas pesadas
@@ -2014,7 +2017,35 @@ export default function MeetingApp() {
         </button>
 
         <div className="mobile-brand">
-          <div className="mobile-logo-badge">PF</div>
+          <div
+            className="mobile-logo-badge"
+            style={{
+              width: '30px',
+              height: '30px',
+              borderRadius: '8px',
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+              display: 'grid',
+              placeContent: 'center',
+              padding: 0
+            }}
+          >
+            <svg
+              width="16"
+              height="13"
+              viewBox="0 0 50 39"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M16.4992 2H37.5808L22.0816 24.9729H1L16.4992 2Z"
+                fill="#ffffff"
+              />
+              <path
+                d="M17.4224 27.102L11.4192 36H33.5008L49 13.0271H32.7024L23.2064 27.102H17.4224Z"
+                fill="#ffffff"
+              />
+            </svg>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <span className="mobile-brand-title">Proton Flow</span>
             <span className="mobile-brand-sub">TOTVS</span>
@@ -2075,7 +2106,7 @@ export default function MeetingApp() {
                 Consulte, filtre e gerencie as atas das reuniões corporativas da TOTVS com inteligência artificial.
               </p>
             </div>
-            <div className="dashboard-header-actions">
+            <div className="dashboard-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
                 onClick={() => loadMeetings(pagination.page, pagination.page_size)}
                 className="btn-pf btn-pf-secondary"
@@ -2104,86 +2135,102 @@ export default function MeetingApp() {
                 <Radio size={14} />
                 <span>Reunião Ao Vivo</span>
               </button>
+
+              {/* Botão de Notificações com Indicador */}
+              <button
+                type="button"
+                className="header-action-icon-btn"
+                title="Notificações e Alertas do Sistema"
+                style={{
+                  position: 'relative',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--panel-bg)',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <Bell size={16} />
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '6px',
+                    right: '6px',
+                    width: '8px',
+                    height: '8px',
+                    backgroundColor: '#ef4444',
+                    borderRadius: '50%'
+                  }}
+                />
+              </button>
+
+              {/* Alternador de Tema Rápido no Header */}
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="header-action-icon-btn"
+                title={theme === 'dark' ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--panel-bg)',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                {theme === 'dark' ? <Sun size={16} color="#f59e0b" /> : <Moon size={16} color="#0284c7" />}
+              </button>
+
+              {/* Botão de Perfil / Usuário */}
+              <button
+                type="button"
+                className="header-action-icon-btn"
+                title="Perfil do Usuário (Proton Flow Enterprise)"
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  border: '1px solid var(--border-color)',
+                  background: 'var(--panel-bg)',
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <User size={16} />
+              </button>
             </div>
           </header>
 
           <div className="dashboard-content-area">
-            {/* Grid Executivo de 4 KPIs */}
-            <div className="executive-kpi-grid">
-              {/* Card 1: Total de Reuniões */}
-              <div className="executive-kpi-card">
-                <div className="executive-kpi-header">
-                  <span className="executive-kpi-label">Reuniões Registradas</span>
-                  <div className="executive-kpi-icon-box" title="Volume total de reuniões no banco">
-                    <FileText size={18} />
-                  </div>
-                </div>
-                <div className="executive-kpi-value">{totalMeetingsCount}</div>
-                <div className="executive-kpi-meta">
-                  <span>Atas catalogadas no banco</span>
-                </div>
-              </div>
-
-              {/* Card 2: Pendentes de Análise */}
-              <div className="executive-kpi-card">
-                <div className="executive-kpi-header">
-                  <span className="executive-kpi-label">Aguardando Análise</span>
-                  <div
-                    className="executive-kpi-icon-box"
-                    style={{ background: pendingAnalysisCount > 0 ? 'rgba(245, 158, 11, 0.12)' : 'rgba(2, 132, 199, 0.1)', color: pendingAnalysisCount > 0 ? '#d97706' : 'var(--primary-color)' }}
-                    title="Reuniões que ainda não foram analisadas pela IA"
-                  >
-                    <Clock size={18} />
-                  </div>
-                </div>
-                <div
-                  className="executive-kpi-value"
-                  style={{ color: pendingAnalysisCount > 0 ? '#d97706' : 'var(--text-main)' }}
-                >
-                  {pendingAnalysisCount}
-                </div>
-                <div className="executive-kpi-meta">
-                  <span>{pendingAnalysisCount > 0 ? 'Requerem síntese e revisão' : 'Todas atas analisadas'}</span>
-                </div>
-              </div>
-
-              {/* Card 3: Ecossistema TOTVS */}
-              <div className="executive-kpi-card">
-                <div className="executive-kpi-header">
-                  <span className="executive-kpi-label">Ecossistema TOTVS</span>
-                  <div className="executive-kpi-icon-box" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }} title="Conectores de integração">
-                    <Layers size={18} />
-                  </div>
-                </div>
-                <div className="executive-kpi-value" style={{ color: '#10b981', fontSize: '1.5rem', marginTop: '4px' }}>
-                  100% Ativo
-                </div>
-                <div className="executive-kpi-meta">
-                  <span>Fluig • Protheus • RM</span>
-                </div>
-              </div>
-
-              {/* Card 4: Gestão Estratégica (Área Empresarial) */}
-              <div className="executive-kpi-card highlight-enterprise">
-                <div className="executive-kpi-header">
-                  <span className="executive-kpi-label" style={{ color: 'var(--primary-color)' }}>Gestão Estratégica</span>
-                  <div className="executive-kpi-icon-box" style={{ background: 'rgba(2, 132, 199, 0.18)', color: 'var(--primary-color)' }}>
-                    <Building2 size={18} />
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <button
-                    onClick={() => setCurrentView('analytics')}
-                    className="executive-kpi-action-btn"
-                    title="Acessar Área Empresarial: Matriz de Gargalos, SLA e Analytics"
-                  >
-                    <span>Área Empresarial</span>
-                    <ArrowRight size={14} />
-                  </button>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Matriz de Gargalos & KPIs</span>
-                </div>
-              </div>
-            </div>
+            {/* Painel Executivo Superior: KPIs, Feed de Atividades da IA & Métricas de Urgência */}
+            <ExecutiveDashboardOverview
+              meetings={meetings}
+              loading={loadingMeetings}
+              totalMeetingsCount={totalMeetingsCount}
+              pendingAnalysisCount={pendingAnalysisCount}
+              onSelectMeeting={(id) => {
+                setExpandedMeetingId(id);
+                const tableElem = document.querySelector('.meeting-header-controls');
+                if (tableElem) tableElem.scrollIntoView({ behavior: 'smooth' });
+              }}
+              onOpenDocumentViewer={handleOpenDocumentViewer}
+              onOpenAnalytics={() => setCurrentView('analytics')}
+              onOpenConfig={() => setShowConfigModal(true)}
+              onFilterUnanalyzed={() => handleToggleUnanalyzed(true)}
+            />
 
             {/* Barra de Comando e Filtros Unificada */}
             <form className="executive-command-bar" onSubmit={handleApplyFilter}>
