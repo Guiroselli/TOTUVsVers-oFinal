@@ -11,14 +11,12 @@ import {
   ArrowRight,
   Sparkles,
   CheckCircle2,
-  AlertTriangle,
   ExternalLink,
   Users,
   Package,
   Bell,
   Cpu,
   BarChart3,
-  Calendar,
   DollarSign
 } from 'lucide-react';
 
@@ -48,7 +46,7 @@ const formatDate = (dateStr) => {
     if (parts.length === 3) {
       return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
-  } catch (e) {}
+  } catch {}
   return String(dateStr);
 };
 
@@ -133,7 +131,7 @@ const FALLBACK_FEED = [
 
 export default function ExecutiveDashboardOverview({
   meetings = [],
-  loading = false,
+  loading: _loading = false,
   totalMeetingsCount = 0,
   pendingAnalysisCount = 0,
   onSelectMeeting,
