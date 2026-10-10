@@ -9,13 +9,13 @@
     "PARTICIPANTES": [],
     "FONTE_AUDIO": "Padrão - Microphone (Realtek(R) Audio)",
     "ORIGEM": "live",
-    "STATUS_MEETING": "ao_vivo",
-    "STATUS_ANALISE": "aguardando_analise",
+    "STATUS_MEETING": "ANALISE_CONCLUIDA",
+    "STATUS_ANALISE": "analise_concluida",
     "STATUS_REVISAO": "revisao_pendente",
-    "ANON_TRANSCRICAO": "",
+    "ANON_TRANSCRICAO": "Keep a way downtown, well keep fast e na... Ah, me tira que to descrevendo. Alô, pratou um flu... Essa é a... de teste para a gente ver se o resumo está funcionando. o sistema está fluido, está bem melhor ao front end feito bem que a gente está arinhado e finalmente está funcionando e um e um. O NÊO NÊO! um... um... do dissegue.",
     "NIVEL_URGENCIA": "Não Definido",
-    "RESPONSAVEL_REUNIAO": "",
-    "TEM_PDF": false,
+    "RESPONSAVEL_REUNIAO": "Não identificado",
+    "TEM_PDF": true,
     "FORMATO_MEETING": "VIDEO",
     "EVENTOS_SESSAO": [
       {
@@ -25,14 +25,644 @@
       {
         "tipo": "iniciada",
         "timestamp": "2026-10-08T14:30:23.547544"
+      },
+      {
+        "tipo": "finalizada",
+        "timestamp": "2026-10-10T19:54:24.242414"
       }
     ],
     "CREATED_AT": "2026-10-08T14:30:23.547544",
     "STARTED_AT": "2026-10-08T14:30:23.547544",
     "PAUSED_AT": null,
-    "FINISHED_AT": null,
-    "RESUMO_IA": null,
-    "RESUMO_EXECUTIVO": null
+    "FINISHED_AT": "2026-10-10T19:54:24.242414",
+    "RESUMO_IA": {
+      "tema": "Alinhamento de Implantação e Prazos",
+      "contexto": {
+        "problema": "Alinhamento de implantação e prazos",
+        "decisao": "Não há decisões mencionadas"
+      },
+      "organizacao_por_temas": [
+        {
+          "tema": "Desenvolvimento & TI",
+          "tema_canonico": "desenvolvimento",
+          "topicos": [
+            "Alinhamento de implantação",
+            "Prazos"
+          ]
+        }
+      ],
+      "tarefas": [
+        {
+          "responsavel": "Não identificado",
+          "tarefa": "Garantir que o sistema funcione bem no front end",
+          "prazo": "Não mencionado",
+          "prazo_iso": null,
+          "prazo_confidence": 0.0,
+          "prazo_parse_status": "not_mentioned",
+          "status": "Não Inicializado",
+          "prioridade": "Média",
+          "confidence": 0.85,
+          "evidencia": "O sistema está fluido, está bem melhor ao front end",
+          "evidence": "O sistema está fluido, está bem melhor ao front end",
+          "meeting_id": null,
+          "task_validation_status": "valid",
+          "validation_reason": "Tarefa operacional válida com ação e entregável identificáveis"
+        }
+      ],
+      "dores": [
+        {
+          "categoria": "aprovacao_pendente",
+          "label": "Aprovação pendente",
+          "descricao": "Aprovação pendente (1 ocorrência mapeada)",
+          "trecho": "O sistema está fluido, está bem melhor ao front end",
+          "severidade": "Média",
+          "sistema_totvs": "fluig"
+        }
+      ],
+      "responsavel_reuniao": "Não identificado",
+      "participantes": [
+        "Não identificado"
+      ],
+      "nivel_urgencia": "Não Definido",
+      "justificativa_urgencia": "Não há indicações de urgência no texto fornecido",
+      "confianca_urgencia": 0.9,
+      "field_suggestions": {
+        "responsavel_reuniao": {
+          "field_name": "responsavel_reuniao",
+          "label": "Responsável Geral",
+          "suggested_value": "Não identificado",
+          "confidence": 0.0,
+          "evidence": "Nenhum nome de facilitador ou responsável claro identificado na transcrição.",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": [],
+          "reasons": null
+        },
+        "nivel_urgencia": {
+          "field_name": "nivel_urgencia",
+          "label": "Nível de Urgência",
+          "suggested_value": "Não Definido",
+          "confidence": 0.9,
+          "evidence": "Não há indicações de urgência no texto fornecido",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        },
+        "tema": {
+          "field_name": "tema",
+          "label": "Tema Principal",
+          "suggested_value": "Alinhamento de Implantação e Prazos",
+          "confidence": 0.9,
+          "evidence": "O sistema está fluido, está bem melhor ao front end",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        },
+        "participantes": {
+          "field_name": "participantes",
+          "label": "Participantes Identificados",
+          "suggested_value": [
+            "Não identificado"
+          ],
+          "confidence": 0.85,
+          "evidence": "Identificados 1 interlocutor(es) na transcrição.",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        },
+        "justificativa_urgencia": {
+          "field_name": "justificativa_urgencia",
+          "label": "Justificativa da Urgência",
+          "suggested_value": "Não há indicações de urgência no texto fornecido",
+          "confidence": 0.9,
+          "evidence": "Não há indicações de urgência no texto fornecido",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        },
+        "status_inicial_reuniao": {
+          "field_name": "status_inicial_reuniao",
+          "label": "Status Inicial da Reunião",
+          "suggested_value": "analise_concluida",
+          "confidence": 1.0,
+          "evidence": "Análise sintética executada e estruturada pelo sistema.",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        }
+      },
+      "recomendacoes_totvs": [
+        {
+          "id": "rec_96eac0132188",
+          "recommendation_id": "rec_96eac0132188",
+          "meeting_id": null,
+          "product_key": "fluig",
+          "product_name": "TOTVS Fluig",
+          "product_area": "Workflow, BPM, ECM e Portais Corporativos",
+          "fit_score": 0.48,
+          "confidence": 0.75,
+          "confidence_label": "Alta",
+          "is_strong_recommendation": true,
+          "why_recommended": "A reunião registrou demandas relacionadas a Aprovação pendente. O TOTVS Fluig pode apoiar a operação, sendo compatível com as rotinas identificadas (requer validação do módulo e da API).",
+          "trigger_pains": [
+            {
+              "categoria": "aprovacao_pendente",
+              "label": "Aprovação pendente",
+              "ocorrencias": 1,
+              "evidence": "O sistema está fluido, está bem melhor ao front end"
+            }
+          ],
+          "trigger_tasks": [],
+          "all_evidences": [
+            "O sistema está fluido, está bem melhor ao front end"
+          ],
+          "recommended_capabilities": [
+            "Fluxos formais de aprovação multi-alçada com SLA",
+            "Gestão e versionamento eletrônico de documentos (ECM)",
+            "Rastreabilidade ponta a ponta de processos e etapas",
+            "Notificações automáticas e delegação de responsáveis por tarefa"
+          ],
+          "expected_benefits": [
+            "Pode reduzir aprovações informais e descentralizadas por e-mail",
+            "Dá visibilidade total do responsável e prazos de cada etapa em tempo real",
+            "Contribui para eliminar extravios de documentos e perda de prazos regulatórios"
+          ],
+          "implementation_next_step": "Mapear processo, aprovadores e criar fluxo piloto no TOTVS Fluig.",
+          "required_inputs": [
+            "tarefas_confirmadas",
+            "responsavel",
+            "prazo",
+            "codigo_cliente"
+          ],
+          "missing_data": [],
+          "integration_status": "real",
+          "source": "rule_plus_catalog",
+          "review_status": "pending",
+          "score_breakdown": {
+            "pain_coverage": 1.0,
+            "task_fit": 0.0,
+            "urgency_weight": 0.2,
+            "segment_fit": 0.0,
+            "integration_availability": 1.0
+          },
+          "contributing_signals": [
+            "Dor mapeada: Aprovação pendente",
+            "Segmento do cliente não informado / não mapeado",
+            "Webhook oficial configurado no ecossistema"
+          ],
+          "negated_signals": [],
+          "catalog_version": "2.1.0",
+          "prompt_version": "2.1.0",
+          "model_version": "llama3:latest",
+          "created_at": "2026-10-10T19:54:50.240432",
+          "confirmed_by": null,
+          "confirmed_at": null,
+          "history": []
+        }
+      ],
+      "alertas": [],
+      "analise_metadados": {
+        "model": "qwen2.5:3b",
+        "model_name": "qwen2.5:3b",
+        "prompt_version": "2.1.0",
+        "catalog_version": "2.1.0",
+        "analyzed_at": "2026-10-10T19:54:50.230272",
+        "duration_seconds": 25.72,
+        "transcript_char_count": 330,
+        "status": "success",
+        "analysis_engine": "ollama",
+        "analysis_status": "analise_concluida",
+        "technical_confidence": "Processamento concluído com sucesso",
+        "semantic_confidence": "Alta (85%) — Evidências textuais mapeadas",
+        "analysis_confidence": 0.85,
+        "confidence_reason": "Análise estruturada completa com evidências e alinhamento de tópicos.",
+        "insufficient_data_reason": null,
+        "valid_items_count": 3,
+        "pending_items_count": 1,
+        "items_discarded_noise": 0,
+        "rejected_tasks_audit": [],
+        "warning": null,
+        "parsing_error": null
+      },
+      "perfil_cliente": null,
+      "codigo_cliente": null,
+      "resumo_executivo": {
+        "version": "executive_v1",
+        "status": "generated",
+        "generated_at": "2026-10-10T19:54:50.230304",
+        "source_analysis_id": "",
+        "summary_for_decision": "A reunião deliberou sobre o alinhamento referente a 'Alinhamento de Implantação e Prazos'. O foco principal de atenção identificado foi: Alinhamento de implantação e prazos. Como decisão formal da sessão, estabeleceu-se: Não há decisões mencionadas. Identificou-se oportunidade de suporte operacional via ecossistema TOTVS Fluig.",
+        "current_situation": "Alinhamento de implantação e prazos",
+        "business_impact": "Impacto operacional moderado em rotinas internas, mitigável por meio de padronização de procedimentos e acompanhamento de tarefas.",
+        "main_risks": [
+          {
+            "text": "Aprovação pendente: Aprovação pendente (1 ocorrência mapeada)",
+            "severity": "Média",
+            "source_refs": [
+              "pain:0"
+            ]
+          }
+        ],
+        "decisions_made": [
+          {
+            "text": "Não há decisões mencionadas",
+            "source_refs": [
+              "context:decisao"
+            ]
+          }
+        ],
+        "decisions_required": [
+          {
+            "text": "Avaliar e homologar estudo de aderência do TOTVS Fluig para saneamento dos gargalos identificados.",
+            "owner_level": "Liderança Executiva / TI",
+            "source_refs": [
+              "rec:fluig"
+            ]
+          },
+          {
+            "text": "Designar formalmente o responsável geral pelo acompanhamento das entregas desta reunião.",
+            "owner_level": "Liderança Operacional",
+            "source_refs": [
+              "metadata:responsavel"
+            ]
+          }
+        ],
+        "strategic_next_steps": [
+          {
+            "text": "Acompanhar entrega: 'Garantir que o sistema funcione bem no front end' sob responsabilidade de Não identificado (Prazo: Não mencionado).",
+            "source_refs": [
+              "task:0"
+            ]
+          },
+          {
+            "text": "Conduzir Mapear processo, aprovadores e criar fluxo piloto no TOTVS Fluig. referente à solução TOTVS Fluig.",
+            "source_refs": [
+              "rec:fluig"
+            ]
+          }
+        ],
+        "executive_recommendation": {
+          "product_name": "TOTVS Fluig",
+          "reason": "A reunião registrou demandas relacionadas a Aprovação pendente. O TOTVS Fluig pode apoiar a operação, sendo compatível com as rotinas identificadas (requer validação do módulo e da API).",
+          "status": "Preliminar — requer validação humana",
+          "expected_benefits": [
+            "Pode reduzir aprovações informais e descentralizadas por e-mail",
+            "Dá visibilidade total do responsável e prazos de cada etapa em tempo real",
+            "Contribui para eliminar extravios de documentos e perda de prazos regulatórios"
+          ],
+          "source_refs": [
+            "rec:fluig"
+          ]
+        },
+        "urgency": "Não Definido",
+        "confidence": "Alta (85%) — Evidências textuais mapeadas",
+        "review_status": "pending_review",
+        "source_refs": [
+          "theme:principal",
+          "pain:0",
+          "context:decisao",
+          "rec:fluig",
+          "metadata:responsavel",
+          "task:0"
+        ],
+        "missing_information": [
+          "Responsável geral pela reunião não identificado",
+          "Prazos formais de algumas entregas pendentes de definição"
+        ],
+        "generation_method": "deterministic_executive_template",
+        "prompt_version": "2.1.0",
+        "model_version": "qwen2.5:3b"
+      }
+    },
+    "RESUMO_EXECUTIVO": {
+      "version": "executive_v1",
+      "status": "generated",
+      "generated_at": "2026-10-10T19:54:50.230304",
+      "source_analysis_id": "",
+      "summary_for_decision": "A reunião deliberou sobre o alinhamento referente a 'Alinhamento de Implantação e Prazos'. O foco principal de atenção identificado foi: Alinhamento de implantação e prazos. Como decisão formal da sessão, estabeleceu-se: Não há decisões mencionadas. Identificou-se oportunidade de suporte operacional via ecossistema TOTVS Fluig.",
+      "current_situation": "Alinhamento de implantação e prazos",
+      "business_impact": "Impacto operacional moderado em rotinas internas, mitigável por meio de padronização de procedimentos e acompanhamento de tarefas.",
+      "main_risks": [
+        {
+          "text": "Aprovação pendente: Aprovação pendente (1 ocorrência mapeada)",
+          "severity": "Média",
+          "source_refs": [
+            "pain:0"
+          ]
+        }
+      ],
+      "decisions_made": [
+        {
+          "text": "Não há decisões mencionadas",
+          "source_refs": [
+            "context:decisao"
+          ]
+        }
+      ],
+      "decisions_required": [
+        {
+          "text": "Avaliar e homologar estudo de aderência do TOTVS Fluig para saneamento dos gargalos identificados.",
+          "owner_level": "Liderança Executiva / TI",
+          "source_refs": [
+            "rec:fluig"
+          ]
+        },
+        {
+          "text": "Designar formalmente o responsável geral pelo acompanhamento das entregas desta reunião.",
+          "owner_level": "Liderança Operacional",
+          "source_refs": [
+            "metadata:responsavel"
+          ]
+        }
+      ],
+      "strategic_next_steps": [
+        {
+          "text": "Acompanhar entrega: 'Garantir que o sistema funcione bem no front end' sob responsabilidade de Não identificado (Prazo: Não mencionado).",
+          "source_refs": [
+            "task:0"
+          ]
+        },
+        {
+          "text": "Conduzir Mapear processo, aprovadores e criar fluxo piloto no TOTVS Fluig. referente à solução TOTVS Fluig.",
+          "source_refs": [
+            "rec:fluig"
+          ]
+        }
+      ],
+      "executive_recommendation": {
+        "product_name": "TOTVS Fluig",
+        "reason": "A reunião registrou demandas relacionadas a Aprovação pendente. O TOTVS Fluig pode apoiar a operação, sendo compatível com as rotinas identificadas (requer validação do módulo e da API).",
+        "status": "Preliminar — requer validação humana",
+        "expected_benefits": [
+          "Pode reduzir aprovações informais e descentralizadas por e-mail",
+          "Dá visibilidade total do responsável e prazos de cada etapa em tempo real",
+          "Contribui para eliminar extravios de documentos e perda de prazos regulatórios"
+        ],
+        "source_refs": [
+          "rec:fluig"
+        ]
+      },
+      "urgency": "Não Definido",
+      "confidence": "Alta (85%) — Evidências textuais mapeadas",
+      "review_status": "pending_review",
+      "source_refs": [
+        "theme:principal",
+        "pain:0",
+        "context:decisao",
+        "rec:fluig",
+        "metadata:responsavel",
+        "task:0"
+      ],
+      "missing_information": [
+        "Responsável geral pela reunião não identificado",
+        "Prazos formais de algumas entregas pendentes de definição"
+      ],
+      "generation_method": "deterministic_executive_template",
+      "prompt_version": "2.1.0",
+      "model_version": "qwen2.5:3b"
+    },
+    "CHUNKS_PROCESSADOS": {
+      "stt_3b29b5e2_1791672794635_2my4:0": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 0,
+        "text_len": 35,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:22.223254"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:1": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 1,
+        "text_len": 7,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:24.419385"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:2": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 2,
+        "text_len": 31,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:28.615642"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:3": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 3,
+        "text_len": 0,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:31.303432"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:4": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 4,
+        "text_len": 33,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:35.687432"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:5": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 5,
+        "text_len": 55,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:39.411670"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:6": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 6,
+        "text_len": 51,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:43.399988"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:7": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 7,
+        "text_len": 65,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:47.722820"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:8": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 8,
+        "text_len": 10,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:52.474748"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:9": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 9,
+        "text_len": 0,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:53:54.918463"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:10": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 10,
+        "text_len": 10,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:54:00.564678"
+      },
+      "stt_3b29b5e2_1791672794635_2my4:11": {
+        "session_id": "stt_3b29b5e2_1791672794635_2my4",
+        "sequence": 11,
+        "text_len": 0,
+        "duration": 3.54,
+        "processed_at": "2026-10-10T19:54:02.509152"
+      },
+      "stt_3b29b5e2_1791672856406_dorh:0": {
+        "session_id": "stt_3b29b5e2_1791672856406_dorh",
+        "sequence": 0,
+        "text_len": 24,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T19:54:21.618572"
+      }
+    },
+    "LAST_CHUNK_SEQUENCE": 0,
+    "LAST_CHUNK_SESSION_ID": "stt_3b29b5e2_1791672856406_dorh",
+    "LAST_TRANSCRIPT_UPDATE_AT": "2026-10-10T19:54:21.618580",
+    "LAST_TRANSCRIPT_SESSION_ID": "stt_3b29b5e2_1791672856406_dorh",
+    "LAST_TRANSCRIPT_SEQUENCE": 0,
+    "recomendacoes_totvs": [
+      {
+        "id": "rec_96eac0132188",
+        "recommendation_id": "rec_96eac0132188",
+        "meeting_id": null,
+        "product_key": "fluig",
+        "product_name": "TOTVS Fluig",
+        "product_area": "Workflow, BPM, ECM e Portais Corporativos",
+        "fit_score": 0.48,
+        "confidence": 0.75,
+        "confidence_label": "Alta",
+        "is_strong_recommendation": true,
+        "why_recommended": "A reunião registrou demandas relacionadas a Aprovação pendente. O TOTVS Fluig pode apoiar a operação, sendo compatível com as rotinas identificadas (requer validação do módulo e da API).",
+        "trigger_pains": [
+          {
+            "categoria": "aprovacao_pendente",
+            "label": "Aprovação pendente",
+            "ocorrencias": 1,
+            "evidence": "O sistema está fluido, está bem melhor ao front end"
+          }
+        ],
+        "trigger_tasks": [],
+        "all_evidences": [
+          "O sistema está fluido, está bem melhor ao front end"
+        ],
+        "recommended_capabilities": [
+          "Fluxos formais de aprovação multi-alçada com SLA",
+          "Gestão e versionamento eletrônico de documentos (ECM)",
+          "Rastreabilidade ponta a ponta de processos e etapas",
+          "Notificações automáticas e delegação de responsáveis por tarefa"
+        ],
+        "expected_benefits": [
+          "Pode reduzir aprovações informais e descentralizadas por e-mail",
+          "Dá visibilidade total do responsável e prazos de cada etapa em tempo real",
+          "Contribui para eliminar extravios de documentos e perda de prazos regulatórios"
+        ],
+        "implementation_next_step": "Mapear processo, aprovadores e criar fluxo piloto no TOTVS Fluig.",
+        "required_inputs": [
+          "tarefas_confirmadas",
+          "responsavel",
+          "prazo",
+          "codigo_cliente"
+        ],
+        "missing_data": [],
+        "integration_status": "real",
+        "source": "rule_plus_catalog",
+        "review_status": "pending",
+        "score_breakdown": {
+          "pain_coverage": 1.0,
+          "task_fit": 0.0,
+          "urgency_weight": 0.2,
+          "segment_fit": 0.0,
+          "integration_availability": 1.0
+        },
+        "contributing_signals": [
+          "Dor mapeada: Aprovação pendente",
+          "Segmento do cliente não informado / não mapeado",
+          "Webhook oficial configurado no ecossistema"
+        ],
+        "negated_signals": [],
+        "catalog_version": "2.1.0",
+        "prompt_version": "2.1.0",
+        "model_version": "llama3:latest",
+        "created_at": "2026-10-10T19:54:50.240432",
+        "confirmed_by": null,
+        "confirmed_at": null,
+        "history": []
+      }
+    ],
+    "field_suggestions": {
+      "responsavel_reuniao": {
+        "field_name": "responsavel_reuniao",
+        "label": "Responsável Geral",
+        "suggested_value": "Não identificado",
+        "confidence": 0.0,
+        "evidence": "Nenhum nome de facilitador ou responsável claro identificado na transcrição.",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": [],
+        "reasons": null
+      },
+      "nivel_urgencia": {
+        "field_name": "nivel_urgencia",
+        "label": "Nível de Urgência",
+        "suggested_value": "Não Definido",
+        "confidence": 0.9,
+        "evidence": "Não há indicações de urgência no texto fornecido",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      },
+      "tema": {
+        "field_name": "tema",
+        "label": "Tema Principal",
+        "suggested_value": "Alinhamento de Implantação e Prazos",
+        "confidence": 0.9,
+        "evidence": "O sistema está fluido, está bem melhor ao front end",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      },
+      "participantes": {
+        "field_name": "participantes",
+        "label": "Participantes Identificados",
+        "suggested_value": [
+          "Não identificado"
+        ],
+        "confidence": 0.85,
+        "evidence": "Identificados 1 interlocutor(es) na transcrição.",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      },
+      "justificativa_urgencia": {
+        "field_name": "justificativa_urgencia",
+        "label": "Justificativa da Urgência",
+        "suggested_value": "Não há indicações de urgência no texto fornecido",
+        "confidence": 0.9,
+        "evidence": "Não há indicações de urgência no texto fornecido",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      },
+      "status_inicial_reuniao": {
+        "field_name": "status_inicial_reuniao",
+        "label": "Status Inicial da Reunião",
+        "suggested_value": "analise_concluida",
+        "confidence": 1.0,
+        "evidence": "Análise sintética executada e estruturada pelo sistema.",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      }
+    }
   },
   {
     "ID_MEETING": "dbf06dd9-0755-490c-a781-833a26245246",
@@ -83,7 +713,7 @@
     "PARTICIPANTES": [],
     "FONTE_AUDIO": "Microfone Padrão",
     "ORIGEM": "live",
-    "STATUS_MEETING": "pausada",
+    "STATUS_MEETING": "concluida",
     "STATUS_ANALISE": "aguardando_analise",
     "STATUS_REVISAO": "revisao_pendente",
     "ANON_TRANSCRICAO": "",
@@ -103,12 +733,16 @@
       {
         "tipo": "pausada",
         "timestamp": "2026-10-07T23:05:21.494251"
+      },
+      {
+        "tipo": "finalizada",
+        "timestamp": "2026-10-10T19:56:15.290535"
       }
     ],
     "CREATED_AT": "2026-10-07T23:05:15.934039",
     "STARTED_AT": "2026-10-07T23:05:19.371577",
-    "PAUSED_AT": "2026-10-07T23:05:21.494251",
-    "FINISHED_AT": null,
+    "PAUSED_AT": null,
+    "FINISHED_AT": "2026-10-10T19:56:15.290535",
     "RESUMO_IA": null,
     "RESUMO_EXECUTIVO": null
   },

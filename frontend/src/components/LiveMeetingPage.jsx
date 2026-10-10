@@ -102,6 +102,10 @@ export default function LiveMeetingPage({
     lastDuration: 0,
     latencyHistory: []
   });
+  const [signalQuality, setSignalQuality] = useState('suficiente'); // 'suficiente' | 'baixo' | 'sem_fala' | 'saturado'
+  const [transcriptRaw, setTranscriptRaw] = useState('');
+  const [transcriptNormalized, setTranscriptNormalized] = useState('');
+  const [transcriptViewMode, setTranscriptViewMode] = useState('normalized'); // 'normalized' | 'raw'
   const [diagnosticInfo, setDiagnosticInfo] = useState({
     engine: 'Não inicializado',
     lang: 'pt-BR',
@@ -613,18 +617,27 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
 
           if (activeMeetingIdRef.current !== targetMeetingId) return;
 
-          if (res && res.text && res.text.trim()) {
-            const chunkText = res.text.trim();
-            setTranscription((prev) => {
-              const currentFull = (prev || '').trim();
-              if (currentFull.endsWith(chunkText)) return currentFull;
-              return currentFull ? `${currentFull} ${chunkText}` : chunkText;
-            });
-            finalTranscriptRef.current = (finalTranscriptRef.current ? `${finalTranscriptRef.current.trim()} ` : '') + `${chunkText} `;
-          } else if (res && res.transcript) {
-            if (res.transcript.length > finalTranscriptRef.current.length) {
+          if (res) {
+            if (res.signal_quality) {
+              setSignalQuality(res.signal_quality);
+            }
+            if (res.transcript_raw) {
+              setTranscriptRaw(res.transcript_raw);
+            }
+            if (res.transcript_normalized) {
+              setTranscriptNormalized(res.transcript_normalized);
+            }
+            if (res.transcript) {
               setTranscription(res.transcript);
               finalTranscriptRef.current = res.transcript;
+            } else if (res.text && res.text.trim()) {
+              const chunkText = res.text.trim();
+              setTranscription((prev) => {
+                const currentFull = (prev || '').trim();
+                if (currentFull.endsWith(chunkText)) return currentFull;
+                return currentFull ? `${currentFull} ${chunkText}` : chunkText;
+              });
+              finalTranscriptRef.current = (finalTranscriptRef.current ? `${finalTranscriptRef.current.trim()} ` : '') + `${chunkText} `;
             }
           }
 
@@ -2182,19 +2195,50 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                   </div>
 
                   {audioStatus === 'active' && (
-                    <div style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '4px 10px',
-                      borderRadius: '20px',
-                      background: 'rgba(16, 185, 129, 0.1)',
-                      border: '1px solid rgba(16, 185, 129, 0.3)',
-                      fontSize: '11px',
-                      color: '#10b981'
-                    }}>
-                      <Mic size={12} />
-                      <span>Captação de voz ativa ({audioLevel}%)</span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        fontSize: '11px',
+                        color: '#10b981'
+                      }}>
+                        <Mic size={12} />
+                        <span>Captação de voz ativa ({audioLevel}%)</span>
+                      </div>
+                      <div style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 10px',
+                        borderRadius: '20px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.15)' :
+                                    signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.15)' :
+                                    signalQuality === 'sem_fala' ? 'rgba(100, 116, 139, 0.15)' :
+                                    'rgba(16, 185, 129, 0.15)',
+                        border: `1px solid ${
+                                    signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.35)' :
+                                    signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.35)' :
+                                    signalQuality === 'sem_fala' ? 'rgba(100, 116, 139, 0.35)' :
+                                    'rgba(16, 185, 129, 0.35)'}`,
+                        color: signalQuality === 'saturado' ? '#ef4444' :
+                               signalQuality === 'baixo' ? '#f59e0b' :
+                               signalQuality === 'sem_fala' ? '#94a3b8' :
+                               '#10b981'
+                      }}>
+                        <span>
+                          {signalQuality === 'saturado' ? '⚠️ Áudio Saturado' :
+                           signalQuality === 'baixo' ? '⚠️ Sinal Insuficiente' :
+                           signalQuality === 'sem_fala' ? '🔇 Sem Fala Detectada' :
+                           '🎙️ Sinal Adequado'}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2529,10 +2573,44 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
               </div>
 
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-                    Transcrição em Tempo Real ({transcription.length} caracteres)
-                  </h3>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                      Transcrição ({transcription.length} carac.)
+                    </h3>
+                    <div style={{ display: 'inline-flex', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)', fontSize: '10px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setTranscriptViewMode('normalized')}
+                        style={{
+                          padding: '2px 6px',
+                          border: 'none',
+                          background: transcriptViewMode === 'normalized' ? 'var(--primary-color)' : 'transparent',
+                          color: transcriptViewMode === 'normalized' ? '#fff' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                        title="Texto consolidado, deduplicado e limpo"
+                      >
+                        Normalizado
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setTranscriptViewMode('raw')}
+                        style={{
+                          padding: '2px 6px',
+                          border: 'none',
+                          background: transcriptViewMode === 'raw' ? 'var(--primary-color)' : 'transparent',
+                          color: transcriptViewMode === 'raw' ? '#fff' : 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                        title="Texto bruto original do Whisper para auditoria"
+                      >
+                        Bruto (Auditoria)
+                      </button>
+                    </div>
+                  </div>
                   <div style={{ fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {syncStatus === 'saving' && (
                       <span style={{ color: '#eab308' }}>Salvando...</span>
@@ -2596,9 +2674,16 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                         }}
                       />
                     </div>
-                  ) : transcription.trim() ? (
+                  ) : (transcription.trim() || transcriptRaw.trim()) ? (
                     <div>
-                      <span style={{ whiteSpace: 'pre-wrap' }}>{transcription}</span>
+                      {transcriptViewMode === 'raw' && (
+                        <div style={{ marginBottom: '6px', fontSize: '10.5px', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>🔍 Visualizando transcrição bruta do STT para auditoria</span>
+                        </div>
+                      )}
+                      <span style={{ whiteSpace: 'pre-wrap' }}>
+                        {transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription)}
+                      </span>
                       {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
                     </div>
                   ) : (

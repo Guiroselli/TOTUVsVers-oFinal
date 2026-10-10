@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
 from normalization import normalize_date_iso, normalize_client_code, normalize_urgency, normalize_pain_category, classify_client_identity
+from consolidation import ChunkConsolidator
 
 DATASET_PATH = os.path.join(os.path.dirname(__file__), "dataset_limpo.json")
 PERFIS_PATH = os.path.join(os.path.dirname(__file__), "perfis_clientes.json")
@@ -94,8 +95,22 @@ def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
         st = str(raw_status).lower().strip()
         if st in ["ao vivo", "aovivo", "gravando", "iniciada"]:
             item["STATUS_MEETING"] = "ao_vivo"
-        elif st in ["concluída", "finalizada"]:
+        elif st in ["concluída", "concluida", "finalizada", "analise_concluida", "analise concluida", "completed"]:
             item["STATUS_MEETING"] = "concluida"
+
+    # Transcrições estruturadas (Raw, Normalizada, Final, Correções e Diagnósticos)
+    if "TRANSCRIPT_RAW" not in item:
+        item["TRANSCRIPT_RAW"] = item.get("ANON_TRANSCRICAO") or ""
+    if "TRANSCRIPT_NORMALIZED" not in item:
+        item["TRANSCRIPT_NORMALIZED"] = item.get("ANON_TRANSCRICAO") or ""
+    if "TRANSCRIPT_FINAL" not in item:
+        item["TRANSCRIPT_FINAL"] = item.get("ANON_TRANSCRICAO") or ""
+    if "TRANSCRIPT_CORRECTIONS" not in item or not isinstance(item.get("TRANSCRIPT_CORRECTIONS"), list):
+        item["TRANSCRIPT_CORRECTIONS"] = []
+    if "CHUNKS_DIAGNOSTICS" not in item or not isinstance(item.get("CHUNKS_DIAGNOSTICS"), list):
+        item["CHUNKS_DIAGNOSTICS"] = []
+    if "AUDIT_FEEDBACK_LOG" not in item or not isinstance(item.get("AUDIT_FEEDBACK_LOG"), list):
+        item["AUDIT_FEEDBACK_LOG"] = []
 
     # Timestamps & Eventos
     if "EVENTOS_SESSAO" not in item or not isinstance(item.get("EVENTOS_SESSAO"), list):
@@ -495,10 +510,26 @@ class MeetingRepository:
                 return None
 
             clean_text = (transcript or "").strip()
+            prev_raw = (target_item.get("TRANSCRIPT_RAW") or "").strip()
+            prev_norm = (target_item.get("TRANSCRIPT_NORMALIZED") or "").strip()
+
             if is_incremental and clean_text:
-                prev = (target_item.get("ANON_TRANSCRICAO") or "").strip()
-                target_item["ANON_TRANSCRICAO"] = f"{prev} {clean_text}".strip() if prev else clean_text
+                target_item["TRANSCRIPT_RAW"] = f"{prev_raw} {clean_text}".strip() if prev_raw else clean_text
+                target_item["TRANSCRIPT_NORMALIZED"] = f"{prev_norm} {clean_text}".strip() if prev_norm else clean_text
+                target_item["TRANSCRIPT_FINAL"] = target_item["TRANSCRIPT_NORMALIZED"]
+                target_item["ANON_TRANSCRICAO"] = target_item["TRANSCRIPT_NORMALIZED"]
             else:
+                # Substituição / Edição manual: registra no histórico de correções
+                if clean_text != prev_norm:
+                    corrections = target_item.setdefault("TRANSCRIPT_CORRECTIONS", [])
+                    corrections.append({
+                        "original_text": prev_norm,
+                        "corrected_text": clean_text,
+                        "timestamp": datetime.now().isoformat(),
+                        "author": "user"
+                    })
+                target_item["TRANSCRIPT_FINAL"] = clean_text
+                target_item["TRANSCRIPT_NORMALIZED"] = clean_text
                 target_item["ANON_TRANSCRICAO"] = clean_text
 
             if session_id:
@@ -514,11 +545,15 @@ class MeetingRepository:
         sequence: int,
         text: str,
         duration: float = 0.0,
+        audio_level: int = 0,
+        signal_quality: str = "suficiente",
+        no_speech_prob: float = 0.0,
+        processing_time_ms: float = 0.0,
         author: str = "stt_backend"
     ) -> Optional[Dict[str, Any]]:
         """
-        Registra um chunk de áudio transcrito com controle estrito de idempotência e ordenação.
-        Evita duplicação caso o mesmo chunk (session_id + sequence) seja reenviado.
+        Registra um chunk de áudio transcrito com controle estrito de idempotência,
+        ordenação rigorosa por sequência e consolidação inteligente com deduplicação de borda.
         """
         with self._lock:
             data = _read_json(self.dataset_path, [])
@@ -532,7 +567,6 @@ class MeetingRepository:
             if not target_item:
                 return None
 
-            # Rastreamento de chunks processados para idempotência por sessão e sequência
             processed_chunks = target_item.setdefault("CHUNKS_PROCESSADOS", {})
             chunk_key = f"{session_id}:{sequence}"
 
@@ -543,14 +577,41 @@ class MeetingRepository:
                 processed_chunks[chunk_key] = {
                     "session_id": str(session_id),
                     "sequence": int(sequence),
+                    "text": clean_text,
                     "text_len": len(clean_text),
                     "duration": duration,
+                    "audio_level": audio_level,
+                    "signal_quality": signal_quality,
+                    "no_speech_prob": no_speech_prob,
+                    "processing_time_ms": processing_time_ms,
                     "processed_at": datetime.now().isoformat()
                 }
 
-                if clean_text:
-                    prev = (target_item.get("ANON_TRANSCRICAO") or "").strip()
-                    target_item["ANON_TRANSCRICAO"] = f"{prev} {clean_text}".strip() if prev else clean_text
+                # Consolidação inteligente com remoção de sobreposição nas bordas
+                consolidation = ChunkConsolidator.consolidate(
+                    processed_chunks,
+                    existing_corrections=target_item.get("TRANSCRIPT_CORRECTIONS", [])
+                )
+                target_item["TRANSCRIPT_RAW"] = consolidation["transcript_raw"]
+                target_item["TRANSCRIPT_NORMALIZED"] = consolidation["transcript_normalized"]
+                target_item["TRANSCRIPT_FINAL"] = consolidation["transcript_final"]
+                target_item["ANON_TRANSCRICAO"] = consolidation["transcript_final"]
+                target_item["transcription"] = consolidation["transcript_final"]
+
+                # Registro de diagnóstico de áudio por chunk
+                diags = target_item.setdefault("CHUNKS_DIAGNOSTICS", [])
+                diags.append({
+                    "sequence": int(sequence),
+                    "session_id": str(session_id),
+                    "duration": duration,
+                    "audio_level": audio_level,
+                    "signal_quality": signal_quality,
+                    "no_speech_prob": no_speech_prob,
+                    "processing_time_ms": processing_time_ms,
+                    "timestamp": datetime.now().isoformat()
+                })
+                if len(diags) > 100:
+                    target_item["CHUNKS_DIAGNOSTICS"] = diags[-100:]
 
                 now_iso = datetime.now().isoformat()
                 target_item["LAST_CHUNK_SEQUENCE"] = sequence
@@ -920,6 +981,318 @@ class MeetingRepository:
             if not sug and isinstance(meeting.get("RESUMO_IA"), dict):
                 sug = meeting["RESUMO_IA"].get("field_suggestions", {})
             return sug or {}
+
+    def _record_human_feedback_unlocked(
+        self,
+        target: Dict[str, Any],
+        meeting_id: str,
+        item_type: str,
+        item_id: Optional[Any],
+        action: str,
+        suggested_value: Optional[Any] = None,
+        confirmed_value: Optional[Any] = None,
+        reason: Optional[str] = None,
+        reviewer: str = "user",
+        evidence_quote: Optional[str] = None,
+        model: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        analysis_version: Optional[str] = None
+    ) -> Dict[str, Any]:
+        audit_log = target.setdefault("AUDIT_FEEDBACK_LOG", [])
+        record = {
+            "id": f"fb_{uuid.uuid4().hex[:10]}",
+            "meeting_id": str(meeting_id),
+            "item_type": item_type,
+            "item_id": item_id,
+            "action": action,
+            "suggested_value": suggested_value,
+            "confirmed_value": confirmed_value,
+            "reason": reason,
+            "reviewer": reviewer,
+            "timestamp": datetime.now().isoformat(),
+            "evidence_quote": evidence_quote,
+            "model": model,
+            "prompt_version": prompt_version,
+            "analysis_version": analysis_version
+        }
+        audit_log.append(record)
+
+        self._add_audit_event_unlocked(
+            meeting_id=meeting_id,
+            action=f"feedback_{action}",
+            field_name=f"{item_type}:{item_id}",
+            old_val=suggested_value,
+            new_val=confirmed_value,
+            author=reviewer
+        )
+        return record
+
+    def record_human_feedback(
+        self,
+        meeting_id: str,
+        item_type: str,
+        item_id: Optional[Any],
+        action: str,
+        suggested_value: Optional[Any] = None,
+        confirmed_value: Optional[Any] = None,
+        reason: Optional[str] = None,
+        reviewer: str = "user",
+        evidence_quote: Optional[str] = None,
+        model: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        analysis_version: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Registra feedback humano estruturado e auditável (confirmar, editar, rejeitar, ruído, adicionado).
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target = next((m for m in data if str(m.get("ID_MEETING")) == str(meeting_id)), None)
+            if not target:
+                return {"status": "not_found", "message": "Reunião não encontrada"}
+
+            record = self._record_human_feedback_unlocked(
+                target=target,
+                meeting_id=meeting_id,
+                item_type=item_type,
+                item_id=item_id,
+                action=action,
+                suggested_value=suggested_value,
+                confirmed_value=confirmed_value,
+                reason=reason,
+                reviewer=reviewer,
+                evidence_quote=evidence_quote,
+                model=model,
+                prompt_version=prompt_version,
+                analysis_version=analysis_version
+            )
+
+            _atomic_write_json(self.dataset_path, data)
+            return {"status": "success", "record": record}
+
+    def update_task_review(
+        self,
+        meeting_id: str,
+        task_index: int,
+        action: str,  # "confirm" | "edit" | "reject" | "mark_noise" | "add_by_human"
+        custom_task: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
+        reviewer: str = "user"
+    ) -> Dict[str, Any]:
+        """
+        Revisão humana de tarefa individual com prevalência da decisão humana e auditoria.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target = next((m for m in data if str(m.get("ID_MEETING")) == str(meeting_id)), None)
+            if not target:
+                return {"status": "not_found", "message": "Reunião não encontrada"}
+
+            resumo = target.get("RESUMO_IA")
+            if not isinstance(resumo, dict):
+                return {"status": "error", "message": "Reunião não possui análise de tarefas"}
+
+            tarefas = resumo.setdefault("tarefas", [])
+
+            if action == "add_by_human":
+                new_t = custom_task or {}
+                new_t["task_validation_status"] = "valid"
+                new_t["source"] = "added_by_human"
+                tarefas.append(new_t)
+                self._record_human_feedback_unlocked(
+                    target=target,
+                    meeting_id=meeting_id,
+                    item_type="task",
+                    item_id=len(tarefas) - 1,
+                    action="add_by_human",
+                    suggested_value=None,
+                    confirmed_value=new_t,
+                    reason=reason,
+                    reviewer=reviewer,
+                    evidence_quote=new_t.get("evidence", "")
+                )
+                _atomic_write_json(self.dataset_path, data)
+                return {"status": "success", "action": action, "tarefa": new_t}
+
+            if task_index < 0 or task_index >= len(tarefas):
+                return {"status": "error", "message": f"Índice de tarefa {task_index} inválido"}
+
+            original_task = dict(tarefas[task_index])
+
+            if action in ("confirm", "confirmed"):
+                tarefas[task_index]["task_validation_status"] = "valid"
+                tarefas[task_index]["status"] = "Confirmada"
+                tarefas[task_index]["review_status"] = "confirmed"
+                tarefas[task_index]["confirmed_by"] = reviewer
+                tarefas[task_index]["confirmed_at"] = datetime.now().isoformat()
+            elif action in ("edit", "edited"):
+                if custom_task:
+                    for k, v in custom_task.items():
+                        tarefas[task_index][k] = v
+                tarefas[task_index]["task_validation_status"] = "valid"
+                tarefas[task_index]["status"] = "Confirmada"
+                tarefas[task_index]["review_status"] = "edited"
+                tarefas[task_index]["edited_by"] = reviewer
+                tarefas[task_index]["edited_at"] = datetime.now().isoformat()
+            elif action in ("reject", "rejected"):
+                tarefas[task_index]["task_validation_status"] = "rejected_human"
+                tarefas[task_index]["review_status"] = "rejected"
+                tarefas[task_index]["rejection_reason"] = reason or "Rejeitado pelo revisor humano"
+            elif action in ("mark_noise", "marked_noise"):
+                tarefas[task_index]["task_validation_status"] = "rejected_noise"
+                tarefas[task_index]["review_status"] = "marked_noise"
+                tarefas[task_index]["validation_reason"] = reason or "Marcado como ruído conversacional"
+
+            self._record_human_feedback_unlocked(
+                target=target,
+                meeting_id=meeting_id,
+                item_type="task",
+                item_id=task_index,
+                action=action,
+                suggested_value=original_task,
+                confirmed_value=tarefas[task_index],
+                reason=reason,
+                reviewer=reviewer,
+                evidence_quote=original_task.get("evidence", "")
+            )
+
+            _atomic_write_json(self.dataset_path, data)
+            return {"status": "success", "action": action, "tarefa": tarefas[task_index]}
+
+    def update_pain_review(
+        self,
+        meeting_id: str,
+        pain_index: int,
+        action: str,  # "confirm" | "edit" | "reject" | "mark_noise"
+        custom_pain: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
+        reviewer: str = "user"
+    ) -> Dict[str, Any]:
+        """
+        Revisão humana de dor individual com auditoria.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target = next((m for m in data if str(m.get("ID_MEETING")) == str(meeting_id)), None)
+            if not target:
+                return {"status": "not_found", "message": "Reunião não encontrada"}
+
+            resumo = target.get("RESUMO_IA")
+            if not isinstance(resumo, dict):
+                return {"status": "error", "message": "Reunião não possui análise"}
+
+            dores = resumo.setdefault("dores", [])
+            if pain_index < 0 or pain_index >= len(dores):
+                return {"status": "error", "message": f"Índice de dor {pain_index} inválido"}
+
+            original_pain = dores[pain_index]
+            orig_dict = original_pain if isinstance(original_pain, dict) else {"label": str(original_pain)}
+
+            if not isinstance(dores[pain_index], dict):
+                dores[pain_index] = {"label": str(dores[pain_index]), "severidade": "Média"}
+
+            if action in ("confirm", "confirmed"):
+                dores[pain_index]["review_status"] = "confirmed"
+            elif action in ("edit", "edited"):
+                if custom_pain:
+                    dores[pain_index].update(custom_pain)
+                dores[pain_index]["review_status"] = "edited"
+            elif action in ("reject", "rejected"):
+                dores[pain_index]["review_status"] = "rejected"
+                dores[pain_index]["rejection_reason"] = reason or "Rejeitado pelo revisor"
+            elif action in ("mark_noise", "marked_noise"):
+                dores[pain_index]["review_status"] = "marked_noise"
+                dores[pain_index]["noise_reason"] = reason or "Marcado como ruído"
+
+            self._record_human_feedback_unlocked(
+                target=target,
+                meeting_id=meeting_id,
+                item_type="pain",
+                item_id=pain_index,
+                action=action,
+                suggested_value=orig_dict,
+                confirmed_value=dores[pain_index],
+                reason=reason,
+                reviewer=reviewer,
+                evidence_quote=orig_dict.get("trecho", "")
+            )
+
+            _atomic_write_json(self.dataset_path, data)
+            return {"status": "success", "action": action, "dor": dores[pain_index]}
+
+    def get_feedback_history(self, meeting_id: str) -> List[Dict[str, Any]]:
+        """
+        Retorna a lista cronológica de feedbacks humanos registrados para a reunião.
+        """
+        with self._lock:
+            target = self.get_by_id(meeting_id)
+            if not target:
+                return []
+            return list(target.get("AUDIT_FEEDBACK_LOG", []))
+
+    def get_pipeline_diagnostics(self, meeting_id: str) -> Dict[str, Any]:
+        """
+        Retorna relatório de diagnóstico estágio a estágio para a reunião:
+        Áudio -> STT -> Consolidação -> LLM -> Resumo.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target = next((m for m in data if str(m.get("ID_MEETING")) == str(meeting_id)), None)
+            if not target:
+                return {"status": "not_found", "message": "Reunião não encontrada"}
+
+            chunks_diag = target.get("CHUNKS_DIAGNOSTICS", [])
+            resumo = target.get("RESUMO_IA") if isinstance(target.get("RESUMO_IA"), dict) else {}
+            meta = resumo.get("analise_metadados") if isinstance(resumo.get("analise_metadados"), dict) else {}
+
+            total_chunks = len(target.get("CHUNKS_PROCESSADOS", {}))
+            last_chunk = chunks_diag[-1] if chunks_diag else {}
+
+            return {
+                "meeting_id": str(meeting_id),
+                "audio": {
+                    "fonte": target.get("FONTE_AUDIO", "Microfone Padrão"),
+                    "status_meeting": target.get("STATUS_MEETING", "agendada"),
+                    "last_signal_quality": last_chunk.get("signal_quality", "sem_fala" if total_chunks == 0 else "suficiente"),
+                    "last_audio_level": last_chunk.get("audio_level", 0),
+                    "total_chunks_received": total_chunks,
+                },
+                "stt": {
+                    "provider": "faster_whisper",
+                    "language": "pt",
+                    "last_chunk_duration": last_chunk.get("duration", 0.0),
+                    "last_processing_time_ms": last_chunk.get("processing_time_ms", 0.0),
+                    "last_no_speech_prob": last_chunk.get("no_speech_prob", 0.0),
+                },
+                "consolidation": {
+                    "transcript_raw_len": len(target.get("TRANSCRIPT_RAW", "")),
+                    "transcript_normalized_len": len(target.get("TRANSCRIPT_NORMALIZED", "")),
+                    "transcript_final_len": len(target.get("TRANSCRIPT_FINAL", "")),
+                    "corrections_count": len(target.get("TRANSCRIPT_CORRECTIONS", [])),
+                },
+                "llm": {
+                    "model": meta.get("model", "llama3"),
+                    "prompt_version": meta.get("prompt_version", "2.1.0"),
+                    "schema_version": "2.2.0",
+                    "engine": meta.get("analysis_engine", "ollama"),
+                    "cache_hit": meta.get("cache_hit", False),
+                    "deterministic_options": {
+                        "temperature": 0.0,
+                        "seed": 42,
+                        "top_k": 1,
+                        "top_p": 1.0,
+                    }
+                },
+                "resumo": {
+                    "analysis_status": meta.get("analysis_status", "aguardando_analise"),
+                    "status_meta": meta.get("status", "pending"),
+                    "confidence": meta.get("analysis_confidence", 0.0),
+                    "valid_items_count": meta.get("valid_items_count", 0),
+                    "discarded_noise_count": meta.get("items_discarded_noise", 0),
+                    "has_executive_summary": bool(target.get("RESUMO_EXECUTIVO")),
+                },
+                "chunks": chunks_diag
+            }
 
     def update_recommendation_status(self, meeting_id: str, product_key: str, action: str, author: str = "user") -> Dict[str, Any]:
         """

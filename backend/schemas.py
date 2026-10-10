@@ -149,6 +149,11 @@ class AnalysisMetadata(BaseModel):
     pending_items_count: Optional[int] = 0
     items_discarded_noise: Optional[int] = 0
     rejected_tasks_audit: List[RejectedTaskAudit] = []
+    model_digest: Optional[str] = None
+    cache_hit: Optional[bool] = False
+    input_hash: Optional[str] = None
+    evidence_validation_status: Optional[str] = "valid"
+    rejected_hallucinations_audit: Optional[List[Dict[str, Any]]] = []
     warning: Optional[str] = None
     parsing_error: Optional[str] = None
 
@@ -253,6 +258,12 @@ class MeetingSchema(BaseModel):
     client_identity_status: Optional[str] = "valid_client"
     NOTA_NPS: Optional[Union[str, int, float]] = None
     ANON_TRANSCRICAO: Optional[str] = ""
+    TRANSCRIPT_RAW: Optional[str] = ""
+    TRANSCRIPT_NORMALIZED: Optional[str] = ""
+    TRANSCRIPT_FINAL: Optional[str] = ""
+    TRANSCRIPT_CORRECTIONS: Optional[List[Dict[str, Any]]] = None
+    CHUNKS_DIAGNOSTICS: Optional[List[Dict[str, Any]]] = None
+    AUDIT_FEEDBACK_LOG: Optional[List[Dict[str, Any]]] = None
     NIVEL_URGENCIA: Optional[str] = ""
     RESPONSAVEL_REUNIAO: Optional[str] = ""
     TEM_PDF: Optional[bool] = False
@@ -411,8 +422,39 @@ class LiveMeetingTranscriptUpdateRequest(BaseModel):
 
 
 class SuggestionActionRequest(BaseModel):
-    action: str  # "confirm" | "edit" | "reject"
+    action: str  # "confirm" | "edit" | "reject" | "mark_noise"
     value: Optional[Any] = None
+
+
+class ItemReviewRequest(BaseModel):
+    action: str = "confirm"  # "confirm" | "edit" | "reject" | "mark_noise" | "add_by_human"
+    item_type: str = "task"  # "task" | "pain" | "decision" | "field_suggestion"
+    item_id: Optional[Union[int, str]] = None
+    item_index: Optional[int] = None
+    field_name: Optional[str] = None
+    custom_value: Optional[Any] = None
+    edited_payload: Optional[Dict[str, Any]] = None
+    reason: Optional[str] = None
+    reviewer: Optional[str] = "user"
+    evidence_quote: Optional[str] = None
+
+
+class HumanFeedbackAudit(BaseModel):
+    id: str
+    meeting_id: str
+    item_type: str
+    item_id: Optional[Union[int, str]] = None
+    action: str
+    suggested_value: Optional[Any] = None
+    confirmed_value: Optional[Any] = None
+    reason: Optional[str] = None
+    reviewer: str = "user"
+    timestamp: str
+    evidence_quote: Optional[str] = None
+    transcript_version: Optional[str] = None
+    model: Optional[str] = None
+    prompt_version: Optional[str] = None
+    analysis_version: Optional[str] = None
 
 
 class RecommendationActionRequest(BaseModel):

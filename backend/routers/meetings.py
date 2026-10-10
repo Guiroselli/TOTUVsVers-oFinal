@@ -21,7 +21,8 @@ from schemas import (
     ExecutiveStatusUpdateRequest,
     LiveMeetingCreateRequest,
     LiveMeetingStatusUpdateRequest,
-    LiveMeetingTranscriptUpdateRequest
+    LiveMeetingTranscriptUpdateRequest,
+    ItemReviewRequest
 )
 from normalization import normalize_client_code, normalize_urgency
 from analysis_service import AnalysisService
@@ -94,8 +95,8 @@ def handle_suggestion_action(
     Permite ao usuário confirmar, editar ou rejeitar cada sugestão da IA.
     O valor confirmado pelo usuário prevalece sobre a sugestão automática.
     """
-    if req.action not in ["confirm", "edit", "reject"]:
-        raise HTTPException(status_code=400, detail="Ação inválida. Use 'confirm', 'edit' ou 'reject'.")
+    if req.action not in ["confirm", "edit", "reject", "mark_noise"]:
+        raise HTTPException(status_code=400, detail="Ação inválida. Use 'confirm', 'edit', 'reject' ou 'mark_noise'.")
 
     result = repo.update_suggestion(
         meeting_id=meeting_id,
@@ -107,6 +108,71 @@ def handle_suggestion_action(
     if result.get("status") == "not_found":
         raise HTTPException(status_code=404, detail="Reunião ou sugestão de campo não encontrada.")
     return result
+
+
+@router.post("/meetings/{meeting_id}/review/task")
+def review_meeting_task(meeting_id: str, req: ItemReviewRequest):
+    """
+    Revisão humana estruturada de tarefa (confirmar, editar, rejeitar, ruído, adicionar).
+    """
+    res = repo.update_task_review(
+        meeting_id=meeting_id,
+        task_index=int(req.item_id) if req.item_id is not None else 0,
+        action=req.action,
+        custom_task=req.custom_value if isinstance(req.custom_value, dict) else None,
+        reason=req.reason,
+        reviewer=req.reviewer or "user"
+    )
+    if res.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Erro ao revisar tarefa."))
+    return res
+
+
+@router.post("/meetings/{meeting_id}/review/pain")
+def review_meeting_pain(meeting_id: str, req: ItemReviewRequest):
+    """
+    Revisão humana estruturada de dor (confirmar, editar, rejeitar, marcar ruído).
+    """
+    res = repo.update_pain_review(
+        meeting_id=meeting_id,
+        pain_index=int(req.item_id) if req.item_id is not None else 0,
+        action=req.action,
+        custom_pain=req.custom_value if isinstance(req.custom_value, dict) else None,
+        reason=req.reason,
+        reviewer=req.reviewer or "user"
+    )
+    if res.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Erro ao revisar dor."))
+    return res
+
+
+@router.get("/meetings/{meeting_id}/review/history")
+def get_meeting_review_history(meeting_id: str):
+    """
+    Retorna histórico auditável de feedbacks humanos para tarefas, dores e campos da reunião.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    return {
+        "meeting_id": meeting_id,
+        "history": meeting.get("AUDIT_FEEDBACK_LOG", [])
+    }
+
+
+@router.get("/live/meetings/{meeting_id}/diagnostics")
+def get_live_meeting_diagnostics(meeting_id: str):
+    """
+    Diagnóstico completo da cadeia: Áudio -> STT -> Consolidação -> LLM -> Resumo.
+    """
+    res = repo.get_pipeline_diagnostics(meeting_id)
+    if res.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    return res
 
 
 @router.get("/meetings/{meeting_id}/recommendations")
@@ -144,17 +210,22 @@ def handle_recommendation_action(
 
 
 @router.post("/meetings/{meeting_id}/analyze")
-def analyze_existing_meeting(meeting_id: str):
+def analyze_existing_meeting(meeting_id: str, force_reanalyze: bool = Query(False)):
     """
     Executa a análise de IA desacoplada para uma reunião existente e persiste o resultado.
+    Garante reproducibilidade, suporte a cache por hash e blindagem contra transcrições vazias.
     """
     meeting = repo.get_by_id(meeting_id)
     if not meeting:
         raise HTTPException(status_code=404, detail="Reunião não encontrada")
 
-    transcript = meeting.get("ANON_TRANSCRICAO", "").strip()
+    transcript = (
+        meeting.get("TRANSCRIPT_FINAL") or
+        meeting.get("TRANSCRIPT_NORMALIZED") or
+        meeting.get("ANON_TRANSCRICAO", "")
+    ).strip()
     if not transcript:
-        raise HTTPException(status_code=400, detail="Esta reunião não possui transcrição para ser analisada.")
+        raise HTTPException(status_code=400, detail="Não há transcrição suficiente para gerar uma ata confiável.")
 
     client_code = meeting.get("NOME_SEGMENTO", "Geral")
     profile = profile_repo.get_profile(client_code) if client_code else None
@@ -169,7 +240,8 @@ def analyze_existing_meeting(meeting_id: str):
             client_context=f"Contexto do cliente {client_code}",
             meeting_date_str=meeting.get("DT_MEETING"),
             perfil_cliente=profile,
-            integracoes_config=cfg
+            integracoes_config=cfg,
+            force_reanalyze=force_reanalyze
         )
         dict_result = analysis_result.model_dump()
         meta = dict_result.get("analise_metadados") or {}
@@ -491,10 +563,15 @@ async def upload_live_meeting_audio_chunk(
         session_id=session_id,
         sequence=sequence,
         text=transcribed_text,
-        duration=chunk_duration
+        duration=chunk_duration,
+        audio_level=result.get("audio_level", 0),
+        signal_quality=result.get("signal_quality", "suficiente"),
+        no_speech_prob=result.get("no_speech_prob", 0.0),
+        processing_time_ms=result.get("processing_time_ms", 0.0)
     )
 
     accumulated = record_result.get("transcript", "") if record_result else ""
+    meeting_obj = record_result.get("meeting", {}) if record_result else {}
 
     if is_final:
         stt.clear_session(session_id)
@@ -506,8 +583,13 @@ async def upload_live_meeting_audio_chunk(
         "sequence": sequence,
         "text": transcribed_text,
         "transcript": accumulated,
+        "transcript_raw": meeting_obj.get("TRANSCRIPT_RAW", ""),
+        "transcript_normalized": meeting_obj.get("TRANSCRIPT_NORMALIZED", ""),
         "duration": chunk_duration,
         "processing_time_ms": result.get("processing_time_ms", 0.0),
+        "audio_level": result.get("audio_level", 0),
+        "signal_quality": result.get("signal_quality", "suficiente"),
+        "no_speech_prob": result.get("no_speech_prob", 0.0),
         "already_processed": record_result.get("already_processed", False) if record_result else False
     }
 

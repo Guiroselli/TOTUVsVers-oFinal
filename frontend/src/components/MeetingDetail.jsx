@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import ActionPlanTable from './ActionPlanTable';
 import TotvsProductRecommendations from './TotvsProductRecommendations';
 import MeetingFieldSuggestions from './MeetingFieldSuggestions';
@@ -12,8 +12,15 @@ import {
   Layers,
   AlertTriangle,
   Zap,
-  User
+  User,
+  CheckCircle2,
+  Edit3,
+  XCircle,
+  VolumeX,
+  Check,
+  X
 } from 'lucide-react';
+import { api } from '../api/client';
 
 export default function MeetingDetail({
   meeting,
@@ -31,6 +38,17 @@ export default function MeetingDetail({
   onDownloadExecutiveDocx
 }) {
   const [activeSubTab, setActiveSubTab] = useState('resumo');
+  const [localDores, setLocalDores] = useState([]);
+  const [editingPainIndex, setEditingPainIndex] = useState(null);
+  const [editingPainForm, setEditingPainForm] = useState({ label: '', severidade: 'Média', reason: '' });
+
+  useEffect(() => {
+    if (meeting?.RESUMO_IA?.dores) {
+      setLocalDores(meeting.RESUMO_IA.dores);
+    } else {
+      setLocalDores([]);
+    }
+  }, [meeting]);
 
   if (!meeting) return null;
 
@@ -39,7 +57,7 @@ export default function MeetingDetail({
   const suggestions = meeting.field_suggestions || (resumo && resumo.field_suggestions) || {};
   const recomendacoes = meeting.recomendacoes_totvs || resumo?.recomendacoes_totvs || [];
   const tarefas = resumo?.tarefas || [];
-  const dores = resumo?.dores || [];
+  const dores = localDores.length > 0 ? localDores : (resumo?.dores || []);
 
   const tarefasCount = tarefas.length;
   const totvsCount = recomendacoes.length;
@@ -324,19 +342,152 @@ export default function MeetingDetail({
                   const label = isObj ? (d.label || d.categoria) : d;
                   const trecho = isObj ? (d.trecho || d.descricao || '') : '';
                   const sev = isObj ? (d.severidade || 'Média') : 'Média';
+                  const reviewStatus = isObj ? d.review_status : null;
+                  const isEditing = editingPainIndex === idx;
+
+                  const handleSavePainEdit = async () => {
+                    await handleReviewPain(idx, 'edited', {
+                      label: editingPainForm.label || label,
+                      severidade: editingPainForm.severidade || sev
+                    }, editingPainForm.reason || 'Edição manual de dor');
+                    setEditingPainIndex(null);
+                  };
+
                   return (
                     <div key={idx} style={{
-                      background: 'rgba(239, 68, 68, 0.06)',
-                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                      background: reviewStatus === 'rejected' ? 'rgba(239, 68, 68, 0.04)' :
+                                  reviewStatus === 'marked_noise' ? 'rgba(245, 158, 11, 0.04)' :
+                                  reviewStatus === 'confirmed' ? 'rgba(16, 185, 129, 0.04)' :
+                                  'rgba(239, 68, 68, 0.06)',
+                      border: `1px solid ${
+                                  reviewStatus === 'rejected' ? 'rgba(239, 68, 68, 0.3)' :
+                                  reviewStatus === 'marked_noise' ? 'rgba(245, 158, 11, 0.3)' :
+                                  reviewStatus === 'confirmed' ? 'rgba(16, 185, 129, 0.3)' :
+                                  'rgba(239, 68, 68, 0.2)'}`,
                       borderRadius: '6px',
                       padding: '10px 14px',
-                      fontSize: '0.85rem'
+                      fontSize: '0.85rem',
+                      opacity: reviewStatus === 'rejected' ? 0.6 : 1
                     }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <strong style={{ color: 'var(--danger)' }}>{label}</strong>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Severidade: {sev}</span>
-                      </div>
-                      {trecho && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>"{trecho}"</div>}
+                      {isEditing ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <input
+                            type="text"
+                            value={editingPainForm.label}
+                            onChange={(e) => setEditingPainForm({ ...editingPainForm, label: e.target.value })}
+                            placeholder="Descrição da dor ou gargalo"
+                            style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '12px' }}
+                          />
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <select
+                              value={editingPainForm.severidade}
+                              onChange={(e) => setEditingPainForm({ ...editingPainForm, severidade: e.target.value })}
+                              style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--input-bg)', color: 'var(--text-main)', fontSize: '12px' }}
+                            >
+                              <option value="Crítica">Crítica</option>
+                              <option value="Alta">Alta</option>
+                              <option value="Média">Média</option>
+                              <option value="Baixa">Baixa</option>
+                            </select>
+                            <input
+                              type="text"
+                              value={editingPainForm.reason}
+                              onChange={(e) => setEditingPainForm({ ...editingPainForm, reason: e.target.value })}
+                              placeholder="Motivo da alteração"
+                              style={{ flex: 1, padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--input-bg)', color: 'var(--text-muted)', fontSize: '11px' }}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSavePainEdit}
+                              className="btn-pf btn-pf-primary btn-pf-sm"
+                              style={{ fontSize: '11px', padding: '3px 8px' }}
+                            >
+                              <Check size={12} /> Salvar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingPainIndex(null)}
+                              className="btn-pf btn-pf-secondary btn-pf-sm"
+                              style={{ fontSize: '11px', padding: '3px 8px' }}
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '6px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <strong style={{ color: 'var(--danger)', textDecoration: reviewStatus === 'rejected' ? 'line-through' : 'none' }}>{label}</strong>
+                              {reviewStatus === 'confirmed' && (
+                                <span style={{ fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)' }}>
+                                  ✓ Confirmada
+                                </span>
+                              )}
+                              {reviewStatus === 'edited' && (
+                                <span style={{ fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--primary-color)' }}>
+                                  ✏️ Editada
+                                </span>
+                              )}
+                              {reviewStatus === 'rejected' && (
+                                <span style={{ fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)' }}>
+                                  ✗ Rejeitada
+                                </span>
+                              )}
+                              {reviewStatus === 'marked_noise' && (
+                                <span style={{ fontSize: '10px', fontWeight: 600, padding: '1px 5px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--warning)' }}>
+                                  🔇 Ruído
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Severidade: {sev}</span>
+                              <div style={{ display: 'inline-flex', gap: '3px' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewPain(idx, 'confirmed')}
+                                  className="btn-pf btn-pf-secondary btn-pf-sm"
+                                  style={{ padding: '2px 5px', fontSize: '10px' }}
+                                  title="Confirmar dor"
+                                >
+                                  <CheckCircle2 size={12} color={reviewStatus === 'confirmed' ? '#10b981' : undefined} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingPainIndex(idx);
+                                    setEditingPainForm({ label, severidade: sev, reason: '' });
+                                  }}
+                                  className="btn-pf btn-pf-secondary btn-pf-sm"
+                                  style={{ padding: '2px 5px', fontSize: '10px' }}
+                                  title="Editar dor"
+                                >
+                                  <Edit3 size={12} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewPain(idx, 'rejected')}
+                                  className="btn-pf btn-pf-secondary btn-pf-sm"
+                                  style={{ padding: '2px 5px', fontSize: '10px' }}
+                                  title="Rejeitar dor"
+                                >
+                                  <XCircle size={12} color={reviewStatus === 'rejected' ? '#ef4444' : undefined} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleReviewPain(idx, 'marked_noise')}
+                                  className="btn-pf btn-pf-secondary btn-pf-sm"
+                                  style={{ padding: '2px 5px', fontSize: '10px' }}
+                                  title="Marcar como ruído"
+                                >
+                                  <VolumeX size={12} color={reviewStatus === 'marked_noise' ? '#f59e0b' : undefined} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          {trecho && <div style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '11.5px', marginTop: '2px' }}>"{trecho}"</div>}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

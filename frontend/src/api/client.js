@@ -184,6 +184,23 @@ export const api = {
 
   getRecurringTasks: () => request('/api/tasks/recurring'),
 
+  // Revisão Humana Estruturada (PARTE 14 e 15)
+  reviewTask: (meetingId, taskId, action, customValue = null, reason = null) =>
+    request(`/api/meetings/${meetingId}/review/task`, {
+      method: 'POST',
+      body: JSON.stringify({ item_id: taskId, action, custom_value: customValue, reason }),
+    }),
+
+  reviewPain: (meetingId, painId, action, customValue = null, reason = null) =>
+    request(`/api/meetings/${meetingId}/review/pain`, {
+      method: 'POST',
+      body: JSON.stringify({ item_id: painId, action, custom_value: customValue, reason }),
+    }),
+
+  getReviewHistory: (meetingId) => request(`/api/meetings/${meetingId}/review/history`),
+
+  getPipelineDiagnostics: (meetingId) => request(`/api/live/meetings/${meetingId}/diagnostics`),
+
   getPerfilCliente: (codigo) => request(`/api/perfil_cliente/${encodeURIComponent(codigo)}`),
 
   // Ata Executiva Dedicada (Executive Minutes)
