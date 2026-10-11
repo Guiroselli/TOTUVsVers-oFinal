@@ -294,6 +294,8 @@ class MeetingRepository:
                     return _normalize_live_fields(_apply_pdf_state(item))
             return None
 
+    get_meeting_by_id = get_by_id
+
     def save_meeting(self, meeting_dict: Dict[str, Any]) -> str:
         """Cria ou atualiza uma reunião no topo da lista."""
         with self._lock:
@@ -430,6 +432,8 @@ class MeetingRepository:
             )
             return _normalize_live_fields(_apply_pdf_state(item))
 
+    create_meeting = create_live_meeting
+
     def update_live_meeting_status(self, meeting_id: str, action: str, author: str = "user") -> Optional[Dict[str, Any]]:
         """
         Atualiza o status canônico da reunião ao vivo de forma atômica e auditada:
@@ -549,7 +553,11 @@ class MeetingRepository:
         signal_quality: str = "suficiente",
         no_speech_prob: float = 0.0,
         processing_time_ms: float = 0.0,
-        author: str = "stt_backend"
+        author: str = "stt_backend",
+        segments: Optional[List[Dict[str, Any]]] = None,
+        meeting_context: Optional[str] = None,
+        model_name: Optional[str] = None,
+        low_confidence_count: int = 0
     ) -> Optional[Dict[str, Any]]:
         """
         Registra um chunk de áudio transcrito com controle estrito de idempotência,
@@ -584,19 +592,26 @@ class MeetingRepository:
                     "signal_quality": signal_quality,
                     "no_speech_prob": no_speech_prob,
                     "processing_time_ms": processing_time_ms,
+                    "segments": segments or [],
+                    "model_name": model_name,
+                    "low_confidence_count": low_confidence_count,
                     "processed_at": datetime.now().isoformat()
                 }
 
-                # Consolidação inteligente com remoção de sobreposição nas bordas
+                # Consolidação inteligente com remoção de sobreposição nas bordas e glossário controlado
+                effective_context = meeting_context or target_item.get("NOME_SEGMENTO") or target_item.get("TITULO")
                 consolidation = ChunkConsolidator.consolidate(
                     processed_chunks,
-                    existing_corrections=target_item.get("TRANSCRIPT_CORRECTIONS", [])
+                    existing_corrections=target_item.get("TRANSCRIPT_CORRECTIONS", []),
+                    meeting_context=effective_context
                 )
                 target_item["TRANSCRIPT_RAW"] = consolidation["transcript_raw"]
                 target_item["TRANSCRIPT_NORMALIZED"] = consolidation["transcript_normalized"]
                 target_item["TRANSCRIPT_FINAL"] = consolidation["transcript_final"]
                 target_item["ANON_TRANSCRICAO"] = consolidation["transcript_final"]
                 target_item["transcription"] = consolidation["transcript_final"]
+                if "border_overlaps_audit" in consolidation:
+                    target_item["BORDER_OVERLAPS_AUDIT"] = consolidation["border_overlaps_audit"]
 
                 # Registro de diagnóstico de áudio por chunk
                 diags = target_item.setdefault("CHUNKS_DIAGNOSTICS", [])
@@ -608,6 +623,8 @@ class MeetingRepository:
                     "signal_quality": signal_quality,
                     "no_speech_prob": no_speech_prob,
                     "processing_time_ms": processing_time_ms,
+                    "model_name": model_name,
+                    "low_confidence_count": low_confidence_count,
                     "timestamp": datetime.now().isoformat()
                 })
                 if len(diags) > 100:
@@ -1248,6 +1265,10 @@ class MeetingRepository:
             total_chunks = len(target.get("CHUNKS_PROCESSADOS", {}))
             last_chunk = chunks_diag[-1] if chunks_diag else {}
 
+            from stt_service import get_stt_service
+            stt_srv = get_stt_service()
+            stt_status = stt_srv.get_status()
+
             return {
                 "meeting_id": str(meeting_id),
                 "audio": {
@@ -1258,11 +1279,23 @@ class MeetingRepository:
                     "total_chunks_received": total_chunks,
                 },
                 "stt": {
-                    "provider": "faster_whisper",
-                    "language": "pt",
+                    "provider": stt_status.get("provider", "faster_whisper"),
+                    "model_name": stt_status.get("model_name", "faster-whisper-small"),
+                    "model_size": stt_status.get("model_size", "small"),
+                    "device": stt_status.get("device", "cpu"),
+                    "compute_type": stt_status.get("compute_type", "int8"),
+                    "language": stt_status.get("language", "pt"),
+                    "task": stt_status.get("task", "transcribe"),
+                    "faster_whisper_version": stt_status.get("faster_whisper_version", "1.2.1"),
+                    "ctranslate2_version": stt_status.get("ctranslate2_version", "4.8.2"),
+                    "is_loaded": stt_status.get("is_loaded", False),
+                    "memory_rss_mb": stt_status.get("memory_rss_mb"),
+                    "cpu_mode_warning": stt_status.get("cpu_mode_warning", False),
+                    "vad_parameters": stt_status.get("vad_parameters", {}),
                     "last_chunk_duration": last_chunk.get("duration", 0.0),
                     "last_processing_time_ms": last_chunk.get("processing_time_ms", 0.0),
                     "last_no_speech_prob": last_chunk.get("no_speech_prob", 0.0),
+                    "low_confidence_count_last_chunk": last_chunk.get("low_confidence_count", 0),
                 },
                 "consolidation": {
                     "transcript_raw_len": len(target.get("TRANSCRIPT_RAW", "")),

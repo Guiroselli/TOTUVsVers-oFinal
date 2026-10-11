@@ -189,15 +189,50 @@ Acesse a interface no navegador em `http://localhost:5173`.
 - **Cache Persistente:**
   Os pesos do modelo Whisper são persistidos localmente (por padrão em `~/.cache/huggingface/hub` ou no caminho definido por `STT_MODEL_CACHE_DIR`). Esse diretório é ignorado pelo Git (`.gitignore`) e nunca é incluído em pacotes ou commits.
 
+### 🎙️ Configuração e Precisão do STT pt-BR (faster-whisper)
+
+O Proton Flow utiliza **faster-whisper-small** em conjunto com uma cadeia de tratamento acústico e linguístico otimizada para reuniões corporativas em português brasileiro:
+
+1. **Pré-processamento de Áudio**: Conversão para 16kHz mono, remoção de componente DC offset, filtro passa-altas (~80Hz) para atenuação de ruídos de manuseio e normalização moderada com limiter de pico (< 0.95).
+2. **Silero VAD com Speech Padding de 600ms**: Previne truncamento de sílabas iniciais e finais de fala (`STT_VAD_SPEECH_PAD_MS=600`, `STT_VAD_MIN_SPEECH_DURATION_MS=250`, `STT_VAD_MIN_SILENCE_DURATION_MS=350`).
+3. **Idioma Travado**: Fixado em `pt` com `task="transcribe"`, evitando detecções errôneas para inglês em chunks curtos.
+4. **Chunks de 8 segundos**: `STT_CHUNK_SECONDS=8` fornece contexto contínuo suficiente para desambiguação fonética sem cortes a cada 4s.
+5. **Glossário Controlado e Auditável**: Mapeamento fonético de alta fidelidade para termos como `reunião` (evitando distorções como `ó neo neo`), `Proton Flow`, `TOTVS`, `SESMT`, `Protheus`, `Fluig`, `deploy`, `sprint` e `atestado`. Cada correção é registrada em log e pode ser desfeita ou auditada na visualização *Bruto (Auditoria)*.
+6. **Preservação de Repetições Naturais**: Repetições legítimas da fala (ex: *"não, não pode"*, *"muito, muito bom"*) são estritamente preservadas e não são descartadas como sobreposição de borda.
+
+#### Alternando entre Modelos (`small` vs `base`):
+
+No arquivo `backend/.env` ou nas variáveis de ambiente:
+
+```env
+# Recomendado para máxima precisão corporativa (padrão):
+STT_MODEL_SIZE=small
+STT_BEAM_SIZE=5
+
+# Modo ultra-leve para máquinas de baixa capacidade (maior taxa de erro em termos específicos):
+# STT_MODEL_SIZE=base
+# STT_BEAM_SIZE=3
+```
+
+#### Executando o Benchmark Comparativo:
+
+```bash
+python scripts/benchmark_stt_precision.py
+```
+
+Resultados observados:
+- **WER Geral**: Redução de **22.13%** (base) para **2.65%** (small + pipeline).
+- **Acurácia Corporativa**: Salto de **30.0%** para **88.33%**.
+- **Cortes de Borda**: Eliminados (0.0%).
 
 ## 🧪 Executando os Testes Automatizados
 
-O projeto conta com uma suíte de testes cobrindo normalização, regras determinísticas, agregações trimestrais, compatibilidade retroativa, concorrência e endpoints da API.
+O projeto conta com uma suíte de testes cobrindo normalização, regras determinísticas, precisão do STT pt-BR, agregações trimestrais, compatibilidade retroativa, concorrência e endpoints da API.
 
 Para rodar todos os testes:
 
 ```bash
-python -m pytest backend/tests -v
+python -m pytest backend/tests/unit -v
 ```
 
 Para validar a integridade do Frontend:

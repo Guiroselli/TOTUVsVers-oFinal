@@ -100,7 +100,10 @@ export default function LiveMeetingPage({
     chunkCount: 0,
     lastProcessingTimeMs: 0,
     lastDuration: 0,
-    latencyHistory: []
+    latencyHistory: [],
+    lowConfidenceSegments: 0,
+    modelName: '',
+    glossaryCorrectionsCount: 0
   });
   const [signalQuality, setSignalQuality] = useState('suficiente'); // 'suficiente' | 'baixo' | 'sem_fala' | 'saturado'
   const [transcriptRaw, setTranscriptRaw] = useState('');
@@ -644,8 +647,11 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
           setBackendChunkStats((prev) => ({
             chunkCount: currentSeq + 1,
             lastProcessingTimeMs: res.processing_time_ms || 0,
-            lastDuration: res.duration || 4.0,
-            latencyHistory: [...(prev.latencyHistory || []).slice(-9), res.processing_time_ms || 0]
+            lastDuration: res.duration || 8.0,
+            latencyHistory: [...(prev.latencyHistory || []).slice(-9), res.processing_time_ms || 0],
+            lowConfidenceSegments: res.low_confidence_segments ?? prev.lowConfidenceSegments,
+            modelName: res.model_name || prev.modelName || '',
+            glossaryCorrectionsCount: (res.glossary_corrections ? res.glossary_corrections.length : 0) + (prev.glossaryCorrectionsCount || 0)
           }));
 
           setTranscriptionStatus('listening');
@@ -676,13 +682,13 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     };
 
     try {
-      recorder.start(4000); // Envia chunk a cada 4 segundos
+      recorder.start(8000); // Envia chunk a cada 8 segundos para contexto contínuo
       mediaRecorderRef.current = recorder;
       setTranscriptionStatus('listening');
       transcriptionStatusRef.current = 'listening';
       setEngineState('ativa');
     } catch (err) {
-      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(4000):', err);
+      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(8000):', err);
     }
   }, [getSupportedAudioMimeType, stopBackendRecorder]);
 
@@ -2500,10 +2506,22 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                   }}>
                     {backendSttStatus.available ? (
                       <>
-                        <span>Gravando áudio • Chunks via faster-whisper (chunk #{backendChunkStats.chunkCount})</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span>🎙️ Gravando áudio • <strong>{backendSttStatus.model_name || backendSttStatus.model || 'faster-whisper-small'}</strong> ({backendSttStatus.device ? backendSttStatus.device.toUpperCase() : 'CPU'} {backendSttStatus.compute_type || 'int8'}, pt-BR) • Chunk #{backendChunkStats.chunkCount} (8s)</span>
+                          {backendSttStatus.device === 'cpu' && (
+                            <span style={{ fontSize: '9px', background: 'rgba(234, 179, 8, 0.15)', color: '#f59e0b', padding: '1px 5px', borderRadius: '3px' }}>
+                              ⚡ CPU (latência esperada ~1-3s)
+                            </span>
+                          )}
+                          {backendChunkStats.lowConfidenceSegments > 0 && (
+                            <span style={{ fontSize: '9px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: '3px', fontWeight: 600 }}>
+                              ⚠️ {backendChunkStats.lowConfidenceSegments} trecho(s) com baixa confiança
+                            </span>
+                          )}
+                        </div>
                         {backendChunkStats.lastProcessingTimeMs > 0 && (
                           <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
-                            Último: {backendChunkStats.lastProcessingTimeMs}ms • {backendChunkStats.lastDuration}s
+                            Proc: {backendChunkStats.lastProcessingTimeMs}ms{backendSttStatus.memory_usage_mb ? ` • Mem: ${backendSttStatus.memory_usage_mb}MB` : ''}
                           </span>
                         )}
                       </>
@@ -2676,10 +2694,16 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                     </div>
                   ) : (transcription.trim() || transcriptRaw.trim()) ? (
                     <div>
-                      {transcriptViewMode === 'raw' && (
+                      {transcriptViewMode === 'raw' ? (
                         <div style={{ marginBottom: '6px', fontSize: '10.5px', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span>🔍 Visualizando transcrição bruta do STT para auditoria</span>
+                          <span>🔍 Visualizando transcrição bruta do Whisper para auditoria (imutável, sem correções aplicadas)</span>
                         </div>
+                      ) : (
+                        backendChunkStats.glossaryCorrectionsCount > 0 && (
+                          <div style={{ marginBottom: '6px', fontSize: '10.5px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span>✨ {backendChunkStats.glossaryCorrectionsCount} ajuste(s) de termos corporativos aplicado(s) com evidência fonética. Clique em "Bruto (Auditoria)" para ver o texto original.</span>
+                          </div>
+                        )
                       )}
                       <span style={{ whiteSpace: 'pre-wrap' }}>
                         {transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription)}

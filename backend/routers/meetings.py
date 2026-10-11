@@ -535,6 +535,7 @@ async def upload_live_meeting_audio_chunk(
         }
 
     filename_hint = audio.filename or "chunk.webm"
+    meeting_context = f"{meeting.get('TITULO', '')} {meeting.get('NOME_SEGMENTO', '')} {meeting.get('DEPARTAMENTO', '')}".strip()
     try:
         result = await stt.transcribe_audio_async(
             audio_bytes=audio_bytes,
@@ -542,6 +543,7 @@ async def upload_live_meeting_audio_chunk(
             language=language or "pt",
             session_id=session_id,
             sequence=sequence,
+            meeting_context=meeting_context
         )
     except Exception as err:
         return JSONResponse(
@@ -567,7 +569,11 @@ async def upload_live_meeting_audio_chunk(
         audio_level=result.get("audio_level", 0),
         signal_quality=result.get("signal_quality", "suficiente"),
         no_speech_prob=result.get("no_speech_prob", 0.0),
-        processing_time_ms=result.get("processing_time_ms", 0.0)
+        processing_time_ms=result.get("processing_time_ms", 0.0),
+        segments=result.get("segments", []),
+        meeting_context=meeting_context,
+        model_name=result.get("model_name"),
+        low_confidence_count=result.get("low_confidence_count", 0)
     )
 
     accumulated = record_result.get("transcript", "") if record_result else ""
@@ -582,9 +588,18 @@ async def upload_live_meeting_audio_chunk(
         "session_id": session_id,
         "sequence": sequence,
         "text": transcribed_text,
+        "text_corrected": result.get("text_corrected", transcribed_text),
         "transcript": accumulated,
         "transcript_raw": meeting_obj.get("TRANSCRIPT_RAW", ""),
         "transcript_normalized": meeting_obj.get("TRANSCRIPT_NORMALIZED", ""),
+        "segments": result.get("segments", []),
+        "low_confidence_count": result.get("low_confidence_count", 0),
+        "model_name": result.get("model_name", "faster-whisper-small"),
+        "model_size": result.get("model", "small"),
+        "language": result.get("language", "pt"),
+        "language_probability": result.get("language_probability", 1.0),
+        "glossary_corrections": result.get("glossary_corrections", []),
+        "audio_metrics": result.get("audio_metrics", {}),
         "duration": chunk_duration,
         "processing_time_ms": result.get("processing_time_ms", 0.0),
         "audio_level": result.get("audio_level", 0),

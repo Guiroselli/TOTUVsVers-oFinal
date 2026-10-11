@@ -91,6 +91,9 @@ def filter_conversational_noise(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     return clean, audit_filters
 
 
+from controlled_glossary import ControlledGlossary
+
+
 class ChunkConsolidator:
     """
     Consolidador inteligente de chunks de áudio.
@@ -99,9 +102,27 @@ class ChunkConsolidator:
     """
 
     @staticmethod
+    def reconstruct_normalized_from_raw(
+        raw_text: str,
+        corrections: Optional[List[Dict[str, Any]]] = None
+    ) -> str:
+        """
+        Reconstrói o texto normalizado a partir do texto bruto (TRANSCRIPT_RAW)
+        e histórico de correções auditadas sem perda de dados.
+        """
+        if not raw_text:
+            return ""
+        norm, _ = filter_conversational_noise(raw_text)
+        if corrections:
+            glossary = ControlledGlossary()
+            norm, _ = glossary.apply_controlled_correction(norm)
+        return norm.strip()
+
+    @staticmethod
     def consolidate(
         processed_chunks: Any,
-        existing_corrections: Optional[List[Dict[str, Any]]] = None
+        existing_corrections: Optional[List[Dict[str, Any]]] = None,
+        meeting_context: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Consolida chunks processados (dicionário ou lista).
@@ -115,7 +136,8 @@ class ChunkConsolidator:
                 "transcript_corrections": existing_corrections or [],
                 "chunks_count": 0,
                 "noise_filters_audit": [],
-                "border_overlaps_removed": 0
+                "border_overlaps_removed": 0,
+                "border_overlaps_audit": []
             }
 
         if isinstance(processed_chunks, list):
@@ -132,12 +154,15 @@ class ChunkConsolidator:
         raw_parts: List[str] = []
         normalized_parts: List[str] = []
         overlaps_removed_count = 0
+        border_overlaps_audit: List[Dict[str, Any]] = []
         all_noise_audits: List[Dict[str, Any]] = []
 
         current_normalized_acc = ""
+        glossary = ControlledGlossary()
 
         for chunk_info in sorted_chunks:
             chunk_text = (chunk_info.get("text") or "").strip()
+            seq = int(chunk_info.get("sequence", 0))
             if not chunk_text:
                 continue
 
@@ -148,16 +173,32 @@ class ChunkConsolidator:
             deduped_chunk = detect_border_overlap(current_normalized_acc, chunk_text)
             if len(deduped_chunk) < len(chunk_text):
                 overlaps_removed_count += 1
+                trimmed_diff = chunk_text[:len(chunk_text) - len(deduped_chunk)].strip()
+                border_overlaps_audit.append({
+                    "sequence": seq,
+                    "session_id": chunk_info.get("session_id", ""),
+                    "removed_overlap": trimmed_diff,
+                    "original_chunk": chunk_text,
+                    "deduped_chunk": deduped_chunk
+                })
 
             if deduped_chunk:
-                # Aplica filtro de ruído auditável
+                # Aplica filtro de ruído auditável (sem apagar repetições legítimas como "não, não pode")
                 filtered_chunk, filters_applied = filter_conversational_noise(deduped_chunk)
                 if filters_applied:
                     all_noise_audits.extend(filters_applied)
 
-                if filtered_chunk:
-                    normalized_parts.append(filtered_chunk)
-                    current_normalized_acc = f"{current_normalized_acc} {filtered_chunk}".strip()
+                # Aplica correção controlada de glossário caso haja evidência
+                chunk_segments = chunk_info.get("segments") or []
+                corrected_chunk, glossary_audits = glossary.apply_controlled_correction(
+                    filtered_chunk,
+                    segments=chunk_segments,
+                    meeting_context=meeting_context
+                )
+
+                if corrected_chunk:
+                    normalized_parts.append(corrected_chunk)
+                    current_normalized_acc = f"{current_normalized_acc} {corrected_chunk}".strip()
 
         transcript_raw = " ".join(raw_parts).strip()
         transcript_normalized = " ".join(normalized_parts).strip()
@@ -178,5 +219,24 @@ class ChunkConsolidator:
             "transcript_corrections": corrections,
             "chunks_count": len(sorted_chunks),
             "noise_filters_audit": all_noise_audits,
-            "border_overlaps_removed": overlaps_removed_count
+            "border_overlaps_removed": overlaps_removed_count,
+            "border_overlaps_audit": border_overlaps_audit
         }
+
+
+def reconstruct_normalized_from_raw(raw_text: str, glossary_corrections: List[Dict[str, Any]]) -> str:
+    """
+    Reconstrói o texto normalizado aplicando de forma auditável e reversível
+    as correções registradas sobre o texto bruto.
+    """
+    if not raw_text or not glossary_corrections:
+        return raw_text or ""
+    result = raw_text
+    for corr in glossary_corrections:
+        orig = corr.get("original") or corr.get("original_term") or corr.get("matched_variant")
+        canon = corr.get("canonical") or corr.get("corrected_term")
+        if orig and canon:
+            pattern = re.compile(rf"\b{re.escape(orig)}\b", flags=re.IGNORECASE)
+            result = pattern.sub(canon, result)
+    return result
+

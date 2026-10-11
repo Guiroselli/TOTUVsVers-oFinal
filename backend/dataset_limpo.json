@@ -1,5 +1,145 @@
 [
   {
+    "ID_MEETING": "64caeabf-e921-4f90-ac6a-931b216a5636",
+    "TITULO_REUNIAO": "Idem",
+    "DEPARTAMENTO": "TI",
+    "NOME_SEGMENTO": "TI",
+    "DT_MEETING": "2026-10-08",
+    "HORARIO_AGENDADO": "10:20",
+    "PARTICIPANTES": [],
+    "FONTE_AUDIO": "Microfone Padrão",
+    "ORIGEM": "live",
+    "STATUS_MEETING": "ao_vivo",
+    "STATUS_ANALISE": "aguardando_analise",
+    "STATUS_REVISAO": "revisao_pendente",
+    "ANON_TRANSCRICAO": "",
+    "NIVEL_URGENCIA": "Não Definido",
+    "RESPONSAVEL_REUNIAO": "",
+    "TEM_PDF": false,
+    "FORMATO_MEETING": "VIDEO",
+    "EVENTOS_SESSAO": [
+      {
+        "tipo": "criada",
+        "timestamp": "2026-10-10T21:25:49.569214"
+      },
+      {
+        "tipo": "iniciada",
+        "timestamp": "2026-10-10T21:25:49.569214"
+      }
+    ],
+    "CREATED_AT": "2026-10-10T21:25:49.569214",
+    "STARTED_AT": "2026-10-10T21:25:49.569214",
+    "PAUSED_AT": null,
+    "FINISHED_AT": null,
+    "RESUMO_IA": null,
+    "RESUMO_EXECUTIVO": null
+  },
+  {
+    "ID_MEETING": "178d14dc-b216-42d5-98f7-ff2172f38ee9",
+    "TITULO_REUNIAO": "aaaa",
+    "DEPARTAMENTO": "Serviços",
+    "NOME_SEGMENTO": "Serviços",
+    "DT_MEETING": "2026-10-10",
+    "HORARIO_AGENDADO": "22:22",
+    "PARTICIPANTES": [],
+    "FONTE_AUDIO": "Microfone Padrão",
+    "ORIGEM": "live",
+    "STATUS_MEETING": "ao_vivo",
+    "STATUS_ANALISE": "aguardando_analise",
+    "STATUS_REVISAO": "revisao_pendente",
+    "ANON_TRANSCRICAO": "Hoje eu estou apresentando o... Então, ful, maiaque transforma, reuniões em atas executivas e op... é mais ou menos mais. Hoje vamos começar a reunião. Tenta falar um pouco mais rápido, isso vai pegar. Plana assim um pouco mais... Ainda que você vai pegar?",
+    "NIVEL_URGENCIA": "Não Definido",
+    "RESPONSAVEL_REUNIAO": "",
+    "TEM_PDF": false,
+    "FORMATO_MEETING": "VIDEO",
+    "EVENTOS_SESSAO": [
+      {
+        "tipo": "criada",
+        "timestamp": "2026-10-10T20:51:28.362221"
+      },
+      {
+        "tipo": "iniciada",
+        "timestamp": "2026-10-10T20:51:28.362221"
+      }
+    ],
+    "CREATED_AT": "2026-10-10T20:51:28.362221",
+    "STARTED_AT": "2026-10-10T20:51:28.362221",
+    "PAUSED_AT": null,
+    "FINISHED_AT": null,
+    "RESUMO_IA": null,
+    "RESUMO_EXECUTIVO": null,
+    "CHUNKS_PROCESSADOS": {
+      "stt_178d14dc_1791676288985_n6iw:0": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 0,
+        "text_len": 31,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:33.892406"
+      },
+      "stt_178d14dc_1791676288985_n6iw:1": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 1,
+        "text_len": 67,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:38.068908"
+      },
+      "stt_178d14dc_1791676288985_n6iw:3": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 3,
+        "text_len": 0,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:45.592314"
+      },
+      "stt_178d14dc_1791676288985_n6iw:2": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 2,
+        "text_len": 21,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:46.705359"
+      },
+      "stt_178d14dc_1791676288985_n6iw:4": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 4,
+        "text_len": 29,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:49.907259"
+      },
+      "stt_178d14dc_1791676288985_n6iw:5": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 5,
+        "text_len": 0,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:53.239857"
+      },
+      "stt_178d14dc_1791676288985_n6iw:6": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 6,
+        "text_len": 78,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:51:58.066497"
+      },
+      "stt_178d14dc_1791676288985_n6iw:7": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 7,
+        "text_len": 25,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:52:03.675776"
+      },
+      "stt_178d14dc_1791676288985_n6iw:8": {
+        "session_id": "stt_178d14dc_1791676288985_n6iw",
+        "sequence": 8,
+        "text_len": 0,
+        "duration": 3.96,
+        "processed_at": "2026-10-10T20:52:05.298581"
+      }
+    },
+    "LAST_CHUNK_SEQUENCE": 8,
+    "LAST_CHUNK_SESSION_ID": "stt_178d14dc_1791676288985_n6iw",
+    "LAST_TRANSCRIPT_UPDATE_AT": "2026-10-10T20:52:05.298589",
+    "LAST_TRANSCRIPT_SESSION_ID": "stt_178d14dc_1791676288985_n6iw",
+    "LAST_TRANSCRIPT_SEQUENCE": 8
+  },
+  {
     "ID_MEETING": "3b29b5e2-c4c2-47d7-b1a8-5358c41de669",
     "TITULO_REUNIAO": "aa2",
     "DEPARTAMENTO": "Operações",
