@@ -24,6 +24,8 @@ venv/
 ENV/
 
 # Modelos Whisper e Caches Persistentes
+models/
+backend/models/
 .cache/
 backend/.cache/
 *.cache/

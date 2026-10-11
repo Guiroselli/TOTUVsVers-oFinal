@@ -37,7 +37,7 @@ DEFAULT_CORPORATE_GLOSSARY: Dict[str, Dict[str, Any]] = {
         "canonical": "TOTVS",
         "category": "empresa",
         "phonetic_variants": [
-            "totvs", "totus", "tótvs", "totvis", "totius", "todvs"
+            "totvs", "totus", "tótvs", "totvis", "totius", "todvs", "totts", "totis", "toths"
         ],
         "min_logprob_threshold": -0.65,
         "context_keywords": ["protheus", "fluig", "sistema", "erp", "rh", "proton flow"]
@@ -122,6 +122,60 @@ DEFAULT_CORPORATE_GLOSSARY: Dict[str, Dict[str, Any]] = {
         ],
         "min_logprob_threshold": -0.80,
         "context_keywords": ["projeto", "sistema", "cronograma", "entrega", "go live"]
+    },
+    "RH": {
+        "canonical": "RH",
+        "category": "departamento",
+        "phonetic_variants": [
+            "erre aga", "r h", "r.h.", "recursos humanos"
+        ],
+        "min_logprob_threshold": -0.75,
+        "context_keywords": ["departamento pessoal", "folha", "atestado", "sesmt", "benefícios", "admissão"]
+    },
+    "TI": {
+        "canonical": "TI",
+        "category": "departamento",
+        "phonetic_variants": [
+            "te i", "t i", "t.i.", "tecnologia"
+        ],
+        "min_logprob_threshold": -0.75,
+        "context_keywords": ["deploy", "sprint", "desenvolvimento", "protheus", "fluig", "sistema", "cluster", "servidor"]
+    },
+    "folha": {
+        "canonical": "folha",
+        "category": "rh",
+        "phonetic_variants": [
+            "fôlha", "folha de pagamento"
+        ],
+        "min_logprob_threshold": -0.75,
+        "context_keywords": ["pagamento", "salário", "departamento pessoal", "rh", "benefícios", "holerite"]
+    },
+    "homologação": {
+        "canonical": "homologação",
+        "category": "projetos",
+        "phonetic_variants": [
+            "omologação", "homologacao", "omologacao", "homologa"
+        ],
+        "min_logprob_threshold": -0.80,
+        "context_keywords": ["teste", "deploy", "validação", "sprint", "protheus", "ambiente", "qa", "aprovação"]
+    },
+    "backlog": {
+        "canonical": "backlog",
+        "category": "projetos",
+        "phonetic_variants": [
+            "beclog", "baquelogue", "baclog", "back log"
+        ],
+        "min_logprob_threshold": -0.75,
+        "context_keywords": ["sprint", "tarefas", "jira", "desenvolvimento", "priorização", "scrum"]
+    },
+    "desenvolvimento": {
+        "canonical": "desenvolvimento",
+        "category": "tecnologia",
+        "phonetic_variants": [
+            "desenvolvimentu", "desenvolvimeto", "dev"
+        ],
+        "min_logprob_threshold": -0.75,
+        "context_keywords": ["sprint", "ti", "deploy", "código", "software", "entrega", "programação"]
     }
 }
 

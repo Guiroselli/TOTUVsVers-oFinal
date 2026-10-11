@@ -543,7 +543,8 @@ async def upload_live_meeting_audio_chunk(
             language=language or "pt",
             session_id=session_id,
             sequence=sequence,
-            meeting_context=meeting_context
+            meeting_context=meeting_context,
+            meeting_id=meeting_id
         )
     except Exception as err:
         return JSONResponse(
@@ -573,14 +574,16 @@ async def upload_live_meeting_audio_chunk(
         segments=result.get("segments", []),
         meeting_context=meeting_context,
         model_name=result.get("model_name"),
-        low_confidence_count=result.get("low_confidence_count", 0)
+        low_confidence_count=result.get("low_confidence_count", 0),
+        rtf=result.get("rtf", 0.0),
+        is_delayed=result.get("is_delayed", False)
     )
 
     accumulated = record_result.get("transcript", "") if record_result else ""
     meeting_obj = record_result.get("meeting", {}) if record_result else {}
 
     if is_final:
-        stt.clear_session(session_id)
+        stt.clear_session(session_id, meeting_id=meeting_id)
 
     return {
         "status": "success",
@@ -602,10 +605,74 @@ async def upload_live_meeting_audio_chunk(
         "audio_metrics": result.get("audio_metrics", {}),
         "duration": chunk_duration,
         "processing_time_ms": result.get("processing_time_ms", 0.0),
+        "rtf": result.get("rtf", 0.0),
+        "queue_size": result.get("queue_size", 0),
+        "is_delayed": result.get("is_delayed", False),
+        "hardware_profile": result.get("hardware_profile", "cpu_balanced"),
+        "device": result.get("device", "cpu"),
+        "compute_type": result.get("compute_type", "int8"),
+        "workers": result.get("workers", 1),
         "audio_level": result.get("audio_level", 0),
         "signal_quality": result.get("signal_quality", "suficiente"),
         "no_speech_prob": result.get("no_speech_prob", 0.0),
         "already_processed": record_result.get("already_processed", False) if record_result else False
+    }
+
+
+@router.post("/live/meetings/{meeting_id}/reprocess")
+def reprocess_meeting_transcript(
+    meeting_id: str,
+    reanalyze: bool = Query(True, description="Recalcula ata e evidências após reprocessar transcrição")
+):
+    """
+    Reprocessamento final offline de alta precisão (pós-reunião):
+    - Reconcilia segmentos e sobreposições nas bordas;
+    - Aplica correções do glossário corporativo controlado de forma auditável;
+    - Atualiza TRANSCRIPT_NORMALIZED e TRANSCRIPT_FINAL sem perder o TRANSCRIPT_RAW original;
+    - Adiciona o badge 'Transcrição refinada em pós-processamento';
+    - Opcionalmente reexecuta a análise estruturada da ata para refletir o texto refinado.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+
+    raw_text = meeting.get("TRANSCRIPT_RAW") or meeting.get("ANON_TRANSCRICAO") or ""
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="Reunião não possui transcrição para reprocessamento.")
+
+    stt = get_stt_service()
+    meeting_ctx = f"{meeting.get('TITULO', '')} {meeting.get('NOME_SEGMENTO', '')} {meeting.get('DEPARTAMENTO', '')}".strip()
+
+    reprocess_res = stt.reprocess_transcript(
+        raw_text=raw_text,
+        segments=meeting.get("CHUNKS_PROCESSADOS", []),
+        existing_corrections=meeting.get("TRANSCRIPT_CORRECTIONS", []),
+        meeting_context=meeting_ctx
+    )
+
+    updated_meeting = repo.reprocess_live_meeting(
+        meeting_id=meeting_id,
+        reprocessed_text=reprocess_res["reprocessed_text"],
+        audit_info=reprocess_res
+    )
+
+    # Recalcula análise/atas se solicitado e se a reunião já possuía análise prévia
+    if reanalyze and updated_meeting:
+        try:
+            analysis_service.analyze(meeting_id, override=True)
+            updated_meeting = repo.get_by_id(meeting_id)
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "meeting_id": meeting_id,
+        "is_reprocessed": True,
+        "badge": "Transcrição refinada em pós-processamento",
+        "raw_text": raw_text,
+        "reprocessed_text": reprocess_res["reprocessed_text"],
+        "glossary_audits": reprocess_res.get("glossary_audits", []),
+        "meeting": updated_meeting
     }
 
 

@@ -557,7 +557,9 @@ class MeetingRepository:
         segments: Optional[List[Dict[str, Any]]] = None,
         meeting_context: Optional[str] = None,
         model_name: Optional[str] = None,
-        low_confidence_count: int = 0
+        low_confidence_count: int = 0,
+        rtf: float = 0.0,
+        is_delayed: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         Registra um chunk de áudio transcrito com controle estrito de idempotência,
@@ -592,6 +594,8 @@ class MeetingRepository:
                     "signal_quality": signal_quality,
                     "no_speech_prob": no_speech_prob,
                     "processing_time_ms": processing_time_ms,
+                    "rtf": rtf,
+                    "is_delayed": is_delayed,
                     "segments": segments or [],
                     "model_name": model_name,
                     "low_confidence_count": low_confidence_count,
@@ -623,6 +627,8 @@ class MeetingRepository:
                     "signal_quality": signal_quality,
                     "no_speech_prob": no_speech_prob,
                     "processing_time_ms": processing_time_ms,
+                    "rtf": rtf,
+                    "is_delayed": is_delayed,
                     "model_name": model_name,
                     "low_confidence_count": low_confidence_count,
                     "timestamp": datetime.now().isoformat()
@@ -645,6 +651,47 @@ class MeetingRepository:
                 "text": clean_text,
                 "transcript": target_item.get("ANON_TRANSCRICAO", "")
             }
+
+    def reprocess_live_meeting(
+        self,
+        meeting_id: str,
+        reprocessed_text: str,
+        audit_info: Optional[Dict[str, Any]] = None,
+        author: str = "stt_reprocessor"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Atualiza a transcrição normalizada e final após reprocessamento offline
+        de alta precisão, preservando a transcrição bruta (TRANSCRIPT_RAW) e auditando.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target_item = None
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    target_item = item
+                    break
+            if not target_item:
+                return None
+
+            clean_text = (reprocessed_text or "").strip()
+            target_item["TRANSCRIPT_NORMALIZED"] = clean_text
+            target_item["TRANSCRIPT_FINAL"] = clean_text
+            target_item["ANON_TRANSCRICAO"] = clean_text
+            target_item["transcription"] = clean_text
+            target_item["IS_REPROCESSED"] = True
+            target_item["REPROCESS_BADGE"] = "Transcrição refinada em pós-processamento"
+            target_item["REPROCESSED_AT"] = datetime.now().isoformat()
+
+            reprocess_history = target_item.setdefault("REPROCESS_HISTORY", [])
+            reprocess_history.append({
+                "timestamp": datetime.now().isoformat(),
+                "author": author,
+                "audit": audit_info or {},
+                "badge": "Transcrição refinada em pós-processamento"
+            })
+
+            _atomic_write_json(self.dataset_path, data)
+            return _normalize_live_fields(_apply_pdf_state(target_item))
 
     def get_live_meetings(self, status_filter: Optional[str] = None, departamento: Optional[str] = None, search: Optional[str] = None) -> List[Dict[str, Any]]:
         """

@@ -36,36 +36,56 @@ try:
 except Exception:
     CTRANSLATE2_VERSION = "unavailable"
 
-# Variáveis de ambiente configuráveis (PARTE 1, 2, 3, 5)
+try:
+    from hardware_detector import detect_hardware, select_hardware_profile
+except ImportError:
+    try:
+        from backend.hardware_detector import detect_hardware, select_hardware_profile
+    except ImportError:
+        detect_hardware = None
+        select_hardware_profile = None
+
+# Variáveis de ambiente configuráveis e portáteis (PARTE 1, 2, 3, 5)
 STT_PROVIDER = os.getenv("STT_PROVIDER", "faster_whisper")
+STT_ENGINE = os.getenv("STT_ENGINE", "faster-whisper")
 STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "small")
-STT_DEVICE = os.getenv("STT_DEVICE", "cpu")
-STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "int8")
+STT_DEVICE = os.getenv("STT_DEVICE", "auto")
+STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "auto")
 STT_LANGUAGE = os.getenv("STT_LANGUAGE", "pt")
 STT_TASK = os.getenv("STT_TASK", "transcribe")
-STT_BEAM_SIZE = int(os.getenv("STT_BEAM_SIZE", "5"))
+STT_BEAM_SIZE = int(os.getenv("STT_BEAM_SIZE", "3"))
+STT_BEST_OF = int(os.getenv("STT_BEST_OF", "1"))
 STT_TEMPERATURE = float(os.getenv("STT_TEMPERATURE", "0.0"))
 STT_VAD_FILTER = os.getenv("STT_VAD_FILTER", "true").lower() in ("true", "1", "yes")
 STT_VAD_MIN_SPEECH_MS = int(os.getenv("STT_VAD_MIN_SPEECH_DURATION_MS", os.getenv("STT_VAD_MIN_SPEECH_MS", "250")))
-STT_VAD_SPEECH_PAD_MS = int(os.getenv("STT_VAD_SPEECH_PAD_MS", "600"))
+STT_VAD_SPEECH_PAD_MS = int(os.getenv("STT_VAD_SPEECH_PAD_MS", "500"))
 STT_VAD_MIN_SILENCE_MS = int(os.getenv("STT_VAD_MIN_SILENCE_DURATION_MS", os.getenv("STT_VAD_MIN_SILENCE_MS", "350")))
 STT_VAD_THRESHOLD = float(os.getenv("STT_VAD_THRESHOLD", "0.5"))
 STT_CONDITION_ON_PREVIOUS_TEXT = os.getenv("STT_CONDITION_ON_PREVIOUS_TEXT", "false").lower() in ("true", "1", "yes")
+STT_WORD_TIMESTAMPS = os.getenv("STT_WORD_TIMESTAMPS", "true").lower() in ("true", "1", "yes")
 
 # Vocabulário corporativo para o decoder Whisper priorizar termos de negócio e evitar erros fonéticos
 STT_DEFAULT_VOCAB = (
     "Proton Flow, TOTVS, reunião, ata operacional, ata executiva, RH, TI, "
     "Kubernetes, implantação, prazo, responsável, urgência, diretoria, tarefas, benefícios, deploy, "
-    "Protheus, Fluig, SESMT, atestado, departamento pessoal, faturamento, implementação, sprint"
+    "Protheus, Fluig, SESMT, atestado, departamento pessoal, faturamento, implementação, sprint, backlog, homologação, folha"
 )
 STT_INITIAL_PROMPT = os.getenv("STT_INITIAL_PROMPT", STT_DEFAULT_VOCAB)
 
-STT_CHUNK_SECONDS = int(os.getenv("STT_CHUNK_SECONDS", "8"))
+STT_CHUNK_SECONDS = int(os.getenv("STT_CHUNK_SECONDS", "6"))
+STT_OVERLAP_SECONDS = float(os.getenv("STT_OVERLAP_SECONDS", "1.0"))
+STT_MAX_WORKERS = os.getenv("STT_MAX_WORKERS", "auto")
+STT_MAX_PENDING_CHUNKS = int(os.getenv("STT_MAX_PENDING_CHUNKS", "2"))
+STT_MODEL_CACHE_DIR = os.getenv("STT_MODEL_CACHE_DIR", "./models")
+STT_FINAL_REPROCESS_ENABLED = os.getenv("STT_FINAL_REPROCESS_ENABLED", "false").lower() in ("true", "1", "yes")
+STT_FINAL_MODEL_SIZE = os.getenv("STT_FINAL_MODEL_SIZE", "small")
+STT_FINAL_BEAM_SIZE = int(os.getenv("STT_FINAL_BEAM_SIZE", "5"))
+STT_FINAL_CHUNK_SECONDS = int(os.getenv("STT_FINAL_CHUNK_SECONDS", "30"))
+
 STT_MAX_CHUNK_BYTES = int(os.getenv("STT_MAX_CHUNK_BYTES", str(10 * 1024 * 1024)))  # 10 MB
 STT_TEMP_DIR = os.getenv("STT_TEMP_DIR", tempfile.gettempdir())
 STT_ENABLED = os.getenv("STT_ENABLED", "true").lower() in ("true", "1", "yes")
-STT_MAX_CONCURRENT_TRANSCRIBES = int(os.getenv("STT_MAX_CONCURRENT_TRANSCRIBES", "3"))
-STT_MODEL_CACHE_DIR = os.getenv("STT_MODEL_CACHE_DIR", "")
+STT_MAX_CONCURRENT_TRANSCRIBES = os.getenv("STT_MAX_CONCURRENT_TRANSCRIBES", "auto")
 
 
 def get_memory_usage_mb() -> Optional[float]:
@@ -361,16 +381,18 @@ class STTService:
         max_chunk_bytes: int = STT_MAX_CHUNK_BYTES,
         temp_dir: str = STT_TEMP_DIR,
         enabled: bool = STT_ENABLED,
-        max_concurrent: int = STT_MAX_CONCURRENT_TRANSCRIBES,
+        max_concurrent: Any = STT_MAX_CONCURRENT_TRANSCRIBES,
         model_cache_dir: Optional[str] = STT_MODEL_CACHE_DIR,
+        max_pending_chunks: int = STT_MAX_PENDING_CHUNKS,
     ):
         self.provider = provider if provider != STT_PROVIDER else os.getenv("STT_PROVIDER", STT_PROVIDER)
-        self.model_size = model_size if model_size != STT_MODEL_SIZE else os.getenv("STT_MODEL_SIZE", STT_MODEL_SIZE)
-        self.device = device if device != STT_DEVICE else os.getenv("STT_DEVICE", STT_DEVICE)
-        self.compute_type = compute_type if compute_type != STT_COMPUTE_TYPE else os.getenv("STT_COMPUTE_TYPE", STT_COMPUTE_TYPE)
+        self.raw_requested_model = model_size if model_size != STT_MODEL_SIZE else os.getenv("STT_MODEL_SIZE", STT_MODEL_SIZE)
+        self.raw_requested_device = device if device != STT_DEVICE else os.getenv("STT_DEVICE", STT_DEVICE)
+        self.raw_requested_compute = compute_type if compute_type != STT_COMPUTE_TYPE else os.getenv("STT_COMPUTE_TYPE", STT_COMPUTE_TYPE)
         self.language = language if language != STT_LANGUAGE else os.getenv("STT_LANGUAGE", STT_LANGUAGE)
         self.task = task if task != STT_TASK else os.getenv("STT_TASK", STT_TASK)
         self.beam_size = beam_size if beam_size != STT_BEAM_SIZE else int(os.getenv("STT_BEAM_SIZE", str(STT_BEAM_SIZE)))
+        self.best_of = int(os.getenv("STT_BEST_OF", "1"))
         self.temperature = temperature
         self.vad_filter = vad_filter
         self.vad_min_speech_ms = vad_min_speech_ms if vad_min_speech_ms != STT_VAD_MIN_SPEECH_MS else int(os.getenv("STT_VAD_MIN_SPEECH_DURATION_MS", os.getenv("STT_VAD_MIN_SPEECH_MS", str(STT_VAD_MIN_SPEECH_MS))))
@@ -378,13 +400,83 @@ class STTService:
         self.vad_min_silence_ms = vad_min_silence_ms if vad_min_silence_ms != STT_VAD_MIN_SILENCE_MS else int(os.getenv("STT_VAD_MIN_SILENCE_DURATION_MS", os.getenv("STT_VAD_MIN_SILENCE_MS", str(STT_VAD_MIN_SILENCE_MS))))
         self.vad_threshold = vad_threshold
         self.condition_on_previous_text = condition_on_previous_text
+        self.word_timestamps = STT_WORD_TIMESTAMPS
         self.initial_prompt = initial_prompt
         self.max_chunk_bytes = max_chunk_bytes
         self.temp_dir = temp_dir
         self.enabled = enabled
-        self.max_concurrent = max_concurrent
-        self.model_cache_dir = model_cache_dir or ""
+        self.model_cache_dir = model_cache_dir if model_cache_dir is not None else STT_MODEL_CACHE_DIR
         self.last_processing_time_ms = 0.0
+        self.last_rtf = 0.0
+        self.rtf_history: List[float] = []
+
+        # Detecção e resolução dinâmica de perfil de hardware
+        self.hardware_profile = "custom"
+        self.device_reason = ""
+        self.model_size = self.raw_requested_model
+        self.device = self.raw_requested_device
+        self.compute_type = self.raw_requested_compute
+
+        resolved_profile = None
+        if select_hardware_profile is not None:
+            try:
+                hw_info = detect_hardware() if detect_hardware is not None else {}
+                resolved_profile = select_hardware_profile(
+                    hw_info=hw_info,
+                    requested_device="auto" if self.device in ("auto", None, "") else self.device,
+                    requested_compute_type="auto" if self.compute_type in ("auto", None, "") else self.compute_type,
+                    requested_model="small" if self.model_size in ("auto", None, "") else self.model_size,
+                    requested_workers="auto" if max_concurrent in ("auto", None, "") else str(max_concurrent),
+                )
+                self.hardware_profile = resolved_profile.get("hardware_profile", "cpu_balanced")
+                self.device_reason = resolved_profile.get("device_reason", "")
+                if self.device in ("auto", None, ""):
+                    self.device = resolved_profile.get("device", "cpu")
+                if self.compute_type in ("auto", None, ""):
+                    self.compute_type = resolved_profile.get("compute_type", "int8")
+                if self.model_size in ("auto", None, ""):
+                    self.model_size = resolved_profile.get("model", "small")
+            except Exception as ex:
+                logger.warning(f"Aviso na detecção automática de perfil de hardware: {ex}")
+                if self.device in ("auto", None, ""):
+                    self.device = "cpu"
+                if self.compute_type in ("auto", None, ""):
+                    self.compute_type = "int8"
+                if self.model_size in ("auto", None, ""):
+                    self.model_size = "small"
+                self.hardware_profile = "cpu_balanced"
+        else:
+            if self.device in ("auto", None, ""):
+                self.device = "cpu"
+            if self.compute_type in ("auto", None, ""):
+                self.compute_type = "int8"
+            if self.model_size in ("auto", None, ""):
+                self.model_size = "small"
+            self.hardware_profile = "cpu_balanced"
+
+        # Concorrência e Workers (1 para CPU, 2 para CUDA)
+        req_conc = max_concurrent if max_concurrent != STT_MAX_CONCURRENT_TRANSCRIBES else os.getenv("STT_MAX_CONCURRENT_TRANSCRIBES", os.getenv("STT_MAX_WORKERS", "auto"))
+        if isinstance(req_conc, str) and req_conc.lower() in ("auto", ""):
+            resolved_w = resolved_profile.get("workers", 1) if resolved_profile else 1
+            self.max_concurrent = resolved_w
+        elif req_conc is None:
+            self.max_concurrent = 1
+        else:
+            try:
+                self.max_concurrent = max(1, int(req_conc))
+            except Exception:
+                self.max_concurrent = 1
+        self.max_workers = self.max_concurrent
+
+        # Limite de chunks pendentes na fila por reunião
+        self.max_pending_chunks = max_pending_chunks if max_pending_chunks != STT_MAX_PENDING_CHUNKS else int(os.getenv("STT_MAX_PENDING_CHUNKS", "2"))
+
+        # Controle de filas e bloqueio por reunião (isolamento estrito e sem inversão)
+        self._meeting_locks: Dict[str, threading.Lock] = {}
+        self._meeting_locks_guard = threading.Lock()
+        self._meeting_pending_counts: Dict[str, int] = {}
+        self._meeting_counts_guard = threading.Lock()
+        self._meeting_queue_delay_flags: Dict[str, bool] = {}
 
         # Parâmetros otimizados do VAD Silero para evitar clipping de sílabas iniciais e finais
         self.vad_parameters = {
@@ -398,7 +490,7 @@ class STTService:
         self._model = None
         self._mock_model = None
         self._lock = threading.Lock()
-        self._semaphore = threading.Semaphore(self.max_concurrent)
+        self._semaphore = threading.Semaphore(self.max_workers)
         self._dependency_checked = False
         self._dependency_available = False
         self._load_error = None
@@ -414,6 +506,28 @@ class STTService:
         self.model_name = f"faster-whisper-{self.model_size}"
         self.vad_min_speech_duration_ms = self.vad_min_speech_ms
         self.vad_min_silence_duration_ms = self.vad_min_silence_ms
+
+    def _get_meeting_lock(self, meeting_id: str) -> threading.Lock:
+        with self._meeting_locks_guard:
+            if meeting_id not in self._meeting_locks:
+                self._meeting_locks[meeting_id] = threading.Lock()
+            return self._meeting_locks[meeting_id]
+
+    def get_meeting_pending_count(self, meeting_id: str) -> int:
+        with self._meeting_counts_guard:
+            return self._meeting_pending_counts.get(meeting_id, 0)
+
+    def _increment_meeting_pending(self, meeting_id: str) -> int:
+        with self._meeting_counts_guard:
+            c = self._meeting_pending_counts.get(meeting_id, 0) + 1
+            self._meeting_pending_counts[meeting_id] = c
+            return c
+
+    def _decrement_meeting_pending(self, meeting_id: str) -> int:
+        with self._meeting_counts_guard:
+            c = max(0, self._meeting_pending_counts.get(meeting_id, 1) - 1)
+            self._meeting_pending_counts[meeting_id] = c
+            return c
 
     def classify_segment_confidence(self, seg: Any) -> Tuple[str, float]:
         """Classifica a confiança de um segmento em alta, media, baixa confiança ou revisao_necessaria."""
@@ -467,14 +581,20 @@ class STTService:
             return False
         try:
             from faster_whisper.utils import download_model
+            # 1. Verifica no diretório customizado se configurado
             if self.model_cache_dir and os.path.exists(self.model_cache_dir):
                 try:
                     download_model(self.model_size, output_dir=self.model_cache_dir, local_files_only=True)
                     return True
                 except Exception:
                     pass
-            download_model(self.model_size, local_files_only=True)
-            return True
+            # 2. Verifica no cache padrão do Hugging Face hub (~/.cache/huggingface/hub)
+            try:
+                download_model(self.model_size, local_files_only=True)
+                return True
+            except Exception:
+                pass
+            return False
         except Exception:
             return False
 
@@ -512,7 +632,10 @@ class STTService:
         self._dependency_available = True
 
     def _get_or_load_model(self):
-        """Carregamento lazy e thread-safe do modelo WhisperModel com suporte a download_root."""
+        """
+        Carregamento lazy e thread-safe do modelo WhisperModel com suporte a download_root
+        e fallback gracioso de CUDA para CPU caso o runtime de GPU falhe.
+        """
         if self._mock_model is not None:
             return self._mock_model
 
@@ -527,13 +650,41 @@ class STTService:
                 self._is_loading = True
                 from faster_whisper import WhisperModel
                 download_root = self.model_cache_dir if self.model_cache_dir else None
+
+                target_device = self.device
+                target_compute = self.compute_type
+
+                if target_device == "cuda":
+                    try:
+                        logger.info(
+                            f"Tentando carregar faster-whisper em CUDA (model={self.model_size}, compute_type={target_compute}, download_root={download_root})..."
+                        )
+                        self._model = WhisperModel(
+                            self.model_size,
+                            device="cuda",
+                            compute_type=target_compute,
+                            download_root=download_root
+                        )
+                        logger.info("Modelo faster-whisper carregado com sucesso em CUDA.")
+                        return self._model
+                    except Exception as cuda_err:
+                        logger.warning(
+                            f"Falha ao carregar faster-whisper com CUDA ({cuda_err}). "
+                            f"Acionando fallback automático e seguro para CPU int8."
+                        )
+                        self.device = "cpu"
+                        self.compute_type = "int8"
+                        self.hardware_profile = "cpu_balanced_fallback"
+                        target_device = "cpu"
+                        target_compute = "int8"
+
                 logger.info(
-                    f"Carregando faster-whisper (model={self.model_size}, device={self.device}, compute_type={self.compute_type}, download_root={download_root})..."
+                    f"Carregando faster-whisper (model={self.model_size}, device={target_device}, compute_type={target_compute}, download_root={download_root})..."
                 )
                 self._model = WhisperModel(
                     self.model_size,
-                    device=self.device,
-                    compute_type=self.compute_type,
+                    device=target_device,
+                    compute_type=target_compute,
                     download_root=download_root
                 )
                 logger.info("Modelo faster-whisper carregado com sucesso.")
@@ -580,6 +731,7 @@ class STTService:
             "model": self.model_size,
             "device": self.device,
             "compute_type": self.compute_type,
+            "hardware_profile": self.hardware_profile,
             "ready": True
         }
 
@@ -593,16 +745,25 @@ class STTService:
         safe_cache_dir = self.model_cache_dir if self.model_cache_dir else "default_hf_cache"
         mem_usage = get_memory_usage_mb()
 
+        active_workers = 0
+        if hasattr(self._semaphore, '_value'):
+            active_workers = max(0, self.max_workers - self._semaphore._value)
+
         return {
             "enabled": self.enabled,
             "available": is_avail,
             "ready": is_ready,
-            "provider": self.provider,
+            "provider": "faster_whisper" if self.provider in ("faster_whisper", "faster-whisper") else self.provider,
+            "engine": "faster-whisper",
             "model_name": f"faster-whisper-{self.model_size}",
             "model_size": self.model_size,
             "model": self.model_size,
             "device": self.device,
             "compute_type": self.compute_type,
+            "hardware_profile": self.hardware_profile,
+            "workers": self.max_workers,
+            "active_workers": active_workers,
+            "max_pending_chunks": self.max_pending_chunks,
             "language": self.language,
             "task": self.task,
             "beam_size": self.beam_size,
@@ -619,6 +780,8 @@ class STTService:
             "faster_whisper_version": FASTER_WHISPER_VERSION,
             "ctranslate2_version": CTRANSLATE2_VERSION,
             "is_loaded": is_ready,
+            "rtf": self.last_rtf,
+            "last_rtf": self.last_rtf,
             "processing_time_ms": self.last_processing_time_ms,
             "last_processing_time_ms": self.last_processing_time_ms,
             "memory_rss_mb": mem_usage,
@@ -634,10 +797,12 @@ class STTService:
         session_id: Optional[str] = None,
         sequence: Optional[int] = None,
         meeting_context: Optional[str] = None,
+        meeting_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Transcreve bytes de áudio com pré-processamento acústico, criação e destruição
-        estrita de arquivo temporário, vocabulário corporativo e métricas de confiança por segmento.
+        estrita de arquivo temporário, serialização por reunião, vocabulário corporativo,
+        métricas de confiança por segmento e cálculo de RTF em tempo real.
         """
         if not self.is_available():
             raise RuntimeError(f"STT indisponível no servidor: {self.get_unavailable_reason()}")
@@ -656,6 +821,13 @@ class STTService:
                 "segments": [],
                 "glossary_corrections": [],
                 "processing_time_ms": 0.0,
+                "rtf": 0.0,
+                "queue_size": 0,
+                "is_delayed": False,
+                "hardware_profile": self.hardware_profile,
+                "device": self.device,
+                "compute_type": self.compute_type,
+                "workers": self.max_workers,
                 "audio_level": 0,
                 "signal_quality": "sem_fala",
                 "no_speech_prob": 1.0,
@@ -664,6 +836,7 @@ class STTService:
                 "provider": self.provider,
                 "model_name": f"faster-whisper-{self.model_size}",
                 "model": self.model_size,
+                "meeting_id": meeting_id,
                 "session_id": session_id,
                 "sequence": sequence,
                 "is_final": False,
@@ -672,9 +845,17 @@ class STTService:
         if len(audio_bytes) > self.max_chunk_bytes:
             raise ValueError(f"Tamanho do chunk excede o limite máximo de {self.max_chunk_bytes} bytes.")
 
-        acquired = self._semaphore.acquire(timeout=20.0)
-        if not acquired:
-            raise TimeoutError("Servidor ocupado: limite de transcrições concorrentes atingido. Tente novamente.")
+        # Identificação e controle de fila por reunião
+        m_id = str(meeting_id or session_id or "default_session")
+        pending_before = self.get_meeting_pending_count(m_id)
+        is_delayed = (pending_before >= self.max_pending_chunks)
+        if is_delayed:
+            logger.warning(
+                f"Processamento atrasado na reunião {m_id}: {pending_before} chunks pendentes "
+                f"(limite: {self.max_pending_chunks})."
+            )
+        self._increment_meeting_pending(m_id)
+        meeting_lock = self._get_meeting_lock(m_id)
 
         # Se pré-processado, salva diretamente como .wav para Whisper decodificar com máxima eficiência
         is_prep = audio_metrics.get("preprocessed", False)
@@ -707,138 +888,170 @@ class STTService:
 
         temp_path = None
         t_start = time.perf_counter()
+        acquired_semaphore = False
 
         try:
-            os.makedirs(self.temp_dir, exist_ok=True)
-            with tempfile.NamedTemporaryFile(
-                delete=False,
-                dir=self.temp_dir,
-                prefix="pf_chunk_",
-                suffix=ext
-            ) as tmp:
-                tmp.write(preprocessed_bytes)
-                temp_path = tmp.name
+            # Serializa chunks da mesma reunião para evitar inversão ou concorrência desordenada
+            with meeting_lock:
+                acquired_semaphore = self._semaphore.acquire(timeout=30.0)
+                if not acquired_semaphore:
+                    raise TimeoutError("Servidor ocupado: limite de workers concorrentes atingido. Tente novamente.")
 
-            model = self._get_or_load_model()
+                os.makedirs(self.temp_dir, exist_ok=True)
+                with tempfile.NamedTemporaryFile(
+                    delete=False,
+                    dir=self.temp_dir,
+                    prefix="pf_chunk_",
+                    suffix=ext
+                ) as tmp:
+                    tmp.write(preprocessed_bytes)
+                    temp_path = tmp.name
 
-            # Configura parâmetros com vocabulário corporativo e controle determinístico
-            transcribe_kwargs: Dict[str, Any] = {
-                "language": session_lang,
-                "task": self.task,
-                "beam_size": self.beam_size,
-                "vad_filter": self.vad_filter,
-                "temperature": self.temperature,
-                "condition_on_previous_text": self.condition_on_previous_text,
-                "no_speech_threshold": 0.6,
-                "log_prob_threshold": -1.0,
-                "compression_ratio_threshold": 2.4,
-            }
-            if self.vad_filter:
-                transcribe_kwargs["vad_parameters"] = self.vad_parameters
+                model = self._get_or_load_model()
 
-            session_prompt = self.get_session_prompt(session_id, meeting_context=meeting_context)
-            if session_prompt:
-                transcribe_kwargs["initial_prompt"] = session_prompt
+                # Configura parâmetros com vocabulário corporativo e controle determinístico
+                transcribe_kwargs: Dict[str, Any] = {
+                    "language": session_lang,
+                    "task": self.task,
+                    "beam_size": self.beam_size,
+                    "best_of": self.best_of,
+                    "vad_filter": self.vad_filter,
+                    "temperature": self.temperature,
+                    "condition_on_previous_text": self.condition_on_previous_text,
+                    "word_timestamps": self.word_timestamps,
+                    "no_speech_threshold": 0.6,
+                    "log_prob_threshold": -1.0,
+                    "compression_ratio_threshold": 2.4,
+                }
+                if self.vad_filter:
+                    transcribe_kwargs["vad_parameters"] = self.vad_parameters
 
-            # Chamada de transcrição com compatibilidade para WhisperModel real e mocks
-            try:
-                import inspect
-                sig = inspect.signature(model.transcribe)
-                has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
-                call_kwargs = transcribe_kwargs if has_var_kw else {k: v for k, v in transcribe_kwargs.items() if k in sig.parameters}
-            except Exception:
-                call_kwargs = transcribe_kwargs
+                session_prompt = self.get_session_prompt(session_id, meeting_context=meeting_context)
+                if session_prompt:
+                    transcribe_kwargs["initial_prompt"] = session_prompt
 
-            segments_gen, info = model.transcribe(temp_path, **call_kwargs)
+                # Compatibilidade de assinatura para WhisperModel real e mocks
+                try:
+                    import inspect
+                    sig = inspect.signature(model.transcribe)
+                    has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+                    call_kwargs = transcribe_kwargs if has_var_kw else {k: v for k, v in transcribe_kwargs.items() if k in sig.parameters}
+                except Exception:
+                    call_kwargs = transcribe_kwargs
 
-            segments_list = []
-            text_parts = []
-            no_speech_probs = []
-            low_conf_count = 0
+                segments_gen, info = model.transcribe(temp_path, **call_kwargs)
 
-            for seg in segments_gen:
-                seg_text = getattr(seg, "text", "")
-                nsp = getattr(seg, "no_speech_prob", None)
-                alp = getattr(seg, "avg_logprob", None)
-                comp = getattr(seg, "compression_ratio", None)
+                segments_list = []
+                text_parts = []
+                no_speech_probs = []
+                low_conf_count = 0
 
-                nsp_val = float(nsp) if nsp is not None else 0.0
-                alp_val = float(alp) if alp is not None else 0.0
-                comp_val = float(comp) if comp is not None else 1.0
+                for seg in segments_gen:
+                    seg_text = getattr(seg, "text", "")
+                    nsp = getattr(seg, "no_speech_prob", None)
+                    alp = getattr(seg, "avg_logprob", None)
+                    comp = getattr(seg, "compression_ratio", None)
 
-                no_speech_probs.append(nsp_val)
-                if seg_text:
-                    clean = seg_text.strip()
-                    if clean:
-                        text_parts.append(clean)
+                    nsp_val = float(nsp) if nsp is not None else 0.0
+                    alp_val = float(alp) if alp is not None else 0.0
+                    comp_val = float(comp) if comp is not None else 1.0
 
-                        conf_level, conf_score = self.classify_segment_confidence(seg)
-                        needs_review = (conf_level in ("baixa_confianca", "revisao_necessaria"))
-                        if needs_review:
-                            low_conf_count += 1
+                    no_speech_probs.append(nsp_val)
+                    if seg_text:
+                        clean = seg_text.strip()
+                        if clean:
+                            text_parts.append(clean)
 
-                        segments_list.append({
-                            "start": round(getattr(seg, "start", 0.0), 2),
-                            "end": round(getattr(seg, "end", 0.0), 2),
-                            "text": clean,
-                            "avg_logprob": round(alp_val, 3),
-                            "no_speech_prob": round(nsp_val, 3),
-                            "compression_ratio": round(comp_val, 3),
-                            "confidence_level": conf_level,
-                            "needs_review": needs_review
-                        })
+                            conf_level, conf_score = self.classify_segment_confidence(seg)
+                            needs_review = (conf_level in ("baixa_confianca", "revisao_necessaria"))
+                            if needs_review:
+                                low_conf_count += 1
 
-            full_text = " ".join(text_parts).strip()
-            elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
-            self.last_processing_time_ms = elapsed_ms
-            avg_no_speech = sum(no_speech_probs) / len(no_speech_probs) if no_speech_probs else 0.0
+                            segments_list.append({
+                                "start": round(getattr(seg, "start", 0.0), 2),
+                                "end": round(getattr(seg, "end", 0.0), 2),
+                                "text": clean,
+                                "avg_logprob": round(alp_val, 3),
+                                "no_speech_prob": round(nsp_val, 3),
+                                "compression_ratio": round(comp_val, 3),
+                                "confidence_level": conf_level,
+                                "needs_review": needs_review
+                            })
 
-            if session_id and full_text:
-                self.update_session_context(session_id, full_text)
+                full_text = " ".join(text_parts).strip()
+                elapsed_sec = time.perf_counter() - t_start
+                elapsed_ms = round(elapsed_sec * 1000, 2)
+                self.last_processing_time_ms = elapsed_ms
+                avg_no_speech = sum(no_speech_probs) / len(no_speech_probs) if no_speech_probs else 0.0
 
-            signal_quality = audio_metrics.get("signal_quality", "suficiente")
-            if not full_text:
-                if avg_no_speech > 0.6 or signal_quality == "sem_fala":
-                    signal_quality = "sem_fala"
-                else:
-                    signal_quality = "baixo"
+                duration_val = getattr(info, "duration", 0.0) if info else audio_metrics.get("duration", 0.0)
+                if not duration_val or duration_val <= 0.05:
+                    duration_val = float(STT_CHUNK_SECONDS or 6.0)
 
-            duration_val = getattr(info, "duration", 0.0) if info else audio_metrics.get("duration", 0.0)
+                # Cálculo de RTF: tempo_de_processamento / duracao_do_audio
+                rtf = round(elapsed_sec / max(duration_val, 0.1), 3)
+                self.last_rtf = rtf
+                with self._lock:
+                    self.rtf_history.append(rtf)
+                    if len(self.rtf_history) > 100:
+                        self.rtf_history = self.rtf_history[-100:]
 
-            # Aplicação de sugestões/correções do Glossário Controlado (PARTE 9)
-            from controlled_glossary import ControlledGlossary
-            glossary = ControlledGlossary()
-            corrected_text, glossary_audits = glossary.apply_controlled_correction(
-                full_text,
-                segments=segments_list,
-                meeting_context=session_prompt
-            )
+                if session_id and full_text:
+                    self.update_session_context(session_id, full_text)
 
-            return {
-                "text": full_text,
-                "text_corrected": corrected_text,
-                "glossary_corrections": glossary_audits,
-                "language": getattr(info, "language", session_lang) if info else session_lang,
-                "language_probability": getattr(info, "language_probability", 1.0) if info else 1.0,
-                "task": self.task,
-                "duration": duration_val,
-                "segments": segments_list,
-                "low_confidence_count": low_conf_count,
-                "processing_time_ms": elapsed_ms,
-                "audio_level": audio_metrics.get("audio_level", 0),
-                "signal_quality": signal_quality,
-                "audio_metrics": audio_metrics,
-                "no_speech_prob": round(avg_no_speech, 3),
-                "words_count": len(full_text.split()),
-                "provider": self.provider,
-                "model_name": f"faster-whisper-{self.model_size}",
-                "model": self.model_size,
-                "session_id": session_id,
-                "sequence": sequence,
-                "is_final": False,
-            }
+                signal_quality = audio_metrics.get("signal_quality", "suficiente")
+                if not full_text:
+                    if avg_no_speech > 0.6 or signal_quality == "sem_fala":
+                        signal_quality = "sem_fala"
+                    else:
+                        signal_quality = "baixo"
+
+                # Aplicação de sugestões/correções do Glossário Controlado
+                from controlled_glossary import ControlledGlossary
+                glossary = ControlledGlossary()
+                corrected_text, glossary_audits = glossary.apply_controlled_correction(
+                    full_text,
+                    segments=segments_list,
+                    meeting_context=session_prompt
+                )
+
+                remaining_queue = max(0, self.get_meeting_pending_count(m_id) - 1)
+
+                return {
+                    "text": full_text,
+                    "text_corrected": corrected_text,
+                    "glossary_corrections": glossary_audits,
+                    "language": getattr(info, "language", session_lang) if info else session_lang,
+                    "language_probability": getattr(info, "language_probability", 1.0) if info else 1.0,
+                    "task": self.task,
+                    "duration": duration_val,
+                    "segments": segments_list,
+                    "low_confidence_count": low_conf_count,
+                    "processing_time_ms": elapsed_ms,
+                    "rtf": rtf,
+                    "queue_size": remaining_queue,
+                    "is_delayed": is_delayed or (rtf > 1.0),
+                    "hardware_profile": self.hardware_profile,
+                    "device": self.device,
+                    "compute_type": self.compute_type,
+                    "workers": self.max_workers,
+                    "audio_level": audio_metrics.get("audio_level", 0),
+                    "signal_quality": signal_quality,
+                    "audio_metrics": audio_metrics,
+                    "no_speech_prob": round(avg_no_speech, 3),
+                    "words_count": len(full_text.split()),
+                    "provider": self.provider,
+                    "model_name": f"faster-whisper-{self.model_size}",
+                    "model": self.model_size,
+                    "meeting_id": meeting_id,
+                    "session_id": session_id,
+                    "sequence": sequence,
+                    "is_final": False,
+                }
         finally:
-            self._semaphore.release()
+            if acquired_semaphore:
+                self._semaphore.release()
+            self._decrement_meeting_pending(m_id)
             # Política estrita de retenção zero de arquivo de áudio temporário em disco
             if temp_path and os.path.exists(temp_path):
                 try:
@@ -853,7 +1066,8 @@ class STTService:
         language: Optional[str] = None,
         session_id: Optional[str] = None,
         sequence: Optional[int] = None,
-        meeting_context: Optional[Dict[str, Any]] = None,
+        meeting_context: Optional[str] = None,
+        meeting_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Executa a transcrição em thread pool separada sem bloquear o loop asyncio."""
         return await asyncio.to_thread(
@@ -864,14 +1078,52 @@ class STTService:
             session_id=session_id,
             sequence=sequence,
             meeting_context=meeting_context,
+            meeting_id=meeting_id,
         )
 
-    def clear_session(self, session_id: str):
-        """Remove cabeçalho e histórico da sessão para liberação segura de recursos."""
+    def reprocess_transcript(
+        self,
+        raw_text: str,
+        segments: Optional[List[Dict[str, Any]]] = None,
+        existing_corrections: Optional[List[Dict[str, Any]]] = None,
+        meeting_context: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Reprocessa uma transcrição existente em modo de alta precisão (offline / pós-reunião).
+        Reconstrói o texto normalizado, reconcilia bordas de segmentos e reaplica glossário corporativo.
+        """
+        from consolidation import filter_conversational_noise
+        from controlled_glossary import ControlledGlossary
+
+        clean_text, noise_audits = filter_conversational_noise(raw_text)
+        glossary = ControlledGlossary()
+        corrected_text, glossary_audits = glossary.apply_controlled_correction(
+            clean_text,
+            segments=segments or [],
+            meeting_context=meeting_context
+        )
+
+        return {
+            "status": "success",
+            "raw_text": raw_text,
+            "reprocessed_text": corrected_text,
+            "noise_audits": noise_audits,
+            "glossary_audits": glossary_audits,
+            "is_reprocessed": True,
+            "reprocess_badge": "Transcrição refinada em pós-processamento"
+        }
+
+    def clear_session(self, session_id: str, meeting_id: Optional[str] = None):
+        """Remove cabeçalho, contexto e contadores da sessão para liberação segura de recursos."""
         with self._session_headers_lock:
             self._session_headers.pop(session_id, None)
         with self._session_contexts_lock:
             self._session_contexts.pop(session_id, None)
+        with self._session_languages_lock:
+            self._session_languages.pop(session_id, None)
+        m_id = str(meeting_id or session_id)
+        with self._meeting_counts_guard:
+            self._meeting_pending_counts.pop(m_id, None)
 
 
 # Singleton do serviço
@@ -886,3 +1138,42 @@ def get_stt_service() -> STTService:
             if _stt_service_instance is None:
                 _stt_service_instance = STTService()
     return _stt_service_instance
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Proton Flow STT Service CLI")
+    parser.add_argument("--check", action="store_true", help="Executa diagnóstico de hardware e status do STT")
+    parser.add_argument("--profile", action="store_true", help="Exibe perfil de hardware recomendado")
+    parser.add_argument("--download-model", type=str, metavar="MODEL_SIZE", help="Baixa e faz cache de modelo (ex: small, base)")
+    args = parser.parse_args()
+
+    if args.check or args.profile:
+        if detect_hardware is not None:
+            from hardware_detector import print_diagnostic_report
+            print_diagnostic_report()
+        stt = get_stt_service()
+        st = stt.get_status()
+        print(f"\nStatus do Serviço STT : {'Disponível' if st['available'] else 'Indisponível'} (Pronto: {st['ready']})")
+        print(f"Modelo em Cache       : {st['model_cached']}")
+        print(f"Perfil de Hardware    : {st['hardware_profile']}")
+        print(f"Dispositivo Ativo     : {st['device']} ({st['compute_type']})")
+        print(f"Workers Ativos        : {st['workers']}")
+        print(f"Fila Máxima           : {st['max_pending_chunks']} chunks")
+    elif args.download_model:
+        model_name = args.download_model
+        print(f"Baixando modelo faster-whisper '{model_name}'...")
+        try:
+            from faster_whisper.utils import download_model
+            cache_dir = os.getenv("STT_MODEL_CACHE_DIR", "./models")
+            os.makedirs(cache_dir, exist_ok=True)
+            path = download_model(model_name, output_dir=cache_dir)
+            print(f"Modelo '{model_name}' baixado com sucesso em: {path}")
+        except Exception as e:
+            print(f"Erro ao baixar modelo '{model_name}': {e}")
+            sys.exit(1)
+    else:
+        parser.print_help()
+

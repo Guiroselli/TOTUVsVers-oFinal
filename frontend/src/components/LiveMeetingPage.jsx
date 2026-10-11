@@ -647,10 +647,16 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
           setBackendChunkStats((prev) => ({
             chunkCount: currentSeq + 1,
             lastProcessingTimeMs: res.processing_time_ms || 0,
-            lastDuration: res.duration || 8.0,
+            lastDuration: res.duration || 6.0,
             latencyHistory: [...(prev.latencyHistory || []).slice(-9), res.processing_time_ms || 0],
-            lowConfidenceSegments: res.low_confidence_segments ?? prev.lowConfidenceSegments,
+            lowConfidenceSegments: res.low_confidence_count ?? res.low_confidence_segments ?? prev.lowConfidenceSegments,
             modelName: res.model_name || prev.modelName || '',
+            hardwareProfile: res.hardware_profile || prev.hardwareProfile || 'cpu_balanced',
+            device: res.device || prev.device || 'cpu',
+            computeType: res.compute_type || prev.computeType || 'int8',
+            rtf: res.rtf || 0,
+            queueSize: res.queue_size || 0,
+            isDelayed: res.is_delayed || false,
             glossaryCorrectionsCount: (res.glossary_corrections ? res.glossary_corrections.length : 0) + (prev.glossaryCorrectionsCount || 0)
           }));
 
@@ -682,13 +688,13 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     };
 
     try {
-      recorder.start(8000); // Envia chunk a cada 8 segundos para contexto contínuo
+      recorder.start(6000); // Envia chunk a cada 6 segundos para equilíbrio precisão/latência
       mediaRecorderRef.current = recorder;
       setTranscriptionStatus('listening');
       transcriptionStatusRef.current = 'listening';
       setEngineState('ativa');
     } catch (err) {
-      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(8000):', err);
+      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(6000):', err);
     }
   }, [getSupportedAudioMimeType, stopBackendRecorder]);
 
@@ -1567,6 +1573,33 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
       await onLeaveMeeting(transcription, mid);
     } else if (onAnalyzeMeeting) {
       onAnalyzeMeeting(mid);
+    }
+  };
+
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessSuccess, setReprocessSuccess] = useState('');
+
+  const handleReprocessTranscript = async () => {
+    const mid = activeMeetingIdRef.current;
+    if (!mid) return;
+    setReprocessing(true);
+    setReprocessSuccess('');
+    setError('');
+    try {
+      const res = await api.post(`/live/meetings/${mid}/reprocess?reanalyze=true`);
+      if (res && res.status === 'success') {
+        if (res.reprocessed_text) {
+          setTranscription(res.reprocessed_text);
+          setTranscriptNormalized(res.reprocessed_text);
+        }
+        setReprocessSuccess('Transcrição refinada em pós-processamento com sucesso!');
+        await loadLiveMeetings();
+      }
+    } catch (e) {
+      console.warn('Erro ao reprocessar transcrição:', e);
+      setError('Falha ao reprocessar transcrição.');
+    } finally {
+      setReprocessing(false);
     }
   };
 
@@ -2507,15 +2540,27 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                     {backendSttStatus.available ? (
                       <>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          <span>🎙️ Gravando áudio • <strong>{backendSttStatus.model_name || backendSttStatus.model || 'faster-whisper-small'}</strong> ({backendSttStatus.device ? backendSttStatus.device.toUpperCase() : 'CPU'} {backendSttStatus.compute_type || 'int8'}, pt-BR) • Chunk #{backendChunkStats.chunkCount} (8s)</span>
-                          {backendSttStatus.device === 'cpu' && (
-                            <span style={{ fontSize: '9px', background: 'rgba(234, 179, 8, 0.15)', color: '#f59e0b', padding: '1px 5px', borderRadius: '3px' }}>
-                              ⚡ CPU (latência esperada ~1-3s)
+                          <span>🎙️ Gravando áudio • <strong>{backendChunkStats.modelName || backendSttStatus.model_name || backendSttStatus.model || 'faster-whisper-small'}</strong> ({backendChunkStats.device ? backendChunkStats.device.toUpperCase() : (backendSttStatus.device ? backendSttStatus.device.toUpperCase() : 'CPU')} {backendChunkStats.computeType || backendSttStatus.compute_type || 'int8'}, pt-BR) • Perfil: <code style={{ fontSize: '9.5px', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: '3px' }}>{backendChunkStats.hardwareProfile || backendSttStatus.hardware_profile || 'cpu_balanced'}</code> • Chunk #{backendChunkStats.chunkCount} (6s)</span>
+                          {backendChunkStats.rtf > 0 && (
+                            <span style={{
+                              fontSize: '9px',
+                              background: backendChunkStats.rtf <= 0.7 ? 'rgba(16, 185, 129, 0.15)' : backendChunkStats.rtf <= 1.0 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.2)',
+                              color: backendChunkStats.rtf <= 0.7 ? '#10b981' : backendChunkStats.rtf <= 1.0 ? '#f59e0b' : '#f87171',
+                              padding: '1px 5px',
+                              borderRadius: '3px',
+                              fontWeight: 600
+                            }}>
+                              RTF: {backendChunkStats.rtf} ({backendChunkStats.rtf <= 0.7 ? 'Tempo real saudável' : backendChunkStats.rtf <= 1.0 ? 'Margem aceitável' : 'Risco de atraso'})
+                            </span>
+                          )}
+                          {backendChunkStats.isDelayed && (
+                            <span style={{ fontSize: '9px', background: 'rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '1px 6px', borderRadius: '3px', fontWeight: 700 }}>
+                              ⚠️ Processamento atrasado ({backendChunkStats.queueSize} chunk(s) na fila)
                             </span>
                           )}
                           {backendChunkStats.lowConfidenceSegments > 0 && (
                             <span style={{ fontSize: '9px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: '3px', fontWeight: 600 }}>
-                              ⚠️ {backendChunkStats.lowConfidenceSegments} trecho(s) com baixa confiança
+                              ⚠️ Baixa confiança neste trecho / Revisão recomendada
                             </span>
                           )}
                         </div>
@@ -2629,7 +2674,43 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                       </button>
                     </div>
                   </div>
-                  <div style={{ fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <div style={{ fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {(currentMeeting?.IS_REPROCESSED || reprocessSuccess) && (
+                      <span style={{
+                        fontSize: '9.5px',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#34d399',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}>
+                        ✨ Transcrição refinada em pós-processamento
+                      </span>
+                    )}
+                    {!isRecording && activeMeetingId && (
+                      <button
+                        type="button"
+                        onClick={handleReprocessTranscript}
+                        disabled={reprocessing}
+                        className="btn btn-secondary"
+                        style={{
+                          fontSize: '10px',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px'
+                        }}
+                        title="Executa reprocessamento de alta precisão com reconciliação de bordas e glossário auditável"
+                      >
+                        <RefreshCw size={10} className={reprocessing ? 'spin' : ''} />
+                        {reprocessing ? 'Refinando...' : 'Refinar Transcrição'}
+                      </button>
+                    )}
                     {syncStatus === 'saving' && (
                       <span style={{ color: '#eab308' }}>Salvando...</span>
                     )}
