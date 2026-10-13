@@ -286,12 +286,12 @@ export default function LiveMeetingPage({
 
   // Departamentos únicos para filtro
   const departmentsList = useMemo(() => {
-    const setDept = new Set();
+    const setDept = new Set(['todos', 'RH', 'TI', 'Financeiro', 'Operações']);
     meetings.forEach((m) => {
       const d = m.DEPARTAMENTO || m.NOME_SEGMENTO;
       if (d && d !== 'Geral') setDept.add(d);
     });
-    return ['todos', 'RH', 'TI', 'Financeiro', 'Operações', ...Array.from(setDept)];
+    return Array.from(setDept);
   }, [meetings]);
 
   // Lista filtrada
