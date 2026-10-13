@@ -486,3 +486,101 @@ def test_16_http_503_when_stt_unavailable():
         assert data["status"] == "unavailable"
         assert data["reason"] == "model_missing"
         assert "fallback do navegador" in data["message"]
+
+
+# ---------------------------------------------------------------------------
+# 17. Reconstrução de Chunks WebM Contínuos via Header de Sessão
+# ---------------------------------------------------------------------------
+
+def test_17_webm_header_caching_and_subsequent_chunks_reconstruction():
+    """17: Chunk 0 armazena header EBML e Chunk 1+ recebe o header para decodificação contínua."""
+    stt = STTService()
+    session_id = "test_webm_sess_999"
+
+    # Simula header WebM EBML com tag \x1a\x45\xdf\xa3 seguido de cluster
+    ebml_header = b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01" + b"\x00" * 40
+    cluster_chunk_0 = b"\x1f\x43\xb6\x75" + b"\x01" * 60
+    chunk_0_bytes = ebml_header + cluster_chunk_0
+
+    # Chunk 1 tem apenas payload de cluster contínuo (sem header EBML)
+    chunk_1_raw = b"\x1f\x43\xb6\x75" + b"\x02" * 80
+
+    mock_model = MockWhisperModel("Alinhamento contínuo de áudio")
+    stt.set_mock_model(mock_model)
+
+    # Executa transcrição de chunk 0
+    res_0 = stt.transcribe_audio_bytes(
+        audio_bytes=chunk_0_bytes,
+        filename_hint="chunk_0.webm",
+        session_id=session_id,
+        sequence=0,
+        meeting_id="meeting_multi_chunk"
+    )
+    assert res_0 is not None
+    assert session_id in stt._session_headers
+    assert stt._session_headers[session_id] == ebml_header
+
+    # Executa transcrição de chunk 1
+    res_1 = stt.transcribe_audio_bytes(
+        audio_bytes=chunk_1_raw,
+        filename_hint="chunk_1.webm",
+        session_id=session_id,
+        sequence=1,
+        meeting_id="meeting_multi_chunk"
+    )
+    assert res_1 is not None
+    assert res_1["text"] == "Alinhamento contínuo de áudio"
+
+
+# ---------------------------------------------------------------------------
+# 18. Resposta HTTP 200 Estruturada com RTF e Métricas de Processamento
+# ---------------------------------------------------------------------------
+
+def test_18_http_upload_chunk_success_structured_response():
+    """18: Upload de chunk com sucesso retorna JSON estruturado com status success, timing e rtf."""
+    client = TestClient(app)
+    repo = MeetingRepository()
+    test_id = "test_meeting_http_200_structured"
+
+    repo.save_meeting({
+        "ID_MEETING": test_id,
+        "TITULO": "Reunião de Teste 200 Estruturada",
+        "ORIGEM": "live",
+        "STATUS_MEETING": "ao_vivo",
+        "ANON_TRANSCRICAO": ""
+    })
+
+    stt = get_stt_service()
+    mock_model = MockWhisperModel("Discussão sobre metas trimestrais")
+    stt.set_mock_model(mock_model)
+
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 3200)
+    wav_bytes = buf.getvalue()
+
+    response = client.post(
+        f"/api/live/meetings/{test_id}/transcript/audio",
+        data={
+            "session_id": "sess_200_struct",
+            "sequence": 0,
+            "is_final": "false",
+            "language": "pt"
+        },
+        files={"audio": ("chunk.wav", wav_bytes, "audio/wav")}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["sequence"] == 0
+    assert "Discussão sobre metas trimestrais" in data["transcript"]
+    assert "processing_time_ms" in data
+    assert "rtf" in data
+    assert "signal_quality" in data
+

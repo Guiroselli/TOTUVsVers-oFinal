@@ -77,7 +77,7 @@ export default function LiveMeetingPage({
   // PARTE 2, 3, 4: Estados explícitos e observáveis de transcrição e diagnóstico
   const [transcriptionStatus, setTranscriptionStatus] = useState('idle'); // 'idle' | 'requesting_permission' | 'media_ready' | 'recognition_starting' | 'listening' | 'receiving_speech' | 'paused' | 'unsupported' | 'permission_denied' | 'no_audio_input' | 'browser_blocked' | 'service_unavailable' | 'error'
   const [engineState, setEngineState] = useState('nao_iniciada'); // 'nao_iniciada' | 'iniciando' | 'ativa' | 'sem_sinal' | 'falhou' | 'sem_resposta' | 'encerrada'
-  const [recognitionServiceState, setRecognitionServiceState] = useState('nao_testado'); // 'nao_testado' | 'conectado' | 'sem_resposta' | 'bloqueado' | 'indisponivel'
+  const [_recognitionServiceState, setRecognitionServiceState] = useState('nao_testado'); // 'nao_testado' | 'conectado' | 'sem_resposta' | 'bloqueado' | 'indisponivel'
   const [isManualEditMode, setIsManualEditMode] = useState(false);
   const [copiedDiagnostic, setCopiedDiagnostic] = useState(false);
   const [mediaError, setMediaError] = useState('');
@@ -99,12 +99,22 @@ export default function LiveMeetingPage({
   });
   const [backendChunkStats, setBackendChunkStats] = useState({
     chunkCount: 0,
+    chunksCaptured: 0,
+    chunksConfirmed: 0,
+    chunksPending: 0,
+    chunksFailed: 0,
+    lastConfirmedSeq: null,
     lastProcessingTimeMs: 0,
     lastDuration: 0,
     latencyHistory: [],
     lowConfidenceSegments: 0,
     modelName: '',
-    glossaryCorrectionsCount: 0
+    glossaryCorrectionsCount: 0,
+    rtf: 0,
+    queueSize: 0,
+    isDelayed: false,
+    lastHttpStatus: null,
+    lastError: null
   });
   const [signalQuality, setSignalQuality] = useState('suficiente'); // 'suficiente' | 'baixo' | 'sem_fala' | 'saturado'
   const [transcriptRaw, setTranscriptRaw] = useState('');
@@ -164,6 +174,12 @@ export default function LiveMeetingPage({
   const mediaRecorderRef = useRef(null);
   const chunkSequenceRef = useRef(0);
   const backendSessionIdRef = useRef(null);
+  const chunkQueueRef = useRef([]);
+  const isUploadingRef = useRef(false);
+  const stopReasonRef = useRef('');
+  const chunksCapturedCountRef = useRef(0);
+  const chunksConfirmedCountRef = useRef(0);
+  const sessionStartTimeRef = useRef(null);
 
   // 1. Carrega lista de dispositivos de áudio e vídeo disponíveis
   const loadAudioDevices = useCallback(async () => {
@@ -343,62 +359,97 @@ export default function LiveMeetingPage({
   const getTranscriptionStatusInfo = useCallback((status) => {
     switch (status) {
       case 'idle':
-        return { label: 'Aguardando Início', color: '#94a3b8', dotColor: '#94a3b8' };
+      case 'awaiting_start':
+        return { label: 'Aguardando início', color: '#94a3b8', dotColor: '#94a3b8' };
+      case 'requesting':
       case 'requesting_permission':
-        return { label: 'Solicitando Permissão...', color: '#eab308', dotColor: '#eab308' };
+      case 'preparing_microphone':
+        return { label: 'Preparando microfone', color: '#eab308', dotColor: '#eab308' };
       case 'media_ready':
-        return { label: 'Microfone Pronto', color: '#38bdf8', dotColor: '#38bdf8' };
+        return { label: 'Microfone pronto', color: '#38bdf8', dotColor: '#38bdf8' };
       case 'recognition_starting':
         return { label: 'Conectando...', color: '#eab308', dotColor: '#eab308' };
+      case 'capturing':
       case 'listening':
-        return { label: 'Aguardando Fala', color: '#38bdf8', dotColor: '#38bdf8' };
+      case 'capturing_audio':
+        return { label: 'Capturando áudio', color: '#38bdf8', dotColor: '#38bdf8' };
+      case 'processing_chunk':
+        return { label: 'Processando chunk', color: '#a855f7', dotColor: '#a855f7' };
+      case 'active':
       case 'receiving_speech':
-        return { label: 'Transcrevendo...', color: '#10b981', dotColor: '#10b981' };
+      case 'transcription_active':
+        return { label: 'Transcrição ativa', color: '#10b981', dotColor: '#10b981' };
+      case 'queue_delayed':
+        return { label: 'Fila atrasada', color: '#f59e0b', dotColor: '#f59e0b' };
       case 'paused':
         return { label: 'Pausada', color: '#eab308', dotColor: '#eab308' };
-      case 'unsupported':
-        return { label: 'Não Suportada', color: '#f87171', dotColor: '#ef4444' };
+      case 'finished':
+      case 'concluida':
+        return { label: 'Finalizada', color: '#64748b', dotColor: '#64748b' };
+      case 'disconnected':
+      case 'ended':
+      case 'mic_disconnected':
+        return { label: 'Microfone desconectado', color: '#f87171', dotColor: '#ef4444' };
       case 'permission_denied':
-        return { label: 'Permissão Negada', color: '#f87171', dotColor: '#ef4444' };
+        return { label: 'Permissão negada', color: '#f87171', dotColor: '#ef4444' };
       case 'no_audio_input':
-        return { label: 'Sem Sinal de Áudio', color: '#f87171', dotColor: '#ef4444' };
+        return { label: 'Sem sinal de áudio', color: '#f87171', dotColor: '#ef4444' };
       case 'browser_blocked':
-        return { label: 'Bloqueado pelo Navegador', color: '#f87171', dotColor: '#ef4444' };
+        return { label: 'Bloqueado pelo navegador', color: '#f87171', dotColor: '#ef4444' };
       case 'service_unavailable':
-        return { label: 'Serviço Sem Resposta', color: '#f87171', dotColor: '#ef4444' };
+      case 'unavailable':
+        return { label: 'STT indisponível', color: '#f87171', dotColor: '#ef4444' };
+      case 'unsupported':
+        return { label: 'Não suportada', color: '#f87171', dotColor: '#ef4444' };
       case 'error':
         return { label: 'Erro', color: '#f87171', dotColor: '#ef4444' };
       default:
-        return { label: 'Desconhecido', color: '#94a3b8', dotColor: '#94a3b8' };
+        return { label: 'Aguardando atividade', color: '#94a3b8', dotColor: '#94a3b8' };
     }
   }, []);
 
   const getEmptyMessage = useCallback((status, title) => {
     switch (status) {
       case 'idle':
-        return `Reunião "${title}" pronta. Clique em "Ativar Transcrição" e fale uma frase curta.`;
+      case 'awaiting_start':
+        return `Reunião "${title}" pronta. Clique em "Ativar Transcrição" para iniciar a captura contínua.`;
+      case 'requesting':
       case 'requesting_permission':
+      case 'preparing_microphone':
         return 'Solicitando acesso ao microfone... Por favor, autorize nas permissões do navegador.';
       case 'media_ready':
-        return 'Microfone configurado com sucesso. Clique em "Ativar Transcrição" para iniciar o reconhecimento de voz.';
+        return 'Microfone configurado com sucesso. Clique em "Ativar Transcrição" para iniciar.';
       case 'recognition_starting':
-        return 'Conectando ao reconhecimento de voz do navegador... Aguarde o handshake com o motor de áudio.';
+        return 'Conectando ao reconhecimento de voz... Aguarde o handshake com o motor de áudio.';
+      case 'capturing':
       case 'listening':
-        return 'Microfone ativo e captando som. Ainda não detectamos fala. Fale uma frase clara próximo ao microfone.';
+      case 'capturing_audio':
+        return 'Microfone ativo e captando som continuamente. Fale normalmente durante a reunião.';
+      case 'processing_chunk':
+        return 'Processando trecho de fala com o modelo STT...';
+      case 'active':
       case 'receiving_speech':
+      case 'transcription_active':
         return 'Transcrevendo áudio em tempo real...';
+      case 'queue_delayed':
+        return 'Fila de áudio com processamento atrasado. Os chunks continuam sendo gravados e processados sem perda.';
       case 'paused':
         return 'Gravação pausada temporariamente. Clique em Retomar para continuar.';
-      case 'unsupported':
-        return 'Este navegador não oferece transcrição nativa (Web Speech API). Recomendamos o Google Chrome ou Microsoft Edge em desktop.';
+      case 'disconnected':
+      case 'ended':
+      case 'mic_disconnected':
+        return 'Microfone desconectado pelo sistema. Verifique a conexão e clique no botão "Reconectar Microfone".';
       case 'permission_denied':
         return 'Permissão de microfone negada. Clique no ícone de cadeado na barra de endereços do navegador e permita o microfone.';
       case 'no_audio_input':
-        return 'Nenhum sinal detectado no microfone selecionado. Verifique se o microfone não está silenciado no sistema ou selecione outro dispositivo no cabeçalho.';
+        return 'Nenhum sinal detectado no microfone selecionado. Verifique se o microfone não está silenciado no sistema operacional.';
       case 'browser_blocked':
         return 'O serviço de reconhecimento de voz foi bloqueado pelo navegador (comum no Brave Shields ou políticas corporativas). Use o Google Chrome ou autorize o Google Speech API.';
       case 'service_unavailable':
-        return 'O serviço de reconhecimento de voz do navegador não respondeu aos servidores de áudio. O microfone está captando normalmente, mas a rede/servidor não retornou dados. Você pode tentar novamente ou usar o botão "Digitar Manualmente" para não perder anotações.';
+      case 'unavailable':
+        return 'O serviço de transcrição backend (faster-whisper) está indisponível no servidor. Verifique o status da API.';
+      case 'unsupported':
+        return 'Este navegador não oferece transcrição nativa. Recomendamos o Google Chrome ou Microsoft Edge.';
       case 'error':
         return 'Ocorreu um erro no reconhecimento de voz. Clique em "Tentar Novamente" ou insira anotações manualmente.';
       default:
@@ -408,29 +459,43 @@ export default function LiveMeetingPage({
 
   // Copia relatório estruturado de diagnóstico sem dados de áudio bruto (PARTE 1)
   const copyDiagnosticToClipboard = useCallback(() => {
-    const diagText = `--- RELATÓRIO TÉCNICO DE DIAGNÓSTICO (PROTON FLOW) ---
-Data/Hora: ${new Date().toLocaleString('pt-BR')}
-Reunião ID: ${activeMeetingIdRef.current || 'Nenhum'}
-Sessão Ativa: ${diagnosticInfo.activeSessionId || 'Nenhuma'}
-Navegador: ${diagnosticInfo.browser}
-Origem/Host: ${diagnosticInfo.origin || (typeof window !== 'undefined' ? window.location.origin : '')}
-Engine Web Speech: ${diagnosticInfo.engine}
-Idioma: ${diagnosticInfo.lang}
+    const totalSessionSeconds = sessionStartTimeRef.current ? Math.round((Date.now() - sessionStartTimeRef.current) / 1000) : 0;
+    const audioTrack = streamRef.current?.getAudioTracks()[0];
+    const videoTrack = streamRef.current?.getVideoTracks()[0];
+
+    const diagText = `-------------------------------------------------------
+DIAGNÓSTICO TÉCNICO DE TRANSCRIÇÃO & STT — PROTON FLOW
+Data/Hora: ${new Date().toISOString()}
+-------------------------------------------------------
+Reunião ID: ${activeMeetingIdRef.current || 'Nenhuma'}
+Sessão ID: ${backendSessionIdRef.current || 'Nenhuma'}
+Tempo Total da Sessão: ${totalSessionSeconds}s
+Provedor STT Ativo: ${sttProvider}
+Backend STT Status: ${backendSttStatus.available ? `Disponível (${backendSttStatus.provider}, model=${backendSttStatus.model}, device=${backendSttStatus.device})` : `Indisponível (${backendSttStatus.reason || 'ausente'})`}
 Status da Transcrição: ${transcriptionStatus}
 Engine State: ${engineState}
-Serviço de Voz: ${recognitionServiceState}
+
+--- MEDIA & HARDWARE ---
 Microfone Status: ${audioStatus}
-Nível de Sinal: ${audioLevelRef.current}% (${audioLevelRef.current > 4 ? 'Sinal Detectado' : 'Sem Sinal'})
-Audio Track State: ${diagnosticInfo.audioTrackState}
-Chamadas start(): ${diagnosticInfo.startCalledCount}
-Última Exceção de start(): ${diagnosticInfo.lastException || 'Nenhuma'}
+Nível de VU Meter: ${audioLevelRef.current}% (${audioLevelRef.current > 4 ? 'Sinal Detectado' : 'Sem Sinal'})
+Audio Track: ${audioTrack ? `readyState=${audioTrack.readyState}, enabled=${audioTrack.enabled}, muted=${audioTrack.muted}` : 'Ausente'}
+Video Track: ${videoTrack ? `readyState=${videoTrack.readyState}, enabled=${videoTrack.enabled}, muted=${videoTrack.muted}` : 'Desativado'}
+MediaRecorder State: ${mediaRecorderRef.current ? mediaRecorderRef.current.state : 'inativo'}
+Motivo de Parada: ${stopReasonRef.current || 'nenhum'}
+
+--- FILA E CHUNKS STT ---
+Chunks Capturados: ${backendChunkStats.chunksCaptured || 0}
+Chunks Confirmados: ${backendChunkStats.chunksConfirmed || 0}
+Chunks Pendentes na Fila: ${chunkQueueRef.current.length}
+Chunks Falhos: ${backendChunkStats.chunksFailed || 0}
+Uploads em Andamento: ${isUploadingRef.current ? 1 : 0}
+Última Sequência Confirmada: ${backendChunkStats.lastConfirmedSeq ?? 'nenhuma'}
+Último Processamento: ${backendChunkStats.lastProcessingTimeMs}ms
+Última Duração do Chunk: ${backendChunkStats.lastDuration}s
+RTF: ${backendChunkStats.rtf || 0}
+Último Status HTTP: ${backendChunkStats.lastHttpStatus || (backendChunkStats.chunksConfirmed > 0 ? 200 : 'nenhum')}
+Último Erro Frontend/Backend: ${backendChunkStats.lastError || diagnosticInfo.lastError || 'Nenhum'}
 Último Evento: ${diagnosticInfo.lastEvent} (${diagnosticInfo.lastEventTime || 'Nenhum'})
-Último Erro: ${diagnosticInfo.lastError || 'Nenhum'}
-Resultados Recebidos: ${diagnosticInfo.resultsCount}
-Caracteres Acumulados: ${diagnosticInfo.finalCharsCount}
-Provedor STT Ativo: ${sttProvider}
-Backend STT (faster-whisper): ${backendSttStatus.available ? `Disponível (${backendSttStatus.provider}, model=${backendSttStatus.model}, device=${backendSttStatus.device})` : `Indisponível (${backendSttStatus.reason || 'ausente'})`}
-Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backendChunkStats.lastProcessingTimeMs}ms)
 -------------------------------------------------------`;
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -441,7 +506,7 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
         console.warn('Erro ao copiar diagnóstico:', e);
       });
     }
-  }, [diagnosticInfo, transcriptionStatus, engineState, recognitionServiceState, audioStatus, sttProvider, backendSttStatus, backendChunkStats]);
+  }, [diagnosticInfo, transcriptionStatus, engineState, audioStatus, sttProvider, backendSttStatus, backendChunkStats]);
 
   // Salvamento automático da transcrição no backend (com debounce e sessão)
   const saveTranscriptToBackend = useCallback(
@@ -540,8 +605,9 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     return '';
   }, []);
 
-  // Parada limpa do MediaRecorder de backend
-  const stopBackendRecorder = useCallback(() => {
+  // Parada limpa e controlada do MediaRecorder de backend
+  const stopBackendCapture = useCallback((reason = 'user_action') => {
+    stopReasonRef.current = reason;
     if (mediaRecorderRef.current) {
       try {
         if (mediaRecorderRef.current.state !== 'inactive') {
@@ -552,10 +618,181 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
       }
       mediaRecorderRef.current = null;
     }
+    setDiagnosticInfo((prev) => ({
+      ...prev,
+      lastEvent: `media_recorder_stopped_${reason}`,
+      lastEventTime: new Date().toLocaleTimeString('pt-BR')
+    }));
   }, []);
 
-  // Início do MediaRecorder para chunks backend de áudio (PARTE 8, 9, 10)
-  const startBackendRecorder = useCallback((stream) => {
+  // Processador FIFO assíncrono da fila de chunks com controle estrito de concorrência e resiliência
+  const processChunkQueue = useCallback(async () => {
+    if (isUploadingRef.current) return;
+    isUploadingRef.current = true;
+
+    try {
+      while (chunkQueueRef.current.length > 0) {
+        const targetMeetingId = activeMeetingIdRef.current;
+        if (!targetMeetingId) {
+          chunkQueueRef.current = [];
+          break;
+        }
+
+        const chunk = chunkQueueRef.current[0];
+        if (!chunk) {
+          chunkQueueRef.current.shift();
+          continue;
+        }
+
+        // Se a reunião mudou de contexto, descarta chunk obsoleto
+        if (chunk.targetMeetingId !== targetMeetingId) {
+          chunkQueueRef.current.shift();
+          continue;
+        }
+
+        const pendingCount = chunkQueueRef.current.length;
+        const isDelayed = pendingCount > 2;
+
+        setTranscriptionStatus('processing_chunk');
+        transcriptionStatusRef.current = 'processing_chunk';
+
+        setBackendChunkStats((prev) => ({
+          ...prev,
+          chunksPending: pendingCount,
+          isDelayed
+        }));
+
+        let response = null;
+        let uploadError = null;
+
+        try {
+          response = await api.uploadAudioChunk(targetMeetingId, chunk.blob, {
+            sessionId: chunk.sessionId,
+            sequence: chunk.sequence,
+            mimeType: chunk.mimeType,
+            language: 'pt'
+          });
+        } catch (err) {
+          uploadError = err;
+        }
+
+        if (uploadError) {
+          console.warn(`[STT Backend] Erro no envio do chunk seq=${chunk.sequence}:`, uploadError);
+          const httpStatus = uploadError.status || uploadError.statusCode || 500;
+
+          // Se 503 (serviço STT indisponível), suspende fila e notifica usuário com segurança
+          if (httpStatus === 503) {
+            setTranscriptionStatus('service_unavailable');
+            transcriptionStatusRef.current = 'service_unavailable';
+            setBackendSttStatus((prev) => ({
+              ...prev,
+              available: false,
+              reason: uploadError.reason || 'stt_unavailable'
+            }));
+            setError('O serviço de transcrição backend (faster-whisper) está indisponível. Alterne para o reconhecimento do navegador ou modo manual.');
+            chunkQueueRef.current = [];
+            stopBackendCapture('stt_unavailable');
+            setBackendChunkStats((prev) => ({
+              ...prev,
+              chunksPending: 0,
+              chunksFailed: (prev.chunksFailed || 0) + 1,
+              lastHttpStatus: 503,
+              lastError: 'HTTP 503: STT Indisponível'
+            }));
+            break;
+          }
+
+          // Falhas transitórias (timeout, erro de rede passageiro)
+          chunk.attempts = (chunk.attempts || 0) + 1;
+          if (chunk.attempts < 3) {
+            console.warn(`[STT Backend] Retentando chunk seq=${chunk.sequence} (tentativa ${chunk.attempts}/3)...`);
+            await new Promise((r) => setTimeout(r, 600 * chunk.attempts));
+            continue;
+          } else {
+            console.error(`[STT Backend] Descartando chunk seq=${chunk.sequence} após ${chunk.attempts} tentativas falhas.`);
+            chunkQueueRef.current.shift();
+            setBackendChunkStats((prev) => ({
+              ...prev,
+              chunksPending: chunkQueueRef.current.length,
+              chunksFailed: (prev.chunksFailed || 0) + 1,
+              lastHttpStatus: httpStatus,
+              lastError: `Falha persistente no chunk seq=${chunk.sequence}`
+            }));
+            continue;
+          }
+        }
+
+        // Sucesso no processamento do chunk
+        chunkQueueRef.current.shift();
+        chunksConfirmedCountRef.current += 1;
+
+        if (response) {
+          if (response.signal_quality) {
+            setSignalQuality(response.signal_quality);
+          }
+          if (response.transcript_raw) {
+            setTranscriptRaw(response.transcript_raw);
+          }
+          if (response.transcript_normalized) {
+            setTranscriptNormalized(response.transcript_normalized);
+          }
+
+          if (response.transcript) {
+            setTranscription(response.transcript);
+            finalTranscriptRef.current = response.transcript;
+          } else if (response.text && response.text.trim()) {
+            const chunkText = response.text.trim();
+            setTranscription((prev) => {
+              const currentFull = (prev || '').trim();
+              if (currentFull.endsWith(chunkText)) return currentFull;
+              return currentFull ? `${currentFull} ${chunkText}` : chunkText;
+            });
+            finalTranscriptRef.current = (finalTranscriptRef.current ? `${finalTranscriptRef.current.trim()} ` : '') + `${chunkText} `;
+          }
+
+          setBackendChunkStats((prev) => ({
+            ...prev,
+            chunksCaptured: chunksCapturedCountRef.current,
+            chunksConfirmed: chunksConfirmedCountRef.current,
+            chunksPending: chunkQueueRef.current.length,
+            lastConfirmedSeq: chunk.sequence,
+            lastProcessingTimeMs: response.processing_time_ms || 0,
+            lastDuration: response.duration || 3.5,
+            latencyHistory: [...(prev.latencyHistory || []).slice(-9), response.processing_time_ms || 0],
+            lowConfidenceSegments: response.low_confidence_count ?? response.low_confidence_segments ?? prev.lowConfidenceSegments,
+            modelName: response.model_name || prev.modelName || '',
+            hardwareProfile: response.hardware_profile || prev.hardwareProfile || 'cpu_balanced',
+            device: response.device || prev.device || 'cpu',
+            computeType: response.compute_type || prev.computeType || 'int8',
+            rtf: response.rtf || 0,
+            queueSize: chunkQueueRef.current.length,
+            isDelayed: chunkQueueRef.current.length > 2,
+            glossaryCorrectionsCount: (response.glossary_corrections ? response.glossary_corrections.length : 0) + (prev.glossaryCorrectionsCount || 0),
+            lastHttpStatus: 200,
+            lastError: null
+          }));
+        }
+
+        setError('');
+
+        // Se fila esvaziou e o recorder continua ativo, volta status para captura ativa
+        if (chunkQueueRef.current.length === 0) {
+          if (isRecordingRef.current && !isPausedRef.current) {
+            setTranscriptionStatus('transcription_active');
+            transcriptionStatusRef.current = 'transcription_active';
+          }
+        }
+      }
+    } finally {
+      isUploadingRef.current = false;
+      if (chunkQueueRef.current.length > 0 && activeMeetingIdRef.current) {
+        processChunkQueue();
+      }
+    }
+  }, [stopBackendCapture]);
+
+  // Início contínuo do MediaRecorder para chunks backend de áudio com timeslice 3500ms
+  const startBackendCapture = useCallback((stream) => {
     const targetMeetingId = activeMeetingIdRef.current;
     if (!targetMeetingId || !stream) return;
 
@@ -563,12 +800,15 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     const audioTracks = stream.getAudioTracks();
     if (audioTracks.length === 0) {
       console.warn('[STT Backend] Nenhuma trilha de áudio no stream');
+      setAudioStatus('unavailable');
+      setTranscriptionStatus('mic_disconnected');
+      transcriptionStatusRef.current = 'mic_disconnected';
       return;
     }
 
     const audioOnlyStream = new MediaStream(audioTracks);
 
-    stopBackendRecorder();
+    stopBackendCapture('new_session_starting');
 
     const mimeType = getSupportedAudioMimeType();
     let recorder;
@@ -589,6 +829,11 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     backendSessionIdRef.current = sessionId;
     chunkSequenceRef.current = 0;
     isPausedRef.current = false;
+    sessionStartTimeRef.current = Date.now();
+
+    chunksCapturedCountRef.current = 0;
+    chunksConfirmedCountRef.current = 0;
+    chunkQueueRef.current = [];
 
     setDiagnosticInfo((prev) => ({
       ...prev,
@@ -599,105 +844,103 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
       lastError: null
     }));
 
-    recorder.ondataavailable = async (event) => {
+    setBackendChunkStats((prev) => ({
+      ...prev,
+      chunksCaptured: 0,
+      chunksConfirmed: 0,
+      chunksPending: 0,
+      chunksFailed: 0,
+      lastConfirmedSeq: -1,
+      isDelayed: false,
+      lastError: null
+    }));
+
+    recorder.ondataavailable = (event) => {
       if (!event.data || event.data.size === 0) return;
       if (activeMeetingIdRef.current !== targetMeetingId) return;
       if (isPausedRef.current) return;
 
       const currentSeq = chunkSequenceRef.current++;
-      const blob = event.data;
+      chunksCapturedCountRef.current += 1;
 
-      const uploadChunk = async (attemptsLeft = 2) => {
-        try {
-          setTranscriptionStatus('receiving_speech');
-          transcriptionStatusRef.current = 'receiving_speech';
-
-          const res = await api.uploadAudioChunk(targetMeetingId, blob, {
-            sessionId,
-            sequence: currentSeq,
-            mimeType: recorder.mimeType || mimeType,
-            language: 'pt'
-          });
-
-          if (activeMeetingIdRef.current !== targetMeetingId) return;
-
-          if (res) {
-            if (res.signal_quality) {
-              setSignalQuality(res.signal_quality);
-            }
-            if (res.transcript_raw) {
-              setTranscriptRaw(res.transcript_raw);
-            }
-            if (res.transcript_normalized) {
-              setTranscriptNormalized(res.transcript_normalized);
-            }
-            if (res.transcript) {
-              setTranscription(res.transcript);
-              finalTranscriptRef.current = res.transcript;
-            } else if (res.text && res.text.trim()) {
-              const chunkText = res.text.trim();
-              setTranscription((prev) => {
-                const currentFull = (prev || '').trim();
-                if (currentFull.endsWith(chunkText)) return currentFull;
-                return currentFull ? `${currentFull} ${chunkText}` : chunkText;
-              });
-              finalTranscriptRef.current = (finalTranscriptRef.current ? `${finalTranscriptRef.current.trim()} ` : '') + `${chunkText} `;
-            }
-          }
-
-          setBackendChunkStats((prev) => ({
-            chunkCount: currentSeq + 1,
-            lastProcessingTimeMs: res.processing_time_ms || 0,
-            lastDuration: res.duration || 6.0,
-            latencyHistory: [...(prev.latencyHistory || []).slice(-9), res.processing_time_ms || 0],
-            lowConfidenceSegments: res.low_confidence_count ?? res.low_confidence_segments ?? prev.lowConfidenceSegments,
-            modelName: res.model_name || prev.modelName || '',
-            hardwareProfile: res.hardware_profile || prev.hardwareProfile || 'cpu_balanced',
-            device: res.device || prev.device || 'cpu',
-            computeType: res.compute_type || prev.computeType || 'int8',
-            rtf: res.rtf || 0,
-            queueSize: res.queue_size || 0,
-            isDelayed: res.is_delayed || false,
-            glossaryCorrectionsCount: (res.glossary_corrections ? res.glossary_corrections.length : 0) + (prev.glossaryCorrectionsCount || 0)
-          }));
-
-          setTranscriptionStatus('listening');
-          transcriptionStatusRef.current = 'listening';
-          setError('');
-        } catch (err) {
-          console.warn(`[STT Backend] Falha no chunk seq=${currentSeq}:`, err);
-          if (err.status === 503) {
-            setTranscriptionStatus('service_unavailable');
-            transcriptionStatusRef.current = 'service_unavailable';
-            setBackendSttStatus((prev) => ({ ...prev, available: false, reason: err.reason || 'stt_unavailable' }));
-            setError('O serviço de transcrição backend (faster-whisper) está indisponível. Alterne para o reconhecimento do navegador ou modo manual.');
-            return;
-          }
-
-          if (attemptsLeft > 0) {
-            await new Promise((r) => setTimeout(r, 600));
-            return uploadChunk(attemptsLeft - 1);
-          }
-        }
+      const chunkItem = {
+        sequence: currentSeq,
+        blob: event.data,
+        size: event.data.size,
+        capturedAt: Date.now(),
+        sessionId,
+        targetMeetingId,
+        mimeType: recorder.mimeType || mimeType,
+        attempts: 0
       };
 
-      uploadChunk();
+      chunkQueueRef.current.push(chunkItem);
+
+      setBackendChunkStats((prev) => ({
+        ...prev,
+        chunksCaptured: chunksCapturedCountRef.current,
+        chunksPending: chunkQueueRef.current.length,
+        isDelayed: chunkQueueRef.current.length > 2
+      }));
+
+      if (transcriptionStatusRef.current === 'idle' || transcriptionStatusRef.current === 'awaiting_start' || transcriptionStatusRef.current === 'listening') {
+        setTranscriptionStatus('capturing_audio');
+        transcriptionStatusRef.current = 'capturing_audio';
+      }
+
+      // Dispara o consumidor da fila FIFO sem bloquear a gravação contínua do recorder
+      processChunkQueue();
     };
 
     recorder.onerror = (e) => {
       console.warn('[STT Backend] Erro no MediaRecorder:', e);
+      setDiagnosticInfo((prev) => ({
+        ...prev,
+        lastError: `MediaRecorder error: ${e.error?.name || 'unknown'}`
+      }));
+    };
+
+    recorder.onstop = () => {
+      console.log('[STT Backend] MediaRecorder parado');
     };
 
     try {
-      recorder.start(6000); // Envia chunk a cada 6 segundos para equilíbrio precisão/latência
+      // Timeslice de 3500ms (3.5 segundos) para menor latência e streaming constante
+      recorder.start(3500);
       mediaRecorderRef.current = recorder;
-      setTranscriptionStatus('listening');
-      transcriptionStatusRef.current = 'listening';
+      setTranscriptionStatus('capturing_audio');
+      transcriptionStatusRef.current = 'capturing_audio';
       setEngineState('ativa');
     } catch (err) {
-      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(6000):', err);
+      console.error('[STT Backend] Falha ao iniciar MediaRecorder.start(3500):', err);
+      setError(`Falha ao iniciar gravação contínua: ${err.message || err.name}`);
     }
-  }, [getSupportedAudioMimeType, stopBackendRecorder]);
+  }, [getSupportedAudioMimeType, stopBackendCapture, processChunkQueue]);
+
+  // Reinício rápido da captura contínua
+  const restartBackendCapture = useCallback((reason = 'manual_restart') => {
+    stopBackendCapture(reason);
+    setTimeout(() => {
+      if (streamRef.current && isRecordingRef.current) {
+        startBackendCapture(streamRef.current);
+      }
+    }, 300);
+  }, [startBackendCapture, stopBackendCapture]);
+
+  // Handler para quando a trilha de microfone é encerrada pelo sistema
+  const handleMicrophoneTrackEnded = useCallback(() => {
+    console.warn('[Audio] Trilha de microfone finalizada pelo sistema');
+    setAudioStatus('ended');
+    setTranscriptionStatus('mic_disconnected');
+    transcriptionStatusRef.current = 'mic_disconnected';
+    setEngineState('sem_sinal');
+    setError('O microfone foi desconectado ou encerrado pelo sistema operacional. Reconecte o dispositivo e clique em "Reconectar Microfone".');
+    stopBackendCapture('microphone_track_ended');
+  }, [stopBackendCapture]);
+
+  // Aliases compatíveis com referências pré-existentes
+  const startBackendRecorder = startBackendCapture;
+  const stopBackendRecorder = stopBackendCapture;
 
   // Inicia o motor Web Speech API de forma resiliente e instrumentada (PARTES 3, 4, 5, 6, 7)
   const startSpeechRecognition = useCallback((_isManualGesture = false) => {
@@ -1303,10 +1546,7 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     } else {
       setAudioStatus(audioTracks[0].enabled ? 'active' : 'muted');
       setIsMuted(!audioTracks[0].enabled);
-      audioTracks[0].onended = () => {
-        console.warn('Trilha de áudio finalizada pelo sistema');
-        setAudioStatus('ended');
-      };
+      audioTracks[0].onended = handleMicrophoneTrackEnded;
       audioTracks[0].onmute = () => {
         setAudioStatus('muted');
       };
@@ -1315,13 +1555,13 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
       };
     }
 
-    // Validação e listeners da trilha de vídeo
+    // Validação e listeners da trilha de vídeo (isolados da gravação de áudio)
     const videoTracks = stream.getVideoTracks();
     if (cameraAcquired && videoTracks.length > 0) {
       setVideoStatus('active');
       setIsCamOff(false);
       videoTracks[0].onended = () => {
-        console.warn('Trilha de vídeo finalizada');
+        console.warn('Trilha de vídeo finalizada (câmera desligada ou desconectada)');
         setVideoStatus('ended');
         setIsCamOff(true);
       };
@@ -1361,7 +1601,7 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
         startSpeechRecognition(false);
       }
     }
-  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, backendSttStatus.available]);
+  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, backendSttStatus.available, handleMicrophoneTrackEnded]);
 
   // Controles de áudio e vídeo
   const toggleMute = () => {
@@ -1438,7 +1678,8 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
       isPausedRef.current = false;
       stopMediaAndRecognition();
     }
-  }, [activeMeetingId, currentMeeting, startMediaAndRecognition, stopMediaAndRecognition]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMeetingId, currentMeeting?.STATUS_MEETING, startMediaAndRecognition, stopMediaAndRecognition]);
 
   // Limpeza estrita ao desmontar o componente
   useEffect(() => {
@@ -1653,7 +1894,7 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     if (e && e.stopPropagation) e.stopPropagation();
     if (sttProvider === 'backend') {
       if (streamRef.current) {
-        startBackendRecorder(streamRef.current);
+        restartBackendCapture('user_gesture');
       } else {
         startMediaAndRecognition();
       }
@@ -1917,6 +2158,32 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                 );
               })()}
               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({transcription.length} carac.)</span>
+              {sttProvider === 'backend' && (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Chunks:</span>
+                  <span style={{ fontWeight: 600, color: '#38bdf8' }}>
+                    {backendChunkStats.chunksConfirmed || 0}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>/</span>
+                  <span style={{ color: 'var(--text-main)' }}>{backendChunkStats.chunksCaptured || 0}</span>
+                  {backendChunkStats.chunksPending > 0 && (
+                    <span style={{
+                      color: backendChunkStats.isDelayed ? '#ef4444' : '#f59e0b',
+                      fontWeight: 600,
+                      background: backendChunkStats.isDelayed ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                      padding: '1px 5px',
+                      borderRadius: '3px'
+                    }}>
+                      ({backendChunkStats.chunksPending} pendentes)
+                    </span>
+                  )}
+                  {backendChunkStats.lastProcessingTimeMs > 0 && (
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                      • {backendChunkStats.lastProcessingTimeMs}ms
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1977,6 +2244,23 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
               </button>
             </div>
 
+            {/* Reconectar Microfone se desconectado */}
+            {(transcriptionStatus === 'mic_disconnected' || audioStatus === 'ended') && (
+              <button
+                type="button"
+                onClick={() => {
+                  stopMediaAndRecognition();
+                  setTimeout(() => startMediaAndRecognition(), 300);
+                }}
+                className="btn btn-warning"
+                style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600, background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px' }}
+                title="Tentar restabelecer conexão com o microfone"
+              >
+                <RefreshCw size={11} />
+                Reconectar Microfone
+              </button>
+            )}
+
             {/* Ativar ou Tentar Novamente */}
             {(transcriptionStatus === 'service_unavailable' || transcriptionStatus === 'browser_blocked' || transcriptionStatus === 'error') ? (
               <button
@@ -1989,7 +2273,7 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                 <RefreshCw size={11} />
                 Tentar Novamente
               </button>
-            ) : transcriptionStatus !== 'listening' && transcriptionStatus !== 'receiving_speech' ? (
+            ) : !['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active', 'mic_disconnected'].includes(transcriptionStatus) && isRecording ? null : !['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active', 'mic_disconnected'].includes(transcriptionStatus) ? (
               <button
                 type="button"
                 onClick={handleActivateTranscription}

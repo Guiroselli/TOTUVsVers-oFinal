@@ -514,15 +514,19 @@ async def upload_live_meeting_audio_chunk(
         return JSONResponse(
             status_code=503,
             content={
+                "ok": False,
+                "code": "stt_unavailable",
                 "status": "unavailable",
                 "reason": reason,
-                "message": "Serviço de transcrição backend indisponível. Utilize o fallback do navegador ou digitação manual."
+                "message": "Serviço de transcrição backend indisponível. Utilize o fallback do navegador ou digitação manual.",
+                "retryable": False
             }
         )
 
     audio_bytes = await audio.read()
     if not audio_bytes:
         return {
+            "ok": True,
             "status": "success",
             "meeting_id": meeting_id,
             "session_id": session_id,
@@ -550,11 +554,14 @@ async def upload_live_meeting_audio_chunk(
         return JSONResponse(
             status_code=500,
             content={
+                "ok": False,
+                "code": "transcription_error",
                 "status": "error",
                 "meeting_id": meeting_id,
                 "session_id": session_id,
                 "sequence": sequence,
-                "message": f"Falha ao transcrever chunk: {str(err)}"
+                "message": f"Falha ao transcrever chunk: {str(err)}",
+                "retryable": True
             }
         )
 
@@ -586,6 +593,7 @@ async def upload_live_meeting_audio_chunk(
         stt.clear_session(session_id, meeting_id=meeting_id)
 
     return {
+        "ok": True,
         "status": "success",
         "meeting_id": meeting_id,
         "session_id": session_id,

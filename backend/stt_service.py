@@ -836,9 +836,6 @@ class STTService:
         if not self.is_available():
             raise RuntimeError(f"STT indisponível no servidor: {self.get_unavailable_reason()}")
 
-        # 1. Pré-processamento e medição acústica de sinal
-        preprocessed_bytes, audio_metrics = preprocess_and_analyze_audio(audio_bytes, filename_hint)
-
         if not audio_bytes or len(audio_bytes) == 0:
             return {
                 "text": "",
@@ -874,6 +871,28 @@ class STTService:
         if len(audio_bytes) > self.max_chunk_bytes:
             raise ValueError(f"Tamanho do chunk excede o limite máximo de {self.max_chunk_bytes} bytes.")
 
+        # 1. Remontagem e preservação de cabeçalho WebM EBML para streaming contínuo de múltiplos chunks
+        EBML_MAGIC = b"\x1a\x45\xdf\xa3"
+        CLUSTER_MAGIC = b"\x1f\x43\xb6\x75"
+        working_bytes = audio_bytes
+
+        if session_id:
+            with self._session_headers_lock:
+                if audio_bytes.startswith(EBML_MAGIC):
+                    cluster_idx = audio_bytes.find(CLUSTER_MAGIC)
+                    if cluster_idx > 0:
+                        self._session_headers[session_id] = audio_bytes[:cluster_idx]
+                        if len(self._session_headers) > 200:
+                            oldest = next(iter(self._session_headers))
+                            del self._session_headers[oldest]
+                elif session_id in self._session_headers:
+                    # Se o chunk não possui cabeçalho EBML e não é WAV/MP3, prefixa com o cabeçalho salvo da sessão
+                    if not (audio_bytes.startswith(b"RIFF") or audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb")):
+                        working_bytes = self._session_headers[session_id] + audio_bytes
+
+        # 2. Pré-processamento e medição acústica de sinal sobre o áudio remontado
+        preprocessed_bytes, audio_metrics = preprocess_and_analyze_audio(working_bytes, filename_hint)
+
         # Identificação e controle de fila por reunião
         m_id = str(meeting_id or session_id or "default_session")
         pending_before = self.get_meeting_pending_count(m_id)
@@ -891,22 +910,6 @@ class STTService:
         ext = ".wav" if is_prep else (os.path.splitext(filename_hint)[1] or ".webm")
         if not ext.startswith("."):
             ext = f".{ext}"
-
-        # Remontagem de chunks WebM com cabeçalho de container salvo na sessão caso não pré-processado
-        if not is_prep and session_id:
-            EBML_MAGIC = b"\x1a\x45\xdf\xa3"
-            CLUSTER_MAGIC = b"\x1f\x43\xb6\x75"
-            with self._session_headers_lock:
-                if audio_bytes.startswith(EBML_MAGIC):
-                    cluster_idx = audio_bytes.find(CLUSTER_MAGIC)
-                    if cluster_idx > 0:
-                        self._session_headers[session_id] = audio_bytes[:cluster_idx]
-                        if len(self._session_headers) > 200:
-                            oldest = next(iter(self._session_headers))
-                            del self._session_headers[oldest]
-                elif session_id in self._session_headers:
-                    if not (audio_bytes.startswith(b"RIFF") or audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb")):
-                        preprocessed_bytes = self._session_headers[session_id] + audio_bytes
 
         # Mantém idioma estritamente fixo por sessão
         if session_id:

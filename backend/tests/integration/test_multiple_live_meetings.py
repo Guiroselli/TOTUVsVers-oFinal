@@ -920,6 +920,15 @@ def test_37_simultaneous_real_audio_and_zero_retention():
     wav_rh = generate_wav_bytes()
     wav_ti = generate_wav_bytes()
 
+    # Limpa eventuais resíduos de execuções anteriores no diretório temporário
+    tempdir = tempfile.gettempdir()
+    for f in os.listdir(tempdir):
+        if f.startswith("pf_chunk_"):
+            try:
+                os.remove(os.path.join(tempdir, f))
+            except Exception:
+                pass
+
     # Cria reuniões simultâneas às 10:20
     m_rh = client.post("/api/live/meetings", json=make_payload("RH 10:20 Audio", departamento="RH", horario="10:20", iniciar_agora=True)).json()["meeting"]
     m_ti = client.post("/api/live/meetings", json=make_payload("TI 10:20 Audio", departamento="TI", horario="10:20", iniciar_agora=True)).json()["meeting"]
