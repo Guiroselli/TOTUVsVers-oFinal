@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Setup seguro, reprodutível e idempotente do STT para o Proton Flow (PARTE 3).
-Executável em qualquer máquina nova:
-1. Detecta SO e valida versão do Python (>= 3.10).
-2. Cria backend/.env a partir de .env.example (se não existir).
-3. Instala dependências apenas se estiverem ausentes ou incompatíveis.
-4. Verifica faster-whisper e av.
-5. Verifica se o modelo já está no cache local.
-6. Baixa os pesos do modelo somente se estiver ausente.
-7. Valida o carregamento do modelo na memória.
-8. Exibe instruções para iniciar o sistema.
+Setup seguro, reprodutível e idempotente do STT para o Proton Flow.
+Garante funcionamento idêntico a partir da raiz do repositório ou da pasta backend:
+1. Valida versão do Python (>= 3.10).
+2. Cria backend/.env a partir de .env.example (se não existir, sem sobrescrever personalizações).
+3. Instala dependências de requirements.txt apenas se ausentes ou incompatíveis.
+4. Valida faster-whisper, ctranslate2, av (< 19), FastAPI e Uvicorn.
+5. Resolve o diretório do cache em relação à raiz do projeto.
+6. Verifica se o modelo já está no cache local antes de baixar.
+7. Baixa os pesos apenas se estiver ausente.
+8. Valida o carregamento real do modelo com WhisperModel na memória.
+9. Exibe o caminho absoluto final do cache e comandos de execução.
 """
 
 import sys
@@ -23,6 +24,22 @@ _root_dir = os.path.dirname(_script_dir)
 _backend_dir = os.path.join(_root_dir, "backend")
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
+
+try:
+    from path_utils import resolve_model_cache_dir, get_project_root
+except ImportError:
+    try:
+        from backend.path_utils import resolve_model_cache_dir, get_project_root
+    except ImportError:
+        def get_project_root() -> str:
+            return _root_dir
+
+        def resolve_model_cache_dir(cache_dir=None) -> str:
+            raw = cache_dir or os.getenv("STT_MODEL_CACHE_DIR", "./models")
+            expanded = os.path.expanduser(str(raw).strip() or "./models")
+            if os.path.isabs(expanded):
+                return os.path.abspath(os.path.normpath(expanded))
+            return os.path.abspath(os.path.normpath(os.path.join(_root_dir, expanded)))
 
 
 def check_python_compatibility() -> bool:
@@ -47,7 +64,7 @@ def ensure_env_file() -> str:
         else:
             print("[!] Aviso: .env.example não encontrado; mantendo defaults do sistema.")
     else:
-        print(f"[*] Arquivo de configuração '{env_target}' já existente. Nenhuma alteração feita.")
+        print(f"[*] Arquivo de configuração '{env_target}' já existente. Configurações preservadas.")
 
     return env_target
 
@@ -55,23 +72,26 @@ def ensure_env_file() -> str:
 def are_dependencies_installed() -> bool:
     try:
         import faster_whisper  # noqa: F401
+        import ctranslate2  # noqa: F401
         import av  # noqa: F401
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
-        # Verifica versão do av (< 19)
+
+        # Validação de versão compatível de PyAV (< 19)
         av_ver = getattr(av, "__version__", "")
         if av_ver and av_ver[0].isdigit() and int(av_ver.split(".")[0]) >= 19:
-            print(f"[!] av versão {av_ver} detectada (incompatível com faster-whisper, requer < 19).")
+            print(f"[!] PyAV versão {av_ver} detectada (incompatível com faster-whisper, requer av < 19).")
             return False
         return True
-    except (ImportError, ModuleNotFoundError):
+    except (ImportError, ModuleNotFoundError) as err:
+        print(f"[*] Dependência ausente detectada: {err}")
         return False
 
 
 def install_dependencies():
     print("[*] Verificando dependências no ambiente...")
     if are_dependencies_installed():
-        print("[OK] Todas as dependências já estão instaladas e compatíveis. Pulando instalação.")
+        print("[OK] Todas as dependências (faster-whisper, ctranslate2, av, fastapi, uvicorn) já estão instaladas.")
         return
 
     req_file = os.path.join(_backend_dir, "requirements.txt")
@@ -85,55 +105,57 @@ def install_dependencies():
         sys.exit(1)
 
 
-def ensure_model_cached(model_size: str, cache_dir: str):
+def ensure_model_cached(model_size: str, abs_cache_dir: str):
     from faster_whisper.utils import download_model
 
-    print(f"\n[*] Verificando cache do modelo Whisper '{model_size}'...")
+    print(f"\n[*] Diretório de Cache Absoluto do Modelo: {abs_cache_dir}")
+    os.makedirs(abs_cache_dir, exist_ok=True)
+
+    print(f"[*] Verificando presença local do modelo Whisper '{model_size}'...")
     cached = False
     try:
-        if cache_dir and os.path.exists(cache_dir):
-            try:
-                download_model(model_size, output_dir=cache_dir, local_files_only=True)
-                cached = True
-            except Exception:
-                pass
-        if not cached:
-            download_model(model_size, local_files_only=True)
-            cached = True
+        download_model(model_size, output_dir=abs_cache_dir, local_files_only=True)
+        cached = True
     except Exception:
         cached = False
 
     if cached:
-        print(f"[OK] Modelo '{model_size}' já presente no cache local. Nenhum download necessário.")
+        print(f"[OK] Modelo '{model_size}' já disponível no cache local. Nenhum download necessário.")
         return
 
-    print(f"[*] Modelo '{model_size}' ausente. Iniciando download único para cache persistente...")
-    out_dir = cache_dir if cache_dir else None
+    print(f"[*] Modelo '{model_size}' não encontrado em '{abs_cache_dir}'.")
+    print(f"[*] Iniciando download único e controlado para o cache persistente...")
     try:
-        download_model(model_size, output_dir=out_dir, local_files_only=False)
+        download_model(model_size, output_dir=abs_cache_dir, local_files_only=False)
         print(f"[OK] Download do modelo '{model_size}' concluído com sucesso!")
     except Exception as dl_err:
         print(f"\n[ERRO CRÍTICO] Falha ao baixar o modelo Whisper '{model_size}': {dl_err}")
-        print("Verifique a conexão de rede ou configure um modelo menor (ex: base) no .env.")
+        print("Verifique a conexão de rede ou configure um modelo menor (ex: base) no backend/.env.")
         sys.exit(1)
 
 
-def validate_model_loading(model_size: str, cache_dir: str):
+def validate_model_loading(model_size: str, abs_cache_dir: str):
     from faster_whisper import WhisperModel
-    print(f"[*] Validando carregamento do modelo '{model_size}' na memória...")
-    dl_root = cache_dir if cache_dir else None
+
+    print(f"[*] Validando carregamento do modelo '{model_size}' a partir de '{abs_cache_dir}'...")
     try:
-        model = WhisperModel(model_size, device="cpu", compute_type="int8", download_root=dl_root)
-        print("[OK] Modelo carregado com sucesso! Motor STT operacional.")
+        model = WhisperModel(
+            model_size,
+            device="cpu",
+            compute_type="int8",
+            download_root=abs_cache_dir,
+            local_files_only=True
+        )
+        print("[OK] Modelo carregado com sucesso na memória RAM (CPU int8). Motor STT operacional.")
         del model
     except Exception as load_err:
-        print(f"\n[ERRO CRÍTICO] Falha ao inicializar WhisperModel: {load_err}")
+        print(f"\n[ERRO CRÍTICO] Falha ao inicializar WhisperModel a partir do cache: {load_err}")
         sys.exit(1)
 
 
 def main():
     print("=" * 65)
-    print("  PROTON FLOW — SETUP AUTOMATIZADO DE AMBIENTE STT")
+    print("  PROTON FLOW — SETUP AUTOMATIZADO E PORTÁTIL DE AMBIENTE STT")
     print("=" * 65)
 
     if not check_python_compatibility():
@@ -148,19 +170,25 @@ def main():
     except ImportError:
         pass
 
-    model_size = os.getenv("STT_MODEL_SIZE", "base")
-    cache_dir = os.getenv("STT_MODEL_CACHE_DIR", "")
+    model_size = os.getenv("STT_MODEL_SIZE", "small")
+    raw_cache_dir = os.getenv("STT_MODEL_CACHE_DIR", "./models")
+    abs_cache_dir = resolve_model_cache_dir(raw_cache_dir)
 
-    ensure_model_cached(model_size, cache_dir)
-    validate_model_loading(model_size, cache_dir)
+    ensure_model_cached(model_size, abs_cache_dir)
+    validate_model_loading(model_size, abs_cache_dir)
 
     print("\n" + "=" * 65)
     print("  SETUP STT CONCLUÍDO COM SUCESSO! [READY]")
+    print(f"  Cache Absoluto: {abs_cache_dir}")
     print("=" * 65)
-    print("\nPara iniciar a aplicação:")
-    print("  1. Backend : python -m uvicorn main:app --host 127.0.0.1 --port 8000 (dentro de backend/)")
-    print("  2. Frontend: npm run dev (dentro de frontend/)")
-    print("  Ou utilize o script unificado: python scripts/start_dev.py\n")
+    print("\nComandos para iniciar a aplicação:")
+    print("  1. Backend (a partir da raiz do projeto):")
+    print("     python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000")
+    print("  OU dentro da pasta backend/:")
+    print("     cd backend && python -m uvicorn main:app --host 127.0.0.1 --port 8000")
+    print("\n  2. Frontend (em outro terminal):")
+    print("     cd frontend && npm run dev")
+    print("\n  Ou utilize o inicializador unificado: python scripts/start_dev.py\n")
 
 
 if __name__ == "__main__":

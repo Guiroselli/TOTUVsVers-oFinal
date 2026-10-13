@@ -225,6 +225,97 @@ Resultados observados:
 - **Acurácia Corporativa**: Salto de **30.0%** para **88.33%**.
 - **Cortes de Borda**: Eliminados (0.0%).
 
+## Execução correta do Proton Flow
+
+### 1. Primeira instalação
+- **Backend**: Crie o ambiente virtual e instale as dependências:
+  ```bash
+  python -m venv venv
+  .\venv\Scripts\activate   # No Windows (ou source venv/bin/activate no Linux/macOS)
+  pip install -r backend/requirements.txt
+  ```
+- **Frontend**: Instale os pacotes npm:
+  ```bash
+  cd frontend
+  npm install
+  cd ..
+  ```
+- **STT (faster-whisper)**: Execute o script de provisionamento idempotente do modelo no cache canônico (resolve em relação à raiz e evita downloads repetidos):
+  ```bash
+  python scripts/setup_stt.py
+  ```
+- *(Opcional)* Verifique a prontidão completa do ambiente:
+  ```bash
+  python scripts/check_stt_environment.py
+  ```
+
+### 2. Iniciar o Backend
+O backend suporta inicialização a partir de qualquer diretório graças à resolução canônica de caminhos:
+
+- **A partir da raiz do repositório (recomendado):**
+  ```bash
+  python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+  ```
+
+- **A partir da pasta `backend`:**
+  ```bash
+  cd backend
+  python -m uvicorn main:app --host 127.0.0.1 --port 8000
+  ```
+
+- **Ou via script unificado de desenvolvimento:**
+  ```bash
+  python scripts/start_dev.py
+  ```
+
+### 3. Iniciar o Frontend
+Em outro terminal:
+```bash
+cd frontend
+npm run dev
+```
+Acesse a aplicação no navegador em `http://localhost:5173`.
+
+### 4. Verificação do Endpoint STT
+Confirme a disponibilidade do serviço acessando:
+- **URL**: `GET http://127.0.0.1:8000/api/stt/status`
+- **Exemplo de payload esperado:**
+  ```json
+  {
+    "enabled": true,
+    "available": true,
+    "ready": true,
+    "provider": "faster_whisper",
+    "engine": "faster-whisper",
+    "model_size": "small",
+    "device": "cpu",
+    "compute_type": "int8",
+    "hardware_profile": "cpu_balanced",
+    "cache_dir": "<raiz-do-projeto>\\models",
+    "model_cached": true,
+    "unavailable_reason": null,
+    "error_detail": null
+  }
+  ```
+
+### 5. Erros comuns e como resolver
+- **`Fallback Backend STT: faster-whisper indisponível (model_load_error)`**:
+  - *Causa*: Pesos ausentes no diretório canônico `models/` ou bloqueio de rede durante chunks ao vivo.
+  - *Solução*: Execute `python scripts/setup_stt.py` na raiz do repositório. O diretório canônico padrão é `<raiz>/models`.
+- **`PyAV incompatível (av >= 19)`**:
+  - *Causa*: PyAV na versão 19+ possui incompatibilidade com o faster-whisper.
+  - *Solução*: Execute `pip install "av<19"`.
+- **`Porta 8000 ocupada`**:
+  - *Causa*: Uma instância anterior do Uvicorn ainda está em execução em segundo plano.
+  - *Solução*: Finalize o processo na porta 8000:
+    ```powershell
+    Get-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess | Stop-Process -Force
+    ```
+- **`Dependência ausente (faster_whisper, ctranslate2)`**:
+  - *Solução*: Ative o ambiente virtual e execute `pip install -r backend/requirements.txt`.
+
+---
+
 ## 🧪 Executando os Testes Automatizados
 
 O projeto conta com uma suíte de testes cobrindo normalização, regras determinísticas, precisão do STT pt-BR, agregações trimestrais, compatibilidade retroativa, concorrência e endpoints da API.

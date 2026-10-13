@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Diagnóstico detalhado do ambiente de execução STT do Proton Flow (PARTE 1).
-Verifica Python, faster-whisper, av, FFmpeg, variáveis de ambiente e cache do modelo.
+Diagnóstico detalhado do ambiente de execução STT do Proton Flow.
+Verifica Python, faster-whisper, av, FFmpeg, variáveis de ambiente,
+resolução canônica do cache e realiza tentativa controlada de carregamento do WhisperModel.
 Retorna código de saída 0 para READY e 1 para NOT_READY.
 """
 
 import sys
 import os
 import shutil
+import time
 
-# Adiciona o diretório backend ao sys.path para reutilizar os serviços
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 _root_dir = os.path.dirname(_script_dir)
 _backend_dir = os.path.join(_root_dir, "backend")
@@ -20,6 +21,22 @@ try:
     import env_loader  # noqa: F401
 except ImportError:
     pass
+
+try:
+    from path_utils import resolve_model_cache_dir, get_project_root
+except ImportError:
+    try:
+        from backend.path_utils import resolve_model_cache_dir, get_project_root
+    except ImportError:
+        def get_project_root() -> str:
+            return _root_dir
+
+        def resolve_model_cache_dir(cache_dir=None) -> str:
+            raw = cache_dir or os.getenv("STT_MODEL_CACHE_DIR", "./models")
+            expanded = os.path.expanduser(str(raw).strip() or "./models")
+            if os.path.isabs(expanded):
+                return os.path.abspath(os.path.normpath(expanded))
+            return os.path.abspath(os.path.normpath(os.path.join(_root_dir, expanded)))
 
 
 def run_diagnostics() -> bool:
@@ -62,7 +79,6 @@ def run_diagnostics() -> bool:
         import av
         av_ver = getattr(av, "__version__", "instalada")
         print(f"    Versão     : {av_ver}")
-        # Validação de compatibilidade com faster-whisper (av < 19)
         major_ver = int(av_ver.split(".")[0]) if av_ver[0].isdigit() else 0
         if major_ver >= 19:
             issues.append(f"av versão {av_ver} incompatível com faster-whisper. Requer av < 19.")
@@ -91,18 +107,23 @@ def run_diagnostics() -> bool:
         print("    PyAV Libav : Indisponível")
 
     # 5. Configurações de Ambiente STT
-    from stt_service import get_stt_service, STT_MODEL_SIZE, STT_DEVICE, STT_COMPUTE_TYPE, STT_ENABLED
+    from stt_service import get_stt_service
     stt = get_stt_service()
     status = stt.get_status()
+
+    raw_cache_dir = os.getenv("STT_MODEL_CACHE_DIR", "./models")
+    abs_cache_dir = resolve_model_cache_dir(raw_cache_dir)
+    model_size = status.get("model", "small")
 
     print(f"\n[5] Configurações STT (.env / os.environ):")
     print(f"    STT_ENABLED        : {status.get('enabled')}")
     print(f"    STT_PROVIDER       : {status.get('provider')}")
-    print(f"    STT_MODEL_SIZE     : {status.get('model')}")
+    print(f"    STT_MODEL_SIZE     : {model_size}")
     print(f"    STT_DEVICE         : {status.get('device')}")
     print(f"    STT_COMPUTE_TYPE   : {status.get('compute_type')}")
     print(f"    STT_LANGUAGE       : {status.get('language')}")
-    print(f"    Cache Dir          : {status.get('cache_dir')}")
+    print(f"    Config Cache Dir   : {raw_cache_dir}")
+    print(f"    Caminho Absoluto   : {abs_cache_dir}")
 
     if not status.get("enabled"):
         issues.append("STT está desabilitado (STT_ENABLED=false).")
@@ -112,19 +133,49 @@ def run_diagnostics() -> bool:
     print(f"\n[6] Verificação do Cache do Modelo:")
     is_cached = status.get("model_cached", False)
     if is_cached:
-        print(f"    Modelo '{status.get('model')}' : Encontrado no cache local.")
-        print("    Status          : [OK] Pronto para inferência sem download")
+        print(f"    Modelo '{model_size}' : Encontrado no cache local.")
+        print(f"    Diretório       : {abs_cache_dir}")
+        print("    Status          : [OK] Arquivos locais verificados")
     else:
-        issues.append(f"Modelo '{status.get('model')}' não está presente no cache local.")
+        issues.append(f"Modelo '{model_size}' não encontrado em '{abs_cache_dir}'.")
         all_ready = False
-        print(f"    Modelo '{status.get('model')}' : NÃO encontrado no cache.")
+        print(f"    Modelo '{model_size}' : NÃO encontrado no cache.")
+        print(f"    Diretório       : {abs_cache_dir}")
         print("    Status          : [FALHA] Execute 'python scripts/setup_stt.py' para baixar uma única vez.")
 
-    # 7. Conclusão Final
+    # 7. Tentativa Controlada de Carregamento Real (WhisperModel)
+    print(f"\n[7] Tentativa Controlada de Carregamento (WhisperModel):")
+    if is_cached and all_ready:
+        try:
+            t0 = time.perf_counter()
+            from faster_whisper import WhisperModel
+            target_device = status.get("device", "cpu")
+            target_compute = status.get("compute_type", "int8")
+
+            test_model = WhisperModel(
+                model_size,
+                device=target_device,
+                compute_type=target_compute,
+                download_root=abs_cache_dir,
+                local_files_only=True
+            )
+            load_ms = round((time.perf_counter() - t0) * 1000, 1)
+            print(f"    Carregamento    : [OK] Carregado na memória em {load_ms} ms")
+            print(f"    Dispositivo     : {target_device}")
+            print(f"    Computação      : {target_compute}")
+            del test_model
+        except Exception as load_err:
+            issues.append(f"Falha no carregamento real do WhisperModel: {load_err}")
+            all_ready = False
+            print(f"    Carregamento    : [FALHA] {load_err}")
+    else:
+        print("    Carregamento    : [PULADO] Dependências ou arquivos do modelo ausentes.")
+
+    # 8. Conclusão Final
     print("\n" + "=" * 65)
     if all_ready:
         print("  RESULTADO FINAL: [READY]")
-        print("  O ambiente STT está completamente configurado e pronto.")
+        print("  O ambiente STT está completamente configurado e pronto para inferência.")
         print("=" * 65)
         return True
     else:

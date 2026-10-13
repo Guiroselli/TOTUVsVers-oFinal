@@ -45,6 +45,22 @@ except ImportError:
         detect_hardware = None
         select_hardware_profile = None
 
+try:
+    from path_utils import resolve_model_cache_dir, get_project_root
+except ImportError:
+    try:
+        from backend.path_utils import resolve_model_cache_dir, get_project_root
+    except ImportError:
+        def get_project_root() -> str:
+            return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+        def resolve_model_cache_dir(cache_dir: Optional[str] = None) -> str:
+            raw = cache_dir or os.getenv("STT_MODEL_CACHE_DIR", "./models")
+            expanded = os.path.expanduser(str(raw).strip() or "./models")
+            if os.path.isabs(expanded):
+                return os.path.abspath(os.path.normpath(expanded))
+            return os.path.abspath(os.path.normpath(os.path.join(get_project_root(), expanded)))
+
 # Variáveis de ambiente configuráveis e portáteis (PARTE 1, 2, 3, 5)
 STT_PROVIDER = os.getenv("STT_PROVIDER", "faster_whisper")
 STT_ENGINE = os.getenv("STT_ENGINE", "faster-whisper")
@@ -76,7 +92,7 @@ STT_CHUNK_SECONDS = int(os.getenv("STT_CHUNK_SECONDS", "6"))
 STT_OVERLAP_SECONDS = float(os.getenv("STT_OVERLAP_SECONDS", "1.0"))
 STT_MAX_WORKERS = os.getenv("STT_MAX_WORKERS", "auto")
 STT_MAX_PENDING_CHUNKS = int(os.getenv("STT_MAX_PENDING_CHUNKS", "2"))
-STT_MODEL_CACHE_DIR = os.getenv("STT_MODEL_CACHE_DIR", "./models")
+STT_MODEL_CACHE_DIR = resolve_model_cache_dir(os.getenv("STT_MODEL_CACHE_DIR", "./models"))
 STT_FINAL_REPROCESS_ENABLED = os.getenv("STT_FINAL_REPROCESS_ENABLED", "false").lower() in ("true", "1", "yes")
 STT_FINAL_MODEL_SIZE = os.getenv("STT_FINAL_MODEL_SIZE", "small")
 STT_FINAL_BEAM_SIZE = int(os.getenv("STT_FINAL_BEAM_SIZE", "5"))
@@ -405,7 +421,7 @@ class STTService:
         self.max_chunk_bytes = max_chunk_bytes
         self.temp_dir = temp_dir
         self.enabled = enabled
-        self.model_cache_dir = model_cache_dir if model_cache_dir is not None else STT_MODEL_CACHE_DIR
+        self.model_cache_dir = resolve_model_cache_dir(model_cache_dir if model_cache_dir is not None else STT_MODEL_CACHE_DIR)
         self.last_processing_time_ms = 0.0
         self.last_rtf = 0.0
         self.rtf_history: List[float] = []
@@ -563,7 +579,12 @@ class STTService:
             try:
                 import faster_whisper  # noqa: F401
                 import av  # noqa: F401
-                self._dependency_available = True
+                av_ver = getattr(av, "__version__", "")
+                if av_ver and av_ver[0].isdigit() and int(av_ver.split(".")[0]) >= 19:
+                    self._dependency_available = False
+                    self._load_error = f"dependency_incompatible: PyAV versão {av_ver} incompatível com faster-whisper (requer av < 19)"
+                else:
+                    self._dependency_available = True
             except (ImportError, ModuleNotFoundError) as err:
                 self._dependency_available = False
                 self._load_error = f"dependency_missing: {err}"
@@ -581,19 +602,19 @@ class STTService:
             return False
         try:
             from faster_whisper.utils import download_model
-            # 1. Verifica no diretório customizado se configurado
-            if self.model_cache_dir and os.path.exists(self.model_cache_dir):
+            cache_target = self.model_cache_dir
+            if cache_target and os.path.exists(cache_target):
                 try:
-                    download_model(self.model_size, output_dir=self.model_cache_dir, local_files_only=True)
+                    download_model(self.model_size, output_dir=cache_target, local_files_only=True)
                     return True
                 except Exception:
-                    pass
-            # 2. Verifica no cache padrão do Hugging Face hub (~/.cache/huggingface/hub)
-            try:
-                download_model(self.model_size, local_files_only=True)
-                return True
-            except Exception:
-                pass
+                    return False
+            elif not cache_target:
+                try:
+                    download_model(self.model_size, local_files_only=True)
+                    return True
+                except Exception:
+                    return False
             return False
         except Exception:
             return False
@@ -640,7 +661,8 @@ class STTService:
             return self._mock_model
 
         if not self.is_available():
-            raise RuntimeError(f"STT indisponível: {self.get_unavailable_reason()}")
+            reason = self.get_unavailable_reason()
+            raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'modelo não disponível no cache local'})")
 
         with self._lock:
             if self._model is not None:
@@ -649,7 +671,7 @@ class STTService:
             try:
                 self._is_loading = True
                 from faster_whisper import WhisperModel
-                download_root = self.model_cache_dir if self.model_cache_dir else None
+                download_root = self.model_cache_dir
 
                 target_device = self.device
                 target_compute = self.compute_type
@@ -663,7 +685,8 @@ class STTService:
                             self.model_size,
                             device="cuda",
                             compute_type=target_compute,
-                            download_root=download_root
+                            download_root=download_root,
+                            local_files_only=True
                         )
                         logger.info("Modelo faster-whisper carregado com sucesso em CUDA.")
                         return self._model
@@ -685,7 +708,8 @@ class STTService:
                     self.model_size,
                     device=target_device,
                     compute_type=target_compute,
-                    download_root=download_root
+                    download_root=download_root,
+                    local_files_only=True
                 )
                 logger.info("Modelo faster-whisper carregado com sucesso.")
                 return self._model
@@ -778,7 +802,7 @@ class STTService:
             "vad_min_speech_duration_ms": self.vad_min_speech_duration_ms,
             "vad_min_silence_duration_ms": self.vad_min_silence_duration_ms,
             "condition_on_previous_text": self.condition_on_previous_text,
-            "cache_dir": safe_cache_dir,
+            "cache_dir": self.model_cache_dir,
             "model_cached": cached,
             "faster_whisper_version": FASTER_WHISPER_VERSION,
             "ctranslate2_version": CTRANSLATE2_VERSION,
@@ -789,6 +813,8 @@ class STTService:
             "last_processing_time_ms": self.last_processing_time_ms,
             "memory_rss_mb": mem_usage,
             "cpu_mode_warning": bool(self.device == "cpu" and self.model_size in ("small", "medium", "large")),
+            "unavailable_reason": reason,
+            "error_detail": self._load_error,
             "reason": reason if not is_avail else (reason if not is_ready else None)
         }
 
