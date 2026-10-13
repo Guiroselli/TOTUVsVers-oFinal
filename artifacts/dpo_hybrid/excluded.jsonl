@@ -1,0 +1,36 @@
+{"human_sit_id": 1, "title": "1. [Dor] Falha no registro de ponto", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 3, "title": "3. [Dor] Relatórios financeiros inconsistentes", "votes": {"A": 2, "B": 1, "both": 1, "none": 0}, "agreement": 0.5, "reason": "Consenso humano abaixo de 75% (0.50)"}
+{"human_sit_id": 4, "title": "4. [Dor] Chamados sem prioridade", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 5, "title": "5. [Dor] Cadastro duplicado de clientes", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 7, "title": "7. [Dor] Integração com folha", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 12, "title": "12. [Tarefa] Treinamento de novos usuários", "votes": {"A": 2, "B": 1, "both": 1, "none": 0}, "agreement": 0.5, "reason": "Consenso humano abaixo de 75% (0.50)"}
+{"human_sit_id": 13, "title": "13. [Tarefa] Revisão de permissões", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 14, "title": "14. [Tarefa] Conferência de contratos", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 16, "title": "16. [Tarefa] Base de conhecimento", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 17, "title": "17. [Decisão] Manutenção do processo atual", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 18, "title": "18. [Decisão] Adiar implantação", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 20, "title": "20. [Decisão] Escolha de ferramenta", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 24, "title": "24. [Decisão] Prioridade de correção", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 25, "title": "25. [Decisão] Revisão de política", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 26, "title": "26. [Decisão] Piloto controlado", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 27, "title": "27. [Urgência/Risco] Fechamento da folha", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 28, "title": "28. [Urgência/Risco] Indisponibilidade do sistema", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 29, "title": "29. [Urgência/Risco] Prazo regulatório", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 32, "title": "32. [Urgência/Risco] Indicador de atendimento", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 33, "title": "33. [Ruído/Paralela] Comentário sobre uniforme", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 34, "title": "34. [Ruído/Paralela] Comentário sobre trânsito", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 35, "title": "35. [Ruído/Paralela] Comentário sobre café", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 36, "title": "36. [Ruído/Paralela] Comentário sobre clima", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 37, "title": "37. [Ruído/Paralela] Conversa informal", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 38, "title": "38. [Ruído/Paralela] Interrupção técnica", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 39, "title": "39. [Recomendação] Aprovação por e-mail", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 40, "title": "40. [Recomendação] Relatório gerencial", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 41, "title": "41. [Recomendação] Automação de chamados", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 42, "title": "42. [Recomendação] Controle de documentos", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 43, "title": "43. [Recomendação] Planejamento de projetos", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 44, "title": "44. [Recomendação] Integração de dados", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 46, "title": "46. [Recomendação] Acesso a indicadores", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 47, "title": "47. [Ambígua] Responsável não mencionado", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 48, "title": "48. [Ambígua] Prazo aproximado", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 49, "title": "49. [Ambígua] Fala contraditória", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}
+{"human_sit_id": 50, "title": "50. [Ambígua] Produto apenas citado", "reason": "Todos os avaliadores humanos escolheram a mesma opção (Opção B não registrada no formulário)"}

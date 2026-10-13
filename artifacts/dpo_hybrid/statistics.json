@@ -1,0 +1,53 @@
+{
+  "timestamp": "2026-10-13T16:09:06.526980",
+  "total_synthetic_evaluations_raw": 2050,
+  "total_synthetic_situations": 500,
+  "synthetic_situations_validated_strong_consensus": 500,
+  "total_human_situations_audited": 50,
+  "human_test_pairs_extracted": 14,
+  "splits": {
+    "train": {
+      "count": 350,
+      "proportion": "70.0%",
+      "situation_range": "1 a 350",
+      "sha256": "d9802c26a485c75b007193e32799c5c8ee6aa3ba6c62b3933521a835910c3c3f"
+    },
+    "validation_ai": {
+      "count": 150,
+      "proportion": "30.0%",
+      "situation_range": "351 a 500",
+      "sha256": "91d320f4a28408502f78999c3649ba783e46f2eef97e8c2f57ea966049f79f8b"
+    },
+    "test_human": {
+      "count": 14,
+      "source": "human_calibration_50",
+      "sha256": "9db5c7ccc54125cce0c186204714177a5db816c748134be113a4d3460dabbb38"
+    },
+    "excluded": {
+      "total_excluded_entries": 36,
+      "sha256": "52f8e98d50f7241a175f8905f73cd7dc13411c70d903a95d63876c6723a551f7"
+    }
+  },
+  "human_metrics": {
+    "total_human_situations": 50,
+    "total_human_evaluators": 4,
+    "overall_choice_distribution": {
+      "A": 176,
+      "B": 16,
+      "both": 8,
+      "none": 0
+    },
+    "strong_consensus_count": 48,
+    "disputed_consensus_count": 2,
+    "category_agreement_avg": {
+      "Dor": 0.781,
+      "Tarefa": 0.812,
+      "Decisão": 0.9,
+      "Urgência/Risco": 0.917,
+      "Ruído/Paralela": 1.0,
+      "Recomendação": 0.844,
+      "Ambígua": 1.0
+    }
+  },
+  "leak_check": "passed_zero_overlap"
+}

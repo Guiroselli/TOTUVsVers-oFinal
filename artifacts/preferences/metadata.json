@@ -1,0 +1,1334 @@
+{
+  "source_origin": "https://docs.google.com/spreadsheets/d/1W9TnxTFoj4cBIlL3roTsFIfbayTa2iZkuLslBhsiQYU/export?format=csv",
+  "collection_timestamp": "2026-10-13T15:59:49.229934",
+  "raw_csv_path": "artifacts\\preferences\\raw\\ia_preferences_500.csv",
+  "raw_csv_sha256": "4aef7b8f283eca90a8ca40c47ce507c941ea9f9f619a960c844e1a03fe8ab3ac",
+  "total_rows_imported": 2050,
+  "total_situations": 500,
+  "total_evaluators": 4,
+  "evaluators_breakdown": {
+    "IA 1 — avaliador principal": 300,
+    "IA 2 — avaliador independente": 600,
+    "IA 3 — avaliador independente": 600,
+    "IA 4 — avaliador independente": 550
+  },
+  "total_areas": 7,
+  "areas_breakdown": {
+    "Tecnologia/TI": 500,
+    "Operações": 350,
+    "Gestão/Projetos": 400,
+    "Financeiro": 250,
+    "RH/Pessoas": 250,
+    "Comercial/Marketing": 200,
+    "Estudante": 100
+  },
+  "extra_evaluation_block": "Bloco 1 (Situações 1 a 50)",
+  "situations_with_extra_evaluations": 50,
+  "extra_situations_list": [
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "31",
+    "32",
+    "33",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "39",
+    "40",
+    "41",
+    "42",
+    "43",
+    "44",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "duplicated_rows_count": 250,
+  "duplicated_rows": [
+    {
+      "row_number": 102,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "1"
+    },
+    {
+      "row_number": 103,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "2"
+    },
+    {
+      "row_number": 104,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "3"
+    },
+    {
+      "row_number": 105,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "4"
+    },
+    {
+      "row_number": 106,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "5"
+    },
+    {
+      "row_number": 107,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "6"
+    },
+    {
+      "row_number": 108,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "7"
+    },
+    {
+      "row_number": 109,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "8"
+    },
+    {
+      "row_number": 110,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "9"
+    },
+    {
+      "row_number": 111,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "10"
+    },
+    {
+      "row_number": 112,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "11"
+    },
+    {
+      "row_number": 113,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "12"
+    },
+    {
+      "row_number": 114,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "13"
+    },
+    {
+      "row_number": 115,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "14"
+    },
+    {
+      "row_number": 116,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "15"
+    },
+    {
+      "row_number": 117,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "16"
+    },
+    {
+      "row_number": 118,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "17"
+    },
+    {
+      "row_number": 119,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "18"
+    },
+    {
+      "row_number": 120,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "19"
+    },
+    {
+      "row_number": 121,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "20"
+    },
+    {
+      "row_number": 122,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "21"
+    },
+    {
+      "row_number": 123,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "22"
+    },
+    {
+      "row_number": 124,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "23"
+    },
+    {
+      "row_number": 125,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "24"
+    },
+    {
+      "row_number": 126,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "25"
+    },
+    {
+      "row_number": 127,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "26"
+    },
+    {
+      "row_number": 128,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "27"
+    },
+    {
+      "row_number": 129,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "28"
+    },
+    {
+      "row_number": 130,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "29"
+    },
+    {
+      "row_number": 131,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "30"
+    },
+    {
+      "row_number": 132,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "31"
+    },
+    {
+      "row_number": 133,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "32"
+    },
+    {
+      "row_number": 134,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "33"
+    },
+    {
+      "row_number": 135,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "34"
+    },
+    {
+      "row_number": 136,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "35"
+    },
+    {
+      "row_number": 137,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "36"
+    },
+    {
+      "row_number": 138,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "37"
+    },
+    {
+      "row_number": 139,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "38"
+    },
+    {
+      "row_number": 140,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "39"
+    },
+    {
+      "row_number": 141,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "40"
+    },
+    {
+      "row_number": 142,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "41"
+    },
+    {
+      "row_number": 143,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "42"
+    },
+    {
+      "row_number": 144,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "43"
+    },
+    {
+      "row_number": 145,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "44"
+    },
+    {
+      "row_number": 146,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "45"
+    },
+    {
+      "row_number": 147,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "46"
+    },
+    {
+      "row_number": 148,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "47"
+    },
+    {
+      "row_number": 149,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "48"
+    },
+    {
+      "row_number": 150,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "49"
+    },
+    {
+      "row_number": 151,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "50"
+    },
+    {
+      "row_number": 302,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "101"
+    },
+    {
+      "row_number": 303,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "102"
+    },
+    {
+      "row_number": 304,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "103"
+    },
+    {
+      "row_number": 305,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "104"
+    },
+    {
+      "row_number": 306,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "105"
+    },
+    {
+      "row_number": 307,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "106"
+    },
+    {
+      "row_number": 308,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "107"
+    },
+    {
+      "row_number": 309,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "108"
+    },
+    {
+      "row_number": 310,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "109"
+    },
+    {
+      "row_number": 311,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "110"
+    },
+    {
+      "row_number": 312,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "111"
+    },
+    {
+      "row_number": 313,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "112"
+    },
+    {
+      "row_number": 314,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "113"
+    },
+    {
+      "row_number": 315,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "114"
+    },
+    {
+      "row_number": 316,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "115"
+    },
+    {
+      "row_number": 317,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "116"
+    },
+    {
+      "row_number": 318,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "117"
+    },
+    {
+      "row_number": 319,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "118"
+    },
+    {
+      "row_number": 320,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "119"
+    },
+    {
+      "row_number": 321,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "120"
+    },
+    {
+      "row_number": 322,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "121"
+    },
+    {
+      "row_number": 323,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "122"
+    },
+    {
+      "row_number": 324,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "123"
+    },
+    {
+      "row_number": 325,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "124"
+    },
+    {
+      "row_number": 326,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "125"
+    },
+    {
+      "row_number": 327,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "126"
+    },
+    {
+      "row_number": 328,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "127"
+    },
+    {
+      "row_number": 329,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "128"
+    },
+    {
+      "row_number": 330,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "129"
+    },
+    {
+      "row_number": 331,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "130"
+    },
+    {
+      "row_number": 332,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "131"
+    },
+    {
+      "row_number": 333,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "132"
+    },
+    {
+      "row_number": 334,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "133"
+    },
+    {
+      "row_number": 335,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "134"
+    },
+    {
+      "row_number": 336,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "135"
+    },
+    {
+      "row_number": 337,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "136"
+    },
+    {
+      "row_number": 338,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "137"
+    },
+    {
+      "row_number": 339,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "138"
+    },
+    {
+      "row_number": 340,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "139"
+    },
+    {
+      "row_number": 341,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "140"
+    },
+    {
+      "row_number": 342,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "141"
+    },
+    {
+      "row_number": 343,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "142"
+    },
+    {
+      "row_number": 344,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "143"
+    },
+    {
+      "row_number": 345,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "144"
+    },
+    {
+      "row_number": 346,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "145"
+    },
+    {
+      "row_number": 347,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "146"
+    },
+    {
+      "row_number": 348,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "147"
+    },
+    {
+      "row_number": 349,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "148"
+    },
+    {
+      "row_number": 350,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "149"
+    },
+    {
+      "row_number": 351,
+      "avaliador": "IA 2 — avaliador independente",
+      "situacao": "150"
+    },
+    {
+      "row_number": 552,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "201"
+    },
+    {
+      "row_number": 553,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "202"
+    },
+    {
+      "row_number": 554,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "203"
+    },
+    {
+      "row_number": 555,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "204"
+    },
+    {
+      "row_number": 556,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "205"
+    },
+    {
+      "row_number": 557,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "206"
+    },
+    {
+      "row_number": 558,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "207"
+    },
+    {
+      "row_number": 559,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "208"
+    },
+    {
+      "row_number": 560,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "209"
+    },
+    {
+      "row_number": 561,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "210"
+    },
+    {
+      "row_number": 562,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "211"
+    },
+    {
+      "row_number": 563,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "212"
+    },
+    {
+      "row_number": 564,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "213"
+    },
+    {
+      "row_number": 565,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "214"
+    },
+    {
+      "row_number": 566,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "215"
+    },
+    {
+      "row_number": 567,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "216"
+    },
+    {
+      "row_number": 568,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "217"
+    },
+    {
+      "row_number": 569,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "218"
+    },
+    {
+      "row_number": 570,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "219"
+    },
+    {
+      "row_number": 571,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "220"
+    },
+    {
+      "row_number": 572,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "221"
+    },
+    {
+      "row_number": 573,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "222"
+    },
+    {
+      "row_number": 574,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "223"
+    },
+    {
+      "row_number": 575,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "224"
+    },
+    {
+      "row_number": 576,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "225"
+    },
+    {
+      "row_number": 577,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "226"
+    },
+    {
+      "row_number": 578,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "227"
+    },
+    {
+      "row_number": 579,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "228"
+    },
+    {
+      "row_number": 580,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "229"
+    },
+    {
+      "row_number": 581,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "230"
+    },
+    {
+      "row_number": 582,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "231"
+    },
+    {
+      "row_number": 583,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "232"
+    },
+    {
+      "row_number": 584,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "233"
+    },
+    {
+      "row_number": 585,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "234"
+    },
+    {
+      "row_number": 586,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "235"
+    },
+    {
+      "row_number": 587,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "236"
+    },
+    {
+      "row_number": 588,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "237"
+    },
+    {
+      "row_number": 589,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "238"
+    },
+    {
+      "row_number": 590,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "239"
+    },
+    {
+      "row_number": 591,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "240"
+    },
+    {
+      "row_number": 592,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "241"
+    },
+    {
+      "row_number": 593,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "242"
+    },
+    {
+      "row_number": 594,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "243"
+    },
+    {
+      "row_number": 595,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "244"
+    },
+    {
+      "row_number": 596,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "245"
+    },
+    {
+      "row_number": 597,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "246"
+    },
+    {
+      "row_number": 598,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "247"
+    },
+    {
+      "row_number": 599,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "248"
+    },
+    {
+      "row_number": 600,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "249"
+    },
+    {
+      "row_number": 601,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "250"
+    },
+    {
+      "row_number": 1002,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "401"
+    },
+    {
+      "row_number": 1003,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "402"
+    },
+    {
+      "row_number": 1004,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "403"
+    },
+    {
+      "row_number": 1005,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "404"
+    },
+    {
+      "row_number": 1006,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "405"
+    },
+    {
+      "row_number": 1007,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "406"
+    },
+    {
+      "row_number": 1008,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "407"
+    },
+    {
+      "row_number": 1009,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "408"
+    },
+    {
+      "row_number": 1010,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "409"
+    },
+    {
+      "row_number": 1011,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "410"
+    },
+    {
+      "row_number": 1012,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "411"
+    },
+    {
+      "row_number": 1013,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "412"
+    },
+    {
+      "row_number": 1014,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "413"
+    },
+    {
+      "row_number": 1015,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "414"
+    },
+    {
+      "row_number": 1016,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "415"
+    },
+    {
+      "row_number": 1017,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "416"
+    },
+    {
+      "row_number": 1018,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "417"
+    },
+    {
+      "row_number": 1019,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "418"
+    },
+    {
+      "row_number": 1020,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "419"
+    },
+    {
+      "row_number": 1021,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "420"
+    },
+    {
+      "row_number": 1022,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "421"
+    },
+    {
+      "row_number": 1023,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "422"
+    },
+    {
+      "row_number": 1024,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "423"
+    },
+    {
+      "row_number": 1025,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "424"
+    },
+    {
+      "row_number": 1026,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "425"
+    },
+    {
+      "row_number": 1027,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "426"
+    },
+    {
+      "row_number": 1028,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "427"
+    },
+    {
+      "row_number": 1029,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "428"
+    },
+    {
+      "row_number": 1030,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "429"
+    },
+    {
+      "row_number": 1031,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "430"
+    },
+    {
+      "row_number": 1032,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "431"
+    },
+    {
+      "row_number": 1033,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "432"
+    },
+    {
+      "row_number": 1034,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "433"
+    },
+    {
+      "row_number": 1035,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "434"
+    },
+    {
+      "row_number": 1036,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "435"
+    },
+    {
+      "row_number": 1037,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "436"
+    },
+    {
+      "row_number": 1038,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "437"
+    },
+    {
+      "row_number": 1039,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "438"
+    },
+    {
+      "row_number": 1040,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "439"
+    },
+    {
+      "row_number": 1041,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "440"
+    },
+    {
+      "row_number": 1042,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "441"
+    },
+    {
+      "row_number": 1043,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "442"
+    },
+    {
+      "row_number": 1044,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "443"
+    },
+    {
+      "row_number": 1045,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "444"
+    },
+    {
+      "row_number": 1046,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "445"
+    },
+    {
+      "row_number": 1047,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "446"
+    },
+    {
+      "row_number": 1048,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "447"
+    },
+    {
+      "row_number": 1049,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "448"
+    },
+    {
+      "row_number": 1050,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "449"
+    },
+    {
+      "row_number": 1051,
+      "avaliador": "IA 4 — avaliador independente",
+      "situacao": "450"
+    },
+    {
+      "row_number": 1352,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "601"
+    },
+    {
+      "row_number": 1353,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "602"
+    },
+    {
+      "row_number": 1354,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "603"
+    },
+    {
+      "row_number": 1355,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "604"
+    },
+    {
+      "row_number": 1356,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "605"
+    },
+    {
+      "row_number": 1357,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "606"
+    },
+    {
+      "row_number": 1358,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "607"
+    },
+    {
+      "row_number": 1359,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "608"
+    },
+    {
+      "row_number": 1360,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "609"
+    },
+    {
+      "row_number": 1361,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "610"
+    },
+    {
+      "row_number": 1362,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "611"
+    },
+    {
+      "row_number": 1363,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "612"
+    },
+    {
+      "row_number": 1364,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "613"
+    },
+    {
+      "row_number": 1365,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "614"
+    },
+    {
+      "row_number": 1366,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "615"
+    },
+    {
+      "row_number": 1367,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "616"
+    },
+    {
+      "row_number": 1368,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "617"
+    },
+    {
+      "row_number": 1369,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "618"
+    },
+    {
+      "row_number": 1370,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "619"
+    },
+    {
+      "row_number": 1371,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "620"
+    },
+    {
+      "row_number": 1372,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "621"
+    },
+    {
+      "row_number": 1373,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "622"
+    },
+    {
+      "row_number": 1374,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "623"
+    },
+    {
+      "row_number": 1375,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "624"
+    },
+    {
+      "row_number": 1376,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "625"
+    },
+    {
+      "row_number": 1377,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "626"
+    },
+    {
+      "row_number": 1378,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "627"
+    },
+    {
+      "row_number": 1379,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "628"
+    },
+    {
+      "row_number": 1380,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "629"
+    },
+    {
+      "row_number": 1381,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "630"
+    },
+    {
+      "row_number": 1382,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "631"
+    },
+    {
+      "row_number": 1383,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "632"
+    },
+    {
+      "row_number": 1384,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "633"
+    },
+    {
+      "row_number": 1385,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "634"
+    },
+    {
+      "row_number": 1386,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "635"
+    },
+    {
+      "row_number": 1387,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "636"
+    },
+    {
+      "row_number": 1388,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "637"
+    },
+    {
+      "row_number": 1389,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "638"
+    },
+    {
+      "row_number": 1390,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "639"
+    },
+    {
+      "row_number": 1391,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "640"
+    },
+    {
+      "row_number": 1392,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "641"
+    },
+    {
+      "row_number": 1393,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "642"
+    },
+    {
+      "row_number": 1394,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "643"
+    },
+    {
+      "row_number": 1395,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "644"
+    },
+    {
+      "row_number": 1396,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "645"
+    },
+    {
+      "row_number": 1397,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "646"
+    },
+    {
+      "row_number": 1398,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "647"
+    },
+    {
+      "row_number": 1399,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "648"
+    },
+    {
+      "row_number": 1400,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "649"
+    },
+    {
+      "row_number": 1401,
+      "avaliador": "IA 3 — avaliador independente",
+      "situacao": "650"
+    }
+  ],
+  "incomplete_rows_count": 0,
+  "incomplete_rows": []
+}

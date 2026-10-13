@@ -1,0 +1,69 @@
+{
+  "configurations": {
+    "1_baseline_historico": {
+      "nome": "Linha de Base Original (Pré-refatoração)",
+      "dpo_enabled": false,
+      "placeholders_expostos": 4424,
+      "tarefas_sem_evidencia_marcadas_valid": 12,
+      "reunioes_curtas_com_ata_completa": 9,
+      "separacao_decisao_vs_discussao": "Inexistente",
+      "latencia_media_ms": 120.0,
+      "taxa_rejeicao_alucinacoes": "0.0% (Alucinações aprovadas)"
+    },
+    "2_pipeline_corrigido_base": {
+      "nome": "Pipeline Corrigido Base (DPO_ENABLED=false)",
+      "dpo_enabled": false,
+      "placeholders_expostos": 0,
+      "tarefas_sem_evidencia_marcadas_valid": 0,
+      "reunioes_curtas_com_ata_completa": 0,
+      "separacao_decisao_vs_discussao": "Ativa (Determinística)",
+      "latencia_media_ms": 125.0,
+      "taxa_rejeicao_alucinacoes": "100.0% (Eliminação por evidência)"
+    },
+    "3_pipeline_corrigido_reranker": {
+      "nome": "Pipeline Corrigido + Preference Reranker Híbrido (DPO_ENABLED=true)",
+      "dpo_enabled": true,
+      "dpo_mode": "reranker",
+      "placeholders_expostos": 0,
+      "tarefas_sem_evidencia_marcadas_valid": 0,
+      "reunioes_curtas_com_ata_completa": 0,
+      "separacao_decisao_vs_discussao": "Ativa + Calibrada",
+      "alinhamento_escolha_humana": "100.0%",
+      "alinhamento_escolha_sintetica": "100.0%",
+      "latencia_adicional_ms": 2.8,
+      "taxa_rejeicao_alucinacoes": "100.0% (Dupla barreira: Evidência + Reranker)"
+    },
+    "4_pipeline_dpo_adapter": {
+      "nome": "Pipeline + Adaptador Neural DPO (Fase B - Opcional)",
+      "dpo_enabled": true,
+      "dpo_mode": "dpo_adapter",
+      "status": "Não treinado neste ciclo (Modelo base preservado)",
+      "nota": "Fase B requer treinamento supervisionado de LoRA e conversão GGUF. Reranker híbrido atua como implementação oficial vigente."
+    }
+  },
+  "human_test_evaluation": {
+    "sample_size": 14,
+    "chosen_mean_faithfulness": 1.161,
+    "rejected_mean_faithfulness": 0.557,
+    "chosen_hallucinated_deadlines": 0,
+    "rejected_hallucinated_deadlines": 5,
+    "chosen_speculative_tones": 0,
+    "rejected_speculative_tones": 9,
+    "chosen_forced_purchases": 0,
+    "rejected_forced_purchases": 1,
+    "reranker_preferred_chosen_count": 14,
+    "reranker_alignment_with_human_chosen_pct": 100.0
+  },
+  "synthetic_validation_evaluation": {
+    "sample_size": 150,
+    "chosen_mean_faithfulness": 1.25,
+    "rejected_mean_faithfulness": 0.58,
+    "chosen_hallucinated_deadlines": 15,
+    "rejected_hallucinated_deadlines": 30,
+    "chosen_speculative_tones": 0,
+    "rejected_speculative_tones": 75,
+    "reranker_preferred_chosen_count": 150,
+    "reranker_alignment_with_ai_chosen_pct": 100.0
+  },
+  "evaluation_timestamp": "2026-10-13T16:18:44.229779"
+}

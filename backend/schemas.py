@@ -165,6 +165,12 @@ class AnalysisMetadata(BaseModel):
     evidence_validation_status: Optional[str] = "valid"
     rejected_hallucinations_audit: Optional[List[Dict[str, Any]]] = []
     dpo_layer: Optional[Dict[str, Any]] = None
+    preference_layer: Optional[str] = "disabled"  # "disabled" | "reranker" | "dpo_adapter"
+    preference_version: Optional[str] = None
+    preference_dataset_hash: Optional[str] = None
+    evidence_gate: Optional[str] = "passed"  # "passed" | "blocked" | "partial"
+    human_calibration: Optional[str] = "not_available"  # "used" | "not_available"
+    reranker_latency_ms: Optional[float] = None
     warning: Optional[str] = None
     parsing_error: Optional[str] = None
 

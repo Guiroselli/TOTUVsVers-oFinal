@@ -2058,6 +2058,12 @@ class AnalysisService:
             "rejected_hallucinations_audit": rejected_hallucinations,
             "input_hash": input_hash,
             "cache_hit": False,
+            "preference_layer": (processed_dict.get("analise_metadados") or {}).get("preference_layer", "disabled"),
+            "preference_version": (processed_dict.get("analise_metadados") or {}).get("preference_version"),
+            "preference_dataset_hash": (processed_dict.get("analise_metadados") or {}).get("preference_dataset_hash"),
+            "evidence_gate": (processed_dict.get("analise_metadados") or {}).get("evidence_gate", "passed"),
+            "human_calibration": (processed_dict.get("analise_metadados") or {}).get("human_calibration", "not_available"),
+            "reranker_latency_ms": (processed_dict.get("analise_metadados") or {}).get("reranker_latency_ms"),
             "warning": None,
             "parsing_error": None
         }
