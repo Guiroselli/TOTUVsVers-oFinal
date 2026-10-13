@@ -95,7 +95,7 @@ def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
         st = str(raw_status).lower().strip()
         if st in ["ao vivo", "aovivo", "gravando", "iniciada"]:
             item["STATUS_MEETING"] = "ao_vivo"
-        elif st in ["concluída", "concluida", "finalizada", "analise_concluida", "analise concluida", "completed"]:
+        elif st in ["concluída", "concluida", "finalizada", "analise_concluida", "analise concluida", "completed"] or (st.startswith("analise_") and st != "aguardando_analise"):
             item["STATUS_MEETING"] = "concluida"
 
     # Transcrições estruturadas (Raw, Normalizada, Final, Correções e Diagnósticos)

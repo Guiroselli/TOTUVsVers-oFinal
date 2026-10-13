@@ -42,10 +42,16 @@ def detect_border_overlap(prev_text: str, next_chunk: str, max_words: int = 5) -
     max_check = min(max_words, len(prev_norm), len(next_norm))
     overlap_len = 0
 
+    # Partículas curtas ou conectores que NÃO devem ser removidos se overlap_len == 1
+    SHORT_STOPWORDS = {"de", "e", "a", "o", "da", "do", "em", "um", "uma", "não", "que", "se", "no", "na"}
+
     for k in range(max_check, 0, -1):
         prev_slice = prev_norm[-k:]
         next_slice = next_norm[:k]
         if prev_slice == next_slice:
+            # Se for apenas 1 palavra, não remove se for palavra curta/artigo/preposição comum
+            if k == 1 and (len(next_slice[0]) <= 3 or next_slice[0] in SHORT_STOPWORDS):
+                continue
             overlap_len = k
             break
 

@@ -1,5 +1,900 @@
 [
   {
+    "ID_MEETING": "db8333d9-8c44-48c4-ab76-676182cfd2b5",
+    "TITULO_REUNIAO": "teste",
+    "DEPARTAMENTO": "TI",
+    "NOME_SEGMENTO": "TI",
+    "DT_MEETING": "2026-10-13",
+    "HORARIO_AGENDADO": "19:44",
+    "PARTICIPANTES": [],
+    "FONTE_AUDIO": "Microfone Padrão",
+    "ORIGEM": "live",
+    "STATUS_MEETING": "ANALISE_CONTINGENCIA_TAREFAS_PENDENTES",
+    "STATUS_ANALISE": "analise_contingencia_tarefas_pendentes",
+    "STATUS_REVISAO": "revisao_pendente",
+    "ANON_TRANSCRICAO": "TI contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se... vai parar da outra vez igual para em 40 segundos, aparentemente... a transcrição está um pouco melhor, mas é... ainda senti alguns erros de escritura, creio que você vai falar um pouco... mais rápido e já não vai pegar... tá meio do tema que eu estou falando. Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui. Interfacinha.",
+    "NIVEL_URGENCIA": "Média",
+    "RESPONSAVEL_REUNIAO": "Não identificado",
+    "TEM_PDF": true,
+    "FORMATO_MEETING": "VIDEO",
+    "EVENTOS_SESSAO": [
+      {
+        "tipo": "criada",
+        "timestamp": "2026-10-13T19:44:51.736376"
+      },
+      {
+        "tipo": "iniciada",
+        "timestamp": "2026-10-13T19:44:51.736376"
+      },
+      {
+        "tipo": "finalizada",
+        "timestamp": "2026-10-13T19:45:45.872134"
+      }
+    ],
+    "CREATED_AT": "2026-10-13T19:44:51.736376",
+    "STARTED_AT": "2026-10-13T19:44:51.736376",
+    "PAUSED_AT": null,
+    "FINISHED_AT": "2026-10-13T19:45:45.872134",
+    "RESUMO_IA": {
+      "tema": "Não identificado",
+      "contexto": {
+        "problema": "Não identificado",
+        "decisao": "Não mencionado",
+        "decisoes_concretas": [],
+        "temas_em_discussao": []
+      },
+      "decisoes_concretas": [],
+      "temas_em_discussao": [],
+      "organizacao_por_temas": [],
+      "tarefas": [
+        {
+          "responsavel": "Não identificado",
+          "tarefa": "vai parar da outra vez igual para em 40 segundos, aparentemente",
+          "prazo": "Não mencionado",
+          "prazo_iso": null,
+          "prazo_confidence": 0.0,
+          "prazo_parse_status": "not_mentioned",
+          "status": "Não Inicializado",
+          "prioridade": "Média",
+          "confidence": 0.6,
+          "evidencia": "vai parar da outra vez igual para em 40 segundos, aparentemente",
+          "evidence": "vai parar da outra vez igual para em 40 segundos, aparentemente",
+          "quote": null,
+          "source_ref": null,
+          "meeting_id": null,
+          "task_validation_status": "valid",
+          "evidence_status": "validated",
+          "validation_reason": "Tarefa operacional válida com ação e entregável identificáveis",
+          "dpo_faithfulness_score": null,
+          "dpo_signals": null
+        },
+        {
+          "responsavel": "Não identificado",
+          "tarefa": "ainda senti alguns erros de escritura, creio que você vai falar um pouco",
+          "prazo": "Não mencionado",
+          "prazo_iso": null,
+          "prazo_confidence": 0.0,
+          "prazo_parse_status": "not_mentioned",
+          "status": "Não Inicializado",
+          "prioridade": "Média",
+          "confidence": 0.6,
+          "evidencia": "ainda senti alguns erros de escritura, creio que você vai falar um pouco",
+          "evidence": "ainda senti alguns erros de escritura, creio que você vai falar um pouco",
+          "quote": null,
+          "source_ref": null,
+          "meeting_id": null,
+          "task_validation_status": "valid",
+          "evidence_status": "validated",
+          "validation_reason": "Tarefa operacional válida com ação e entregável identificáveis",
+          "dpo_faithfulness_score": null,
+          "dpo_signals": null
+        },
+        {
+          "responsavel": "Não identificado",
+          "tarefa": "mais rápido e já não vai pegar",
+          "prazo": "Não mencionado",
+          "prazo_iso": null,
+          "prazo_confidence": 0.0,
+          "prazo_parse_status": "not_mentioned",
+          "status": "Não Inicializado",
+          "prioridade": "Média",
+          "confidence": 0.6,
+          "evidencia": "mais rápido e já não vai pegar",
+          "evidence": "mais rápido e já não vai pegar",
+          "quote": null,
+          "source_ref": null,
+          "meeting_id": null,
+          "task_validation_status": "valid",
+          "evidence_status": "validated",
+          "validation_reason": "Tarefa operacional válida com ação e entregável identificáveis",
+          "dpo_faithfulness_score": null,
+          "dpo_signals": null
+        }
+      ],
+      "dores": [],
+      "responsavel_reuniao": "Não identificado",
+      "participantes": [],
+      "nivel_urgencia": "Média",
+      "justificativa_urgencia": "Classificação determinística padrão de fallback.",
+      "confianca_urgencia": 0.8,
+      "field_suggestions": {
+        "responsavel_reuniao": {
+          "field_name": "responsavel_reuniao",
+          "label": "Responsável Geral",
+          "suggested_value": "Não identificado",
+          "confidence": 0.0,
+          "evidence": "Nenhum nome de facilitador ou responsável claro identificado na transcrição.",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": [],
+          "reasons": null
+        },
+        "nivel_urgencia": {
+          "field_name": "nivel_urgencia",
+          "label": "Nível de Urgência",
+          "suggested_value": "Média",
+          "confidence": 0.8,
+          "evidence": "Classificação determinística padrão de fallback.",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        },
+        "tema": {
+          "field_name": "tema",
+          "label": "Tema Principal",
+          "suggested_value": "Não identificado",
+          "confidence": 0.6,
+          "evidence": "Análise determinística de contingência.",
+          "review_status": "pending",
+          "confirmed_value": null,
+          "candidates": null,
+          "reasons": null
+        }
+      },
+      "recomendacoes_totvs": [],
+      "alertas": [],
+      "analise_metadados": {
+        "model": "qwen2.5:3b",
+        "model_name": "qwen2.5:3b",
+        "prompt_version": "2.2.0-deterministic",
+        "catalog_version": "2.1.0",
+        "analyzed_at": "2026-10-13T19:45:51.058427",
+        "duration_seconds": 4.05,
+        "transcript_char_count": 429,
+        "status": "ollama_offline",
+        "analysis_engine": "deterministic_fallback",
+        "analysis_status": "analise_contingencia_tarefas_pendentes",
+        "technical_confidence": "Execução determinística de contingência",
+        "semantic_confidence": "Média (65%) — Baseada em palavras-chave",
+        "analysis_confidence": 0.65,
+        "confidence_reason": "Análise de contingência concluída com dados parciais. As tarefas identificadas dependem de validação humana.",
+        "insufficient_data_reason": null,
+        "valid_items_count": 3,
+        "pending_items_count": 3,
+        "items_discarded_noise": 0,
+        "rejected_tasks_audit": [],
+        "model_digest": null,
+        "cache_hit": false,
+        "input_hash": "74cfc07e5e6354f2f15a0df8e001a46935754625b7c72348d8163fcf26eee94b",
+        "evidence_validation_status": "valid",
+        "rejected_hallucinations_audit": [],
+        "dpo_layer": null,
+        "preference_layer": "disabled",
+        "preference_version": null,
+        "preference_dataset_hash": null,
+        "evidence_gate": "passed",
+        "human_calibration": "not_available",
+        "reranker_latency_ms": null,
+        "warning": "Análise automática indisponível. Este documento contém apenas a classificação determinística de contingência e requer revisão humana obrigatória antes da tomada de decisão.",
+        "parsing_error": "Falha de conexão com Ollama: HTTPConnectionPool(host='localhost', port=11434): Max retries exceeded with url: /api/generate (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=11434): Failed to establish a new connection: [WinError 10061] Nenhuma conexão pôde ser feita porque a máquina de destino as recusou ativamente\"))"
+      },
+      "perfil_cliente": {
+        "codigo": "TI",
+        "reunioes": [],
+        "dores_recorrentes": {}
+      },
+      "codigo_cliente": "",
+      "resumo_executivo": {
+        "version": "executive_v1",
+        "status": "fallback_generated",
+        "generated_at": "2026-10-13T19:45:51.069547",
+        "source_analysis_id": "",
+        "summary_for_decision": "A reunião deliberou sobre o alinhamento referente a 'Alinhamento Estratégico e Operacional'. A sessão estruturou os direcionamentos operacionais e fluxos de trabalho da equipe. Nenhuma decisão executiva definitiva foi deliberada na sessão; os encaminhamentos acordados seguem sob execução das respectivas frentes.",
+        "current_situation": "Operação em andamento regular sem ocorrências de bloqueios críticos na sessão.",
+        "business_impact": "Impacto operacional controlado dentro dos parâmetros regulares da operação.",
+        "main_risks": [],
+        "decisions_made": [],
+        "discussion_topics": [],
+        "decisions_required": [
+          {
+            "text": "Designar formalmente o responsável geral pelo acompanhamento das entregas desta reunião.",
+            "owner_level": "Liderança Operacional",
+            "source_refs": [
+              "metadata:responsavel"
+            ]
+          }
+        ],
+        "strategic_next_steps": [
+          {
+            "text": "Acompanhar entrega: 'vai parar da outra vez igual para em 40 segundos, aparentemente' sob responsabilidade de Não identificado (Prazo: Não mencionado).",
+            "source_refs": [
+              "task:0"
+            ]
+          },
+          {
+            "text": "Acompanhar entrega: 'ainda senti alguns erros de escritura, creio que você vai falar um pouco' sob responsabilidade de Não identificado (Prazo: Não mencionado).",
+            "source_refs": [
+              "task:1"
+            ]
+          }
+        ],
+        "executive_recommendation": null,
+        "urgency": "Média",
+        "confidence": "Média (65%) — Baseada em Regras Determinísticas",
+        "review_status": "pending_review",
+        "source_refs": [
+          "theme:principal",
+          "metadata:responsavel",
+          "task:0",
+          "task:1"
+        ],
+        "missing_information": [
+          "Responsável geral pela reunião não identificado",
+          "Prazos formais de algumas entregas pendentes de definição",
+          "Decisões finais formalizadas não registradas na sessão"
+        ],
+        "generation_method": "deterministic_executive_template",
+        "prompt_version": "2.1.0",
+        "model_version": "qwen2.5:3b"
+      }
+    },
+    "RESUMO_EXECUTIVO": {
+      "version": "executive_v1",
+      "status": "fallback_generated",
+      "generated_at": "2026-10-13T19:45:51.069547",
+      "source_analysis_id": "",
+      "summary_for_decision": "A reunião deliberou sobre o alinhamento referente a 'Alinhamento Estratégico e Operacional'. A sessão estruturou os direcionamentos operacionais e fluxos de trabalho da equipe. Nenhuma decisão executiva definitiva foi deliberada na sessão; os encaminhamentos acordados seguem sob execução das respectivas frentes.",
+      "current_situation": "Operação em andamento regular sem ocorrências de bloqueios críticos na sessão.",
+      "business_impact": "Impacto operacional controlado dentro dos parâmetros regulares da operação.",
+      "main_risks": [],
+      "decisions_made": [],
+      "discussion_topics": [],
+      "decisions_required": [
+        {
+          "text": "Designar formalmente o responsável geral pelo acompanhamento das entregas desta reunião.",
+          "owner_level": "Liderança Operacional",
+          "source_refs": [
+            "metadata:responsavel"
+          ]
+        }
+      ],
+      "strategic_next_steps": [
+        {
+          "text": "Acompanhar entrega: 'vai parar da outra vez igual para em 40 segundos, aparentemente' sob responsabilidade de Não identificado (Prazo: Não mencionado).",
+          "source_refs": [
+            "task:0"
+          ]
+        },
+        {
+          "text": "Acompanhar entrega: 'ainda senti alguns erros de escritura, creio que você vai falar um pouco' sob responsabilidade de Não identificado (Prazo: Não mencionado).",
+          "source_refs": [
+            "task:1"
+          ]
+        }
+      ],
+      "executive_recommendation": null,
+      "urgency": "Média",
+      "confidence": "Média (65%) — Baseada em Regras Determinísticas",
+      "review_status": "pending_review",
+      "source_refs": [
+        "theme:principal",
+        "metadata:responsavel",
+        "task:0",
+        "task:1"
+      ],
+      "missing_information": [
+        "Responsável geral pela reunião não identificado",
+        "Prazos formais de algumas entregas pendentes de definição",
+        "Decisões finais formalizadas não registradas na sessão"
+      ],
+      "generation_method": "deterministic_executive_template",
+      "prompt_version": "2.1.0",
+      "model_version": "qwen2.5:3b"
+    },
+    "CHUNKS_PROCESSADOS": {
+      "stt_db8333d9_1791931492246_geuw:0": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 0,
+        "text": "",
+        "text_len": 0,
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 1251.27,
+        "rtf": 0.36,
+        "is_delayed": false,
+        "segments": [],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:44:57.162800"
+      },
+      "stt_db8333d9_1791931492246_geuw:1": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 1,
+        "text": "TI",
+        "text_len": 2,
+        "duration": 3.48,
+        "audio_level": 6,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.687,
+        "processing_time_ms": 2009.57,
+        "rtf": 0.577,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 2.38,
+            "end": 3.4,
+            "text": "TI",
+            "avg_logprob": -0.408,
+            "no_speech_prob": 0.687,
+            "compression_ratio": 0.2,
+            "confidence_level": "revisao_necessaria",
+            "needs_review": true
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 1,
+        "processed_at": "2026-10-13T19:45:01.441974"
+      },
+      "stt_db8333d9_1791931492246_geuw:2": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 2,
+        "text": "contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se...",
+        "text_len": 83,
+        "duration": 3.48,
+        "audio_level": 9,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.522,
+        "processing_time_ms": 2450.59,
+        "rtf": 0.704,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 3.46,
+            "text": "contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se...",
+            "avg_logprob": -0.571,
+            "no_speech_prob": 0.522,
+            "compression_ratio": 1.077,
+            "confidence_level": "baixa_confianca",
+            "needs_review": true
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 1,
+        "processed_at": "2026-10-13T19:45:05.420820"
+      },
+      "stt_db8333d9_1791931492246_geuw:3": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 3,
+        "text": "vai parar da outra vez igual para em 40 segundos, aparentemente...",
+        "text_len": 66,
+        "duration": 3.48,
+        "audio_level": 10,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.142,
+        "processing_time_ms": 2360.18,
+        "rtf": 0.678,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 3.46,
+            "text": "vai parar da outra vez igual para em 40 segundos, aparentemente...",
+            "avg_logprob": -0.528,
+            "no_speech_prob": 0.142,
+            "compression_ratio": 0.971,
+            "confidence_level": "media_confianca",
+            "needs_review": false
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:08.926492"
+      },
+      "stt_db8333d9_1791931492246_geuw:4": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 4,
+        "text": "a transcrição está um pouco melhor, mas é...",
+        "text_len": 44,
+        "duration": 3.48,
+        "audio_level": 10,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.248,
+        "processing_time_ms": 2318.06,
+        "rtf": 0.666,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 3.46,
+            "text": "a transcrição está um pouco melhor, mas é...",
+            "avg_logprob": -0.561,
+            "no_speech_prob": 0.248,
+            "compression_ratio": 0.842,
+            "confidence_level": "media_confianca",
+            "needs_review": false
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:12.375826"
+      },
+      "stt_db8333d9_1791931492246_geuw:5": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 5,
+        "text": "ainda senti alguns erros de escritura, creio que você vai falar um pouco...",
+        "text_len": 75,
+        "duration": 3.48,
+        "audio_level": 12,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.23,
+        "processing_time_ms": 2543.46,
+        "rtf": 0.731,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 3.46,
+            "text": "ainda senti alguns erros de escritura, creio que você vai falar um pouco...",
+            "avg_logprob": -0.591,
+            "no_speech_prob": 0.23,
+            "compression_ratio": 1.041,
+            "confidence_level": "media_confianca",
+            "needs_review": false
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:16.190008"
+      },
+      "stt_db8333d9_1791931492246_geuw:6": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 6,
+        "text": "um pouco mais rápido e já não vai pegar...",
+        "text_len": 42,
+        "duration": 3.48,
+        "audio_level": 8,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.029,
+        "processing_time_ms": 2225.81,
+        "rtf": 0.64,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 1.96,
+            "text": "um pouco mais rápido e já não vai pegar...",
+            "avg_logprob": -0.389,
+            "no_speech_prob": 0.029,
+            "compression_ratio": 0.849,
+            "confidence_level": "alta_confianca",
+            "needs_review": false
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:19.355102"
+      },
+      "stt_db8333d9_1791931492246_geuw:7": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 7,
+        "text": "",
+        "text_len": 0,
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 73.73,
+        "rtf": 0.021,
+        "is_delayed": false,
+        "segments": [],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:20.766530"
+      },
+      "stt_db8333d9_1791931492246_geuw:8": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 8,
+        "text": "tá meio do tema que eu estou falando.",
+        "text_len": 37,
+        "duration": 3.48,
+        "audio_level": 4,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.066,
+        "processing_time_ms": 2198.71,
+        "rtf": 0.632,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 1.68,
+            "end": 3.46,
+            "text": "tá meio do tema que eu estou falando.",
+            "avg_logprob": -1.131,
+            "no_speech_prob": 0.066,
+            "compression_ratio": 0.826,
+            "confidence_level": "baixa_confianca",
+            "needs_review": true
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 1,
+        "processed_at": "2026-10-13T19:45:26.410341"
+      },
+      "stt_db8333d9_1791931492246_geuw:9": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 9,
+        "text": "",
+        "text_len": 0,
+        "duration": 3.48,
+        "audio_level": 10,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 2112.02,
+        "rtf": 0.607,
+        "is_delayed": false,
+        "segments": [],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:29.886558"
+      },
+      "stt_db8333d9_1791931492246_geuw:10": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 10,
+        "text": "Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui.",
+        "text_len": 68,
+        "duration": 3.48,
+        "audio_level": 6,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.348,
+        "processing_time_ms": 2436.84,
+        "rtf": 0.7,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.0,
+            "end": 3.38,
+            "text": "Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui.",
+            "avg_logprob": -0.598,
+            "no_speech_prob": 0.348,
+            "compression_ratio": 0.933,
+            "confidence_level": "media_confianca",
+            "needs_review": false
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:33.727802"
+      },
+      "stt_db8333d9_1791931492246_geuw:11": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 11,
+        "text": "Interfacinha.",
+        "text_len": 13,
+        "duration": 3.48,
+        "audio_level": 8,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.011,
+        "processing_time_ms": 2131.06,
+        "rtf": 0.612,
+        "is_delayed": false,
+        "segments": [
+          {
+            "start": 0.43,
+            "end": 2.01,
+            "text": "Interfacinha.",
+            "avg_logprob": -0.814,
+            "no_speech_prob": 0.011,
+            "compression_ratio": 0.619,
+            "confidence_level": "media_confianca",
+            "needs_review": false
+          }
+        ],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:37.011600"
+      },
+      "stt_db8333d9_1791931492246_geuw:12": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 12,
+        "text": "",
+        "text_len": 0,
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 70.09,
+        "rtf": 0.02,
+        "is_delayed": false,
+        "segments": [],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:38.434118"
+      },
+      "stt_db8333d9_1791931492246_geuw:13": {
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "sequence": 13,
+        "text": "",
+        "text_len": 0,
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 63.01,
+        "rtf": 0.018,
+        "is_delayed": false,
+        "segments": [],
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "processed_at": "2026-10-13T19:45:41.970303"
+      }
+    },
+    "TRANSCRIPT_RAW": "TI contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se... vai parar da outra vez igual para em 40 segundos, aparentemente... a transcrição está um pouco melhor, mas é... ainda senti alguns erros de escritura, creio que você vai falar um pouco... um pouco mais rápido e já não vai pegar... tá meio do tema que eu estou falando. Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui. Interfacinha.",
+    "TRANSCRIPT_NORMALIZED": "TI contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se... vai parar da outra vez igual para em 40 segundos, aparentemente... a transcrição está um pouco melhor, mas é... ainda senti alguns erros de escritura, creio que você vai falar um pouco... mais rápido e já não vai pegar... tá meio do tema que eu estou falando. Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui. Interfacinha.",
+    "TRANSCRIPT_FINAL": "TI contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se... vai parar da outra vez igual para em 40 segundos, aparentemente... a transcrição está um pouco melhor, mas é... ainda senti alguns erros de escritura, creio que você vai falar um pouco... mais rápido e já não vai pegar... tá meio do tema que eu estou falando. Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui. Interfacinha.",
+    "transcription": "TI contando Proton Flow, e se ele está realmente transcrevendo em tempo real, ou se... vai parar da outra vez igual para em 40 segundos, aparentemente... a transcrição está um pouco melhor, mas é... ainda senti alguns erros de escritura, creio que você vai falar um pouco... mais rápido e já não vai pegar... tá meio do tema que eu estou falando. Limitador alguma coisa? Não, provavelmente não, eu estou a ver aqui. Interfacinha.",
+    "BORDER_OVERLAPS_AUDIT": [
+      {
+        "sequence": 6,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "removed_overlap": "um pouco",
+        "original_chunk": "um pouco mais rápido e já não vai pegar...",
+        "deduped_chunk": "mais rápido e já não vai pegar..."
+      }
+    ],
+    "CHUNKS_DIAGNOSTICS": [
+      {
+        "sequence": 0,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 1251.27,
+        "rtf": 0.36,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:44:57.162828"
+      },
+      {
+        "sequence": 1,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 6,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.687,
+        "processing_time_ms": 2009.57,
+        "rtf": 0.577,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 1,
+        "timestamp": "2026-10-13T19:45:01.442903"
+      },
+      {
+        "sequence": 2,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 9,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.522,
+        "processing_time_ms": 2450.59,
+        "rtf": 0.704,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 1,
+        "timestamp": "2026-10-13T19:45:05.421665"
+      },
+      {
+        "sequence": 3,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 10,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.142,
+        "processing_time_ms": 2360.18,
+        "rtf": 0.678,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:08.927222"
+      },
+      {
+        "sequence": 4,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 10,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.248,
+        "processing_time_ms": 2318.06,
+        "rtf": 0.666,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:12.376668"
+      },
+      {
+        "sequence": 5,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 12,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.23,
+        "processing_time_ms": 2543.46,
+        "rtf": 0.731,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:16.191047"
+      },
+      {
+        "sequence": 6,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 8,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.029,
+        "processing_time_ms": 2225.81,
+        "rtf": 0.64,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:19.357033"
+      },
+      {
+        "sequence": 7,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 73.73,
+        "rtf": 0.021,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:20.769261"
+      },
+      {
+        "sequence": 8,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 4,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.066,
+        "processing_time_ms": 2198.71,
+        "rtf": 0.632,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 1,
+        "timestamp": "2026-10-13T19:45:26.411742"
+      },
+      {
+        "sequence": 9,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 10,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 2112.02,
+        "rtf": 0.607,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:29.888162"
+      },
+      {
+        "sequence": 10,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 6,
+        "signal_quality": "baixo",
+        "no_speech_prob": 0.348,
+        "processing_time_ms": 2436.84,
+        "rtf": 0.7,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:33.730260"
+      },
+      {
+        "sequence": 11,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 8,
+        "signal_quality": "suficiente",
+        "no_speech_prob": 0.011,
+        "processing_time_ms": 2131.06,
+        "rtf": 0.612,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:37.013397"
+      },
+      {
+        "sequence": 12,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 70.09,
+        "rtf": 0.02,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:38.435899"
+      },
+      {
+        "sequence": 13,
+        "session_id": "stt_db8333d9_1791931492246_geuw",
+        "duration": 3.48,
+        "audio_level": 0,
+        "signal_quality": "sem_fala",
+        "no_speech_prob": 0.0,
+        "processing_time_ms": 63.01,
+        "rtf": 0.018,
+        "is_delayed": false,
+        "model_name": "faster-whisper-small",
+        "low_confidence_count": 0,
+        "timestamp": "2026-10-13T19:45:41.973394"
+      }
+    ],
+    "LAST_CHUNK_SEQUENCE": 13,
+    "LAST_CHUNK_SESSION_ID": "stt_db8333d9_1791931492246_geuw",
+    "LAST_TRANSCRIPT_UPDATE_AT": "2026-10-13T19:45:41.973400",
+    "LAST_TRANSCRIPT_SESSION_ID": "stt_db8333d9_1791931492246_geuw",
+    "LAST_TRANSCRIPT_SEQUENCE": 13,
+    "recomendacoes_totvs": [],
+    "field_suggestions": {
+      "responsavel_reuniao": {
+        "field_name": "responsavel_reuniao",
+        "label": "Responsável Geral",
+        "suggested_value": "Não identificado",
+        "confidence": 0.0,
+        "evidence": "Nenhum nome de facilitador ou responsável claro identificado na transcrição.",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": [],
+        "reasons": null
+      },
+      "nivel_urgencia": {
+        "field_name": "nivel_urgencia",
+        "label": "Nível de Urgência",
+        "suggested_value": "Média",
+        "confidence": 0.8,
+        "evidence": "Classificação determinística padrão de fallback.",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      },
+      "tema": {
+        "field_name": "tema",
+        "label": "Tema Principal",
+        "suggested_value": "Não identificado",
+        "confidence": 0.6,
+        "evidence": "Análise determinística de contingência.",
+        "review_status": "pending",
+        "confirmed_value": null,
+        "candidates": null,
+        "reasons": null
+      }
+    }
+  },
+  {
     "ID_MEETING": "bebf7dc0-fb14-4881-b712-d078cbd5ff4a",
     "ANON_TRANSCRICAO": "Reunião sem transcrição capturada.",
     "NOME_SEGMENTO": "Ao Vivo",

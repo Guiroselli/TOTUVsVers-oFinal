@@ -73,27 +73,29 @@ STT_BEAM_SIZE = int(os.getenv("STT_BEAM_SIZE", "3"))
 STT_BEST_OF = int(os.getenv("STT_BEST_OF", "1"))
 STT_TEMPERATURE = float(os.getenv("STT_TEMPERATURE", "0.0"))
 STT_VAD_FILTER = os.getenv("STT_VAD_FILTER", "true").lower() in ("true", "1", "yes")
-STT_VAD_MIN_SPEECH_MS = int(os.getenv("STT_VAD_MIN_SPEECH_DURATION_MS", os.getenv("STT_VAD_MIN_SPEECH_MS", "250")))
+STT_VAD_MIN_SPEECH_MS = int(os.getenv("STT_VAD_MIN_SPEECH_DURATION_MS", os.getenv("STT_VAD_MIN_SPEECH_MS", "150")))
 STT_VAD_SPEECH_PAD_MS = int(os.getenv("STT_VAD_SPEECH_PAD_MS", "500"))
-STT_VAD_MIN_SILENCE_MS = int(os.getenv("STT_VAD_MIN_SILENCE_DURATION_MS", os.getenv("STT_VAD_MIN_SILENCE_MS", "350")))
-STT_VAD_THRESHOLD = float(os.getenv("STT_VAD_THRESHOLD", "0.5"))
+STT_VAD_MIN_SILENCE_MS = int(os.getenv("STT_VAD_MIN_SILENCE_DURATION_MS", os.getenv("STT_VAD_MIN_SILENCE_MS", "400")))
+STT_VAD_THRESHOLD = float(os.getenv("STT_VAD_THRESHOLD", "0.38"))
 STT_CONDITION_ON_PREVIOUS_TEXT = os.getenv("STT_CONDITION_ON_PREVIOUS_TEXT", "false").lower() in ("true", "1", "yes")
 STT_WORD_TIMESTAMPS = os.getenv("STT_WORD_TIMESTAMPS", "true").lower() in ("true", "1", "yes")
 
 # Vocabulário corporativo para o decoder Whisper priorizar termos de negócio e evitar erros fonéticos
 STT_DEFAULT_VOCAB = (
-    "Proton Flow, TOTVS, reunião, ata operacional, ata executiva, RH, TI, "
-    "Kubernetes, implantação, prazo, responsável, urgência, diretoria, tarefas, benefícios, deploy, "
-    "Protheus, Fluig, SESMT, atestado, departamento pessoal, faturamento, implementação, sprint, backlog, homologação, folha"
+    "Proton Flow, TOTVS, reunião, ata operacional, ata executiva, "
+    "RH, TI, responsável, prazo, tarefa, decisão, discussão, "
+    "implantação, projeto, backlog, sprint, homologação, benefícios, "
+    "departamento pessoal, financeiro, operações, comercial, marketing, "
+    "Protheus, Fluig, diretoria, urgência"
 )
 STT_INITIAL_PROMPT = os.getenv("STT_INITIAL_PROMPT", STT_DEFAULT_VOCAB)
 
-STT_CHUNK_SECONDS = int(os.getenv("STT_CHUNK_SECONDS", "6"))
+STT_CHUNK_SECONDS = int(os.getenv("STT_CHUNK_SECONDS", "4"))
 STT_OVERLAP_SECONDS = float(os.getenv("STT_OVERLAP_SECONDS", "1.0"))
 STT_MAX_WORKERS = os.getenv("STT_MAX_WORKERS", "auto")
 STT_MAX_PENDING_CHUNKS = int(os.getenv("STT_MAX_PENDING_CHUNKS", "2"))
 STT_MODEL_CACHE_DIR = resolve_model_cache_dir(os.getenv("STT_MODEL_CACHE_DIR", "./models"))
-STT_FINAL_REPROCESS_ENABLED = os.getenv("STT_FINAL_REPROCESS_ENABLED", "false").lower() in ("true", "1", "yes")
+STT_FINAL_REPROCESS_ENABLED = os.getenv("STT_FINAL_REPROCESS_ENABLED", "true").lower() in ("true", "1", "yes")
 STT_FINAL_MODEL_SIZE = os.getenv("STT_FINAL_MODEL_SIZE", "small")
 STT_FINAL_BEAM_SIZE = int(os.getenv("STT_FINAL_BEAM_SIZE", "5"))
 STT_FINAL_CHUNK_SECONDS = int(os.getenv("STT_FINAL_CHUNK_SECONDS", "30"))
@@ -262,39 +264,28 @@ def preprocess_and_analyze_audio(
         if not audio_stream:
             raise ValueError("Nenhum fluxo de áudio encontrado no container")
 
-        sample_rate = audio_stream.rate or 16000
-        duration = float(audio_stream.duration * audio_stream.time_base) if audio_stream.duration and audio_stream.time_base else 0.0
-
-        frames = []
+        # Resampler de alta fidelidade para 16 kHz mono float32 independente da taxa nativa (44.1k/48k/stereo)
+        resampler = av.AudioResampler(format="fltp", layout="mono", rate=16000)
+        resampled_frames = []
         for frame in container.decode(audio_stream):
-            arr = frame.to_ndarray()
-            if arr is not None and arr.size > 0:
-                frames.append(arr)
+            resampled_frames.extend(resampler.resample(frame))
+        resampled_frames.extend(resampler.resample(None))
 
-        if not frames:
+        if not resampled_frames:
             raise ValueError("Nenhum quadro de áudio decodificado")
 
-        raw_arr = np.concatenate(frames, axis=-1)
-        if raw_arr.ndim > 1:
-            mono_samples = raw_arr.mean(axis=0).astype(np.float32)
-        else:
-            mono_samples = raw_arr.flatten().astype(np.float32)
-
-        max_abs_val = float(np.max(np.abs(mono_samples))) if mono_samples.size > 0 else 0.0
-        if max_abs_val > 1.5:
-            mono_samples = mono_samples / 32768.0
-
+        mono_samples = np.concatenate([f.to_ndarray() for f in resampled_frames], axis=-1).flatten().astype(np.float32)
         total_samples = len(mono_samples)
-        if duration == 0.0 and sample_rate > 0:
-            duration = round(total_samples / sample_rate, 2)
+        sample_rate = 16000
+        duration = round(total_samples / 16000.0, 2)
 
         # 1. Remoção de DC offset
         mean_offset = float(np.mean(mono_samples))
         mono_samples = mono_samples - mean_offset
 
-        # 2. Filtro Passa-Altas leve (1st-order IIR HPF @ ~80Hz)
+        # 2. Filtro Passa-Altas suave @ ~70Hz para atenuação de rumble subsônico sem cortar voz (alpha = 0.973 @ 16kHz)
         if total_samples > 10:
-            alpha = 0.95
+            alpha = 0.973
             filtered = np.zeros_like(mono_samples)
             filtered[0] = mono_samples[0]
             for i in range(1, total_samples):
@@ -304,18 +295,22 @@ def preprocess_and_analyze_audio(
         # 3. Métricas de amplitude pré-normalização
         rms = float(np.sqrt(np.mean(mono_samples ** 2))) if total_samples > 0 else 0.0
         peak = float(np.max(np.abs(mono_samples))) if total_samples > 0 else 0.0
-        rms_db = round(20 * math.log10(max(rms, 1e-5)), 1)
-        peak_db = round(20 * math.log10(max(peak, 1e-5)), 1)
-        clipping_detected = bool(peak >= 0.99)
 
-        # 4. Normalização moderada de volume para fala clara (alvo RMS ~ 0.08 a 0.12, pico limitado a 0.95)
-        if 0.005 < rms < 0.07:
-            gain = min(2.5, 0.09 / max(rms, 1e-4))
+        # 4. Normalização moderada com limiter suave (alvo RMS ~ 0.10, pico < 0.95)
+        if 0.005 < rms < 0.08:
+            gain = min(2.8, 0.10 / max(rms, 1e-4))
             mono_samples = np.clip(mono_samples * gain, -0.95, 0.95)
-        elif rms >= 0.07:
+        elif rms >= 0.08:
             mono_samples = np.clip(mono_samples, -0.95, 0.95)
 
-        # SNR estimado
+        # Recalcula métricas finais pós-normalização
+        rms = float(np.sqrt(np.mean(mono_samples ** 2))) if total_samples > 0 else 0.0
+        peak = float(np.max(np.abs(mono_samples))) if total_samples > 0 else 0.0
+        rms_db = round(20 * math.log10(max(rms, 1e-5)), 1)
+        peak_db = round(20 * math.log10(max(peak, 1e-5)), 1)
+        clipping_detected = bool(peak >= 0.985)
+
+        # 5. Estimativa de SNR
         snr_db = 0.0
         if total_samples > 1600:
             frame_len = 800  # 50ms @ 16kHz
@@ -332,7 +327,7 @@ def preprocess_and_analyze_audio(
             signal_quality = "sem_fala"
         elif rms < 0.012 or audio_level < 8:
             signal_quality = "baixo"
-        elif clipping_detected or peak >= 0.98:
+        elif clipping_detected or peak >= 0.985:
             signal_quality = "saturado"
         else:
             signal_quality = "suficiente"
@@ -342,7 +337,7 @@ def preprocess_and_analyze_audio(
         with wave.open(wav_buf, "wb") as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
-            wf.setframerate(sample_rate)
+            wf.setframerate(16000)
             int16_samples = np.clip(mono_samples * 32767.0, -32768, 32767).astype(np.int16)
             wf.writeframes(int16_samples.tobytes())
 
@@ -354,7 +349,7 @@ def preprocess_and_analyze_audio(
             "signal_quality": signal_quality,
             "speech_detected": (signal_quality != "sem_fala" and audio_level > 5),
             "duration": duration,
-            "sample_rate": sample_rate,
+            "sample_rate": 16000,
             "channels": 1,
             "rms_db": rms_db,
             "peak_db": peak_db,
@@ -505,7 +500,7 @@ class STTService:
 
         self._model = None
         self._mock_model = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._semaphore = threading.Semaphore(self.max_workers)
         self._dependency_checked = False
         self._dependency_available = False
@@ -518,6 +513,8 @@ class STTService:
         self._session_contexts_lock = threading.Lock()
         self._session_languages: Dict[str, str] = {}
         self._session_languages_lock = threading.Lock()
+        self._session_audio_chunks: Dict[str, Dict[int, bytes]] = {}
+        self._session_audio_lock = threading.Lock()
         self.fixed_language = self.language
         self.model_name = f"faster-whisper-{self.model_size}"
         self.vad_min_speech_duration_ms = self.vad_min_speech_ms
@@ -651,6 +648,44 @@ class STTService:
         self._mock_model = mock_model
         self._dependency_checked = True
         self._dependency_available = True
+
+    def set_model_size(self, new_model_size: str) -> Dict[str, Any]:
+        """
+        Alterna o modelo faster-whisper de forma thread-safe sem derrubar reuniões ativas.
+        Permite trocar dinamicamente entre 'small', 'base', etc.
+        """
+        valid_sizes = ["tiny", "base", "small", "medium", "large-v3"]
+        clean_name = str(new_model_size).lower().strip()
+        if clean_name not in valid_sizes:
+            raise ValueError(f"Modelo inválido: '{new_model_size}'. Modelos suportados: {valid_sizes}")
+
+        if self.model_size == clean_name and self._model is not None:
+            return {"status": "unchanged", "model": self.model_size, "device": self.device}
+
+        with self._lock:
+            old_size = self.model_size
+            self.model_size = clean_name
+            self.model_name = f"faster-whisper-{clean_name}"
+            old_model = self._model
+            self._model = None
+            self._load_error = None
+            try:
+                if self.is_model_cached():
+                    self._get_or_load_model()
+                logger.info(f"Modelo STT alternado de '{old_size}' para '{clean_name}'.")
+                return {
+                    "status": "success",
+                    "previous_model": old_size,
+                    "current_model": clean_name,
+                    "device": self.device,
+                    "compute_type": self.compute_type
+                }
+            except Exception as e:
+                logger.error(f"Falha ao carregar novo modelo '{clean_name}': {e}. Restaurando '{old_size}'.")
+                self.model_size = old_size
+                self.model_name = f"faster-whisper-{old_size}"
+                self._model = old_model
+                raise RuntimeError(f"Falha ao carregar modelo '{clean_name}': {e}")
 
     def _get_or_load_model(self):
         """
@@ -895,6 +930,17 @@ class STTService:
 
         # Identificação e controle de fila por reunião
         m_id = str(meeting_id or session_id or "default_session")
+
+        # Armazena chunk pré-processado na sessão para possibilitar reprocessamento final concatenado
+        if m_id and preprocessed_bytes:
+            with self._session_audio_lock:
+                chunks_map = self._session_audio_chunks.setdefault(m_id, {})
+                seq_key = sequence if sequence is not None else len(chunks_map)
+                chunks_map[seq_key] = preprocessed_bytes
+                if len(chunks_map) > 1500:
+                    oldest_k = sorted(chunks_map.keys())[0]
+                    del chunks_map[oldest_k]
+
         pending_before = self.get_meeting_pending_count(m_id)
         is_delayed = (pending_before >= self.max_pending_chunks)
         if is_delayed:
@@ -1119,15 +1165,86 @@ class STTService:
         segments: Optional[List[Dict[str, Any]]] = None,
         existing_corrections: Optional[List[Dict[str, Any]]] = None,
         meeting_context: Optional[str] = None,
+        meeting_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Reprocessa uma transcrição existente em modo de alta precisão (offline / pós-reunião).
-        Reconstrói o texto normalizado, reconcilia bordas de segmentos e reaplica glossário corporativo.
+        Reprocessa uma transcrição existente em modo de alta precisão (offline / pós-reunião):
+        - Se houver chunks de áudio salvos da sessão, concatena e reprocessa a reunião inteira
+          com beam_size = 5, temperature = 0.0 e prompt enriquecido.
+        - Se houver apenas texto, executa normalização corporativa, reconciliação de bordas e glossário.
+        - Preserva estritamente a transcrição bruta (raw_text) para auditoria.
+        - Mede tempo de reprocessamento e registra a estratégia utilizada.
         """
+        import time
         from consolidation import filter_conversational_noise
         from controlled_glossary import ControlledGlossary
 
-        clean_text, noise_audits = filter_conversational_noise(raw_text)
+        t_start = time.perf_counter()
+        reprocessing_method = "text_consolidation"
+        audio_reprocessed_text = None
+
+        m_id = str(meeting_id) if meeting_id else None
+        chunks_map = None
+        if m_id:
+            with self._session_audio_lock:
+                if m_id in self._session_audio_chunks and len(self._session_audio_chunks[m_id]) > 0:
+                    chunks_map = dict(self._session_audio_chunks[m_id])
+
+        if chunks_map and self.is_available():
+            try:
+                import io
+                import wave
+                sorted_seqs = sorted(chunks_map.keys())
+                out_buf = io.BytesIO()
+                with wave.open(out_buf, "wb") as out_wf:
+                    out_wf.setnchannels(1)
+                    out_wf.setsampwidth(2)
+                    out_wf.setframerate(16000)
+                    for seq in sorted_seqs:
+                        chk_bytes = chunks_map[seq]
+                        try:
+                            with wave.open(io.BytesIO(chk_bytes), "rb") as in_wf:
+                                out_wf.writeframes(in_wf.readframes(in_wf.getnframes()))
+                        except Exception:
+                            continue
+
+                concatenated_audio = out_buf.getvalue()
+                if len(concatenated_audio) > 1000:
+                    temp_wav_fd, temp_wav_path = tempfile.mkstemp(suffix=".wav", prefix="reprocess_")
+                    os.close(temp_wav_fd)
+                    with open(temp_wav_path, "wb") as f:
+                        f.write(concatenated_audio)
+
+                    try:
+                        model = self._get_or_load_model()
+                        session_prompt = self.get_session_prompt(meeting_context=meeting_context)
+                        segs, _ = model.transcribe(
+                            temp_wav_path,
+                            language=self.language,
+                            task=self.task,
+                            beam_size=max(5, STT_FINAL_BEAM_SIZE),
+                            best_of=1,
+                            temperature=0.0,
+                            vad_filter=self.vad_filter,
+                            vad_parameters=self.vad_parameters,
+                            condition_on_previous_text=False,
+                            initial_prompt=session_prompt
+                        )
+                        audio_texts = [s.text.strip() for s in segs if s.text and s.text.strip()]
+                        if audio_texts:
+                            audio_reprocessed_text = " ".join(audio_texts)
+                            reprocessing_method = "audio_concatenation_beam5"
+                    finally:
+                        if os.path.exists(temp_wav_path):
+                            try:
+                                os.remove(temp_wav_path)
+                            except Exception:
+                                pass
+            except Exception as concat_err:
+                logger.warning(f"Fallback para reprocessamento textual: {concat_err}")
+
+        base_text = audio_reprocessed_text if audio_reprocessed_text else raw_text
+        clean_text, noise_audits = filter_conversational_noise(base_text)
         glossary = ControlledGlossary()
         corrected_text, glossary_audits = glossary.apply_controlled_correction(
             clean_text,
@@ -1135,15 +1252,24 @@ class STTService:
             meeting_context=meeting_context
         )
 
+        elapsed_ms = round((time.perf_counter() - t_start) * 1000.0, 2)
+
         return {
             "status": "success",
             "raw_text": raw_text,
             "reprocessed_text": corrected_text,
+            "reprocessing_method": reprocessing_method,
+            "processing_time_ms": elapsed_ms,
             "noise_audits": noise_audits,
             "glossary_audits": glossary_audits,
             "is_reprocessed": True,
             "reprocess_badge": "Transcrição refinada em pós-processamento"
         }
+
+    def clear_meeting_audio(self, meeting_id: str):
+        """Remove buffers de áudio gravados para a reunião especificada."""
+        with self._session_audio_lock:
+            self._session_audio_chunks.pop(str(meeting_id), None)
 
     def clear_session(self, session_id: str, meeting_id: Optional[str] = None):
         """Remove cabeçalho, contexto e contadores da sessão para liberação segura de recursos."""

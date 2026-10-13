@@ -24,7 +24,10 @@ import {
   Volume2,
   Activity,
   Check,
-  Trash2
+  Trash2,
+  Settings,
+  X,
+  Copy
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -86,6 +89,16 @@ export default function LiveMeetingPage({
   const [_videoDevices, setVideoDevices] = useState([]);
   const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'saving' | 'synced' | 'unsaved'
   const [showTechnicalDiagnostics, setShowTechnicalDiagnostics] = useState(false);
+  const [showTranscriptDrawer, setShowTranscriptDrawer] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showFinishConfirmModal, setShowFinishConfirmModal] = useState(false);
+  const [refineBeforeFinish, setRefineBeforeFinish] = useState(true);
+  const [transcriptSearchQuery, setTranscriptSearchQuery] = useState('');
+  const [customContextTerms, setCustomContextTerms] = useState('Proton Flow, TOTVS, Protheus, RH, TI, homologação, benefícios');
+  const [vadSensitivity, setVadSensitivity] = useState('0.38');
+  const [selectedModelSize, setSelectedModelSize] = useState('small');
+  const [switchingModel, setSwitchingModel] = useState(false);
+  const [modelSwitchSuccess, setModelSwitchSuccess] = useState('');
   // STT Provider (PARTE 7, 8, 11)
   const [sttProvider, setSttProvider] = useState('backend'); // 'backend' | 'browser' | 'manual'
   const [backendSttStatus, setBackendSttStatus] = useState({
@@ -1821,18 +1834,69 @@ RTF: ${backendChunkStats.rtf || 0}
     setDismissedAiSuggestions((prev) => ({ ...prev, [meetingId]: true }));
   };
 
-  // Finalizar e ir para análise
-  const handleFinishAndAnalyze = async () => {
+  // Alternar modelo STT dinamicamente
+  const handleSwitchModel = async (newModel) => {
+    try {
+      setSwitchingModel(true);
+      setModelSwitchSuccess('');
+      setError('');
+      const res = await api.switchSttModel(newModel);
+      if (res && res.status === 'success') {
+        setSelectedModelSize(newModel);
+        setBackendSttStatus((prev) => ({
+          ...prev,
+          model: newModel,
+          model_name: `faster-whisper-${newModel}`
+        }));
+        setModelSwitchSuccess(`Modelo alterado para ${newModel} com sucesso!`);
+      }
+    } catch (e) {
+      console.error('Erro ao alternar modelo STT:', e);
+      setError(`Erro ao alternar modelo STT: ${e.message || e}`);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
+
+  // Abrir confirmação de finalização
+  const handleFinishAndAnalyze = () => {
+    setShowFinishConfirmModal(true);
+  };
+
+  // Confirmar encerramento e síntese de atas
+  const handleConfirmFinishAndAnalyze = async () => {
     if (!currentMeeting) return;
     const mid = currentMeeting.ID_MEETING;
+    setShowFinishConfirmModal(false);
     stopMediaAndRecognition();
-    await saveTranscriptToBackend(transcription);
-    await handleMeetingAction(mid, 'finalizar');
 
-    if (onLeaveMeeting) {
-      await onLeaveMeeting(transcription, mid);
-    } else if (onAnalyzeMeeting) {
-      onAnalyzeMeeting(mid);
+    try {
+      if (refineBeforeFinish) {
+        setReprocessing(true);
+        try {
+          const repRes = await api.reprocessLiveMeeting(mid, true);
+          if (repRes && repRes.reprocessed_text) {
+            setTranscription(repRes.reprocessed_text);
+            setTranscriptNormalized(repRes.reprocessed_text);
+          }
+        } catch (repErr) {
+          console.warn('Reprocessamento antes de finalizar falhou, prosseguindo com texto atual:', repErr);
+        } finally {
+          setReprocessing(false);
+        }
+      }
+
+      await saveTranscriptToBackend(transcription);
+      await handleMeetingAction(mid, 'finalizar');
+
+      if (onLeaveMeeting) {
+        await onLeaveMeeting(transcription, mid);
+      } else if (onAnalyzeMeeting) {
+        onAnalyzeMeeting(mid);
+      }
+    } catch (finishErr) {
+      console.error('Erro ao finalizar reunião:', finishErr);
+      setError(`Erro ao finalizar reunião: ${finishErr.message || finishErr}`);
     }
   };
 
@@ -1958,16 +2022,19 @@ RTF: ${backendChunkStats.rtf || 0}
           </div>
         )}
 
-        {/* Header da Sala Ativa */}
+        {/* =========================================================================
+            HEADER DA SALA ATIVA — PADRÃO MINIMALISTA TEAMS / GOOGLE MEET
+            ========================================================================= */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '12px 20px',
-          background: 'var(--panel-bg)',
+          padding: '10px 20px',
+          background: 'rgba(15, 23, 42, 0.95)',
           borderBottom: '1px solid var(--border-color)',
           flexWrap: 'wrap',
-          gap: '12px'
+          gap: '12px',
+          zIndex: 10
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <button
@@ -1978,12 +2045,12 @@ RTF: ${backendChunkStats.rtf || 0}
               title="Voltar para a central de reuniões"
             >
               <ArrowLeft size={14} />
-              Central de Reuniões
+              Sair da Sala
             </button>
 
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
                   {currentMeeting.TITULO_REUNIAO}
                 </h2>
                 <span style={{
@@ -2001,17 +2068,29 @@ RTF: ${backendChunkStats.rtf || 0}
                   {badge.icon && <span style={{ width: 6, height: 6, borderRadius: '50%', background: badge.color }}></span>}
                   {badge.label}
                 </span>
+                <span style={{
+                  fontSize: '11px',
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  color: 'var(--text-muted)',
+                  fontWeight: 600
+                }}>
+                  {currentMeeting.DEPARTAMENTO || 'Geral'}
+                </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                <span>Equipe: <strong style={{ color: 'var(--text-main)' }}>{currentMeeting.DEPARTAMENTO || 'Geral'}</strong></span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#38bdf8', fontWeight: 600 }}>
+                  <Clock size={12} />
+                  {formatTimer(durationSeconds)}
+                </span>
                 <span>Horário: <strong style={{ color: 'var(--text-main)' }}>{currentMeeting.HORARIO_AGENDADO}</strong></span>
                 <span>Data: {currentMeeting.DT_MEETING}</span>
-                <span>Fonte: {currentMeeting.FONTE_AUDIO || 'Padrão'}</span>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {/* Seletor de dispositivo de microfone */}
             {audioDevices.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
@@ -2026,7 +2105,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     }
                   }}
                   className="form-select"
-                  style={{ fontSize: '11px', padding: '4px 8px', maxWidth: '180px' }}
+                  style={{ fontSize: '11px', padding: '4px 8px', maxWidth: '170px' }}
                   title="Selecionar dispositivo de entrada de áudio desta reunião"
                 >
                   {audioDevices.map((d, idx) => (
@@ -2038,7 +2117,7 @@ RTF: ${backendChunkStats.rtf || 0}
               </div>
             )}
 
-            {/* Botão de abrir em nova aba para isolar salas */}
+            {/* Abrir em nova aba */}
             <button
               type="button"
               onClick={() => {
@@ -2046,366 +2125,40 @@ RTF: ${backendChunkStats.rtf || 0}
                 window.open(url, '_blank');
               }}
               className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '6px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-              title="Abrir esta reunião em janela/aba separada para gravação paralela"
+              style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              title="Abrir esta reunião em janela/aba separada"
             >
               <ExternalLink size={13} />
-              Abrir em Nova Aba
-            </button>
-          </div>
-        </div>
-
-        {/* Barra de Diagnóstico em Tempo Real (PARTE 4 & 9) */}
-        <div className="live-diagnostic-bar" style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '6px 20px',
-          background: 'rgba(15, 23, 42, 0.92)',
-          borderBottom: '1px solid var(--border-color)',
-          fontSize: '11px',
-          flexWrap: 'wrap',
-          gap: '10px'
-        }}>
-          {/* Indicadores Separados (PARTE 4) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
-            {/* 1. Microfone */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Microfone:</span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontWeight: 600,
-                color: audioStatus === 'active' && !isMuted ? '#10b981' : isMuted ? '#eab308' : audioStatus === 'requesting' ? '#38bdf8' : '#ef4444'
-              }}>
-                <span style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: audioStatus === 'active' && !isMuted ? '#10b981' : isMuted ? '#eab308' : audioStatus === 'requesting' ? '#38bdf8' : '#ef4444'
-                }}></span>
-                {audioStatus === 'active' && !isMuted ? 'Conectado' : isMuted ? 'Silenciado' : audioStatus === 'denied' ? 'Permissão Negada' : audioStatus === 'requesting' ? 'Conectando...' : 'Desconectado'}
-              </span>
-            </div>
-
-            {/* 2. Sinal Físico */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Sinal:</span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontWeight: 600,
-                color: audioLevel > 4 ? '#10b981' : '#94a3b8'
-              }}>
-                {audioLevel > 4 ? 'Detectado' : 'Sem sinal'}
-              </span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }} title={`Nível de sinal físico: ${audioLevel}%`}>
-                <div style={{ width: '36px', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${audioLevel}%`,
-                    height: '100%',
-                    background: audioLevel > 60 ? '#ef4444' : audioLevel > 20 ? '#10b981' : '#38bdf8',
-                    transition: 'width 0.08s ease'
-                  }}></div>
-                </div>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)', minWidth: '20px' }}>{audioLevel}%</span>
-              </div>
-            </div>
-
-            {/* 3. Câmera */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Câmera:</span>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontWeight: 600,
-                color: videoStatus === 'active' && !isCamOff ? '#10b981' : isCamOff || videoStatus === 'disabled' ? '#94a3b8' : '#ef4444'
-              }}>
-                <span style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: videoStatus === 'active' && !isCamOff ? '#10b981' : isCamOff || videoStatus === 'disabled' ? '#94a3b8' : '#ef4444'
-                }}></span>
-                {videoStatus === 'active' && !isCamOff ? 'Conectada' : isCamOff || videoStatus === 'disabled' ? 'Desligada' : videoStatus === 'denied' ? 'Sem Permissão' : 'Indisponível'}
-              </span>
-            </div>
-
-            {/* 4. Transcrição / Serviço */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Transcrição:</span>
-              {(() => {
-                const sInfo = getTranscriptionStatusInfo(transcriptionStatus);
-                return (
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontWeight: 600,
-                    color: sInfo.color
-                  }}>
-                    <span style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background: sInfo.dotColor
-                    }}></span>
-                    {sInfo.label}
-                  </span>
-                );
-              })()}
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>({transcription.length} carac.)</span>
-              {sttProvider === 'backend' && (
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '4px' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Chunks:</span>
-                  <span style={{ fontWeight: 600, color: '#38bdf8' }}>
-                    {backendChunkStats.chunksConfirmed || 0}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)' }}>/</span>
-                  <span style={{ color: 'var(--text-main)' }}>{backendChunkStats.chunksCaptured || 0}</span>
-                  {backendChunkStats.chunksPending > 0 && (
-                    <span style={{
-                      color: backendChunkStats.isDelayed ? '#ef4444' : '#f59e0b',
-                      fontWeight: 600,
-                      background: backendChunkStats.isDelayed ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                      padding: '1px 5px',
-                      borderRadius: '3px'
-                    }}>
-                      ({backendChunkStats.chunksPending} pendentes)
-                    </span>
-                  )}
-                  {backendChunkStats.lastProcessingTimeMs > 0 && (
-                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                      • {backendChunkStats.lastProcessingTimeMs}ms
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Botões de Ação na Barra */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Seletor Rápido de Provedor STT */}
-            <div style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: '6px', padding: '2px', gap: '2px' }} title="Alternar motor de transcrição">
-              <button
-                type="button"
-                onClick={() => handleSelectProvider('backend')}
-                style={{
-                  fontSize: '10.5px',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  background: sttProvider === 'backend' ? 'var(--primary-color)' : 'transparent',
-                  color: sttProvider === 'backend' ? '#ffffff' : 'var(--text-muted)'
-                }}
-                title="STT Backend via faster-whisper com chunks de áudio"
-              >
-                STT Backend {backendSttStatus.available ? '●' : '○'}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectProvider('browser')}
-                style={{
-                  fontSize: '10.5px',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  background: sttProvider === 'browser' ? 'var(--primary-color)' : 'transparent',
-                  color: sttProvider === 'browser' ? '#ffffff' : 'var(--text-muted)'
-                }}
-                title="Reconhecimento de voz nativo do navegador (Web Speech API)"
-              >
-                Navegador
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectProvider('manual')}
-                style={{
-                  fontSize: '10.5px',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  background: sttProvider === 'manual' ? 'var(--primary-color)' : 'transparent',
-                  color: sttProvider === 'manual' ? '#ffffff' : 'var(--text-muted)'
-                }}
-                title="Digitação e edição manual de texto"
-              >
-                Manual
-              </button>
-            </div>
-
-            {/* Reconectar Microfone se desconectado */}
-            {(transcriptionStatus === 'mic_disconnected' || audioStatus === 'ended') && (
-              <button
-                type="button"
-                onClick={() => {
-                  stopMediaAndRecognition();
-                  setTimeout(() => startMediaAndRecognition(), 300);
-                }}
-                className="btn btn-warning"
-                style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600, background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px' }}
-                title="Tentar restabelecer conexão com o microfone"
-              >
-                <RefreshCw size={11} />
-                Reconectar Microfone
-              </button>
-            )}
-
-            {/* Ativar ou Tentar Novamente */}
-            {(transcriptionStatus === 'service_unavailable' || transcriptionStatus === 'browser_blocked' || transcriptionStatus === 'error') ? (
-              <button
-                type="button"
-                onClick={handleActivateTranscription}
-                className="btn btn-secondary"
-                style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: 'var(--primary-color)', color: 'var(--primary-color)', fontWeight: 600 }}
-                title="Tentar reiniciar o reconhecimento de voz"
-              >
-                <RefreshCw size={11} />
-                Tentar Novamente
-              </button>
-            ) : !['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active', 'mic_disconnected'].includes(transcriptionStatus) && isRecording ? null : !['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active', 'mic_disconnected'].includes(transcriptionStatus) ? (
-              <button
-                type="button"
-                onClick={handleActivateTranscription}
-                className="btn btn-primary"
-                style={{ fontSize: '10.5px', padding: '3px 9px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}
-                title="Iniciar reconhecimento de voz com gesto explícito de clique"
-              >
-                <Play size={10} fill="#ffffff" />
-                Ativar Transcrição
-              </button>
-            ) : null}
-
-            {/* Alternar Digitação Manual */}
-            <button
-              type="button"
-              onClick={() => handleSelectProvider(isManualEditMode ? (backendSttStatus.available ? 'backend' : 'browser') : 'manual')}
-              className="btn btn-secondary"
-              style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              title="Permite digitar notas e transcrição manualmente sem depender da Web Speech API"
-            >
-              <FileText size={11} />
-              {isManualEditMode ? 'Ver Texto' : 'Digitar Manualmente'}
+              Nova Aba
             </button>
 
-            {/* Alternar Painel de Diagnóstico Técnico */}
+            {/* Ajustes da Reunião (Modal Desacoplado) */}
             <button
               type="button"
-              onClick={() => setShowTechnicalDiagnostics(!showTechnicalDiagnostics)}
+              onClick={() => setShowSettingsModal(true)}
               className="btn btn-secondary"
-              style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-              title="Exibir métricas e diagnóstico técnico da transcrição"
+              style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              title="Ajustes de motor STT, modelo faster-whisper e vocabulário contextual"
             >
-              <Activity size={11} />
+              <Settings size={13} />
+              Ajustes
+            </button>
+
+            {/* Diagnóstico Técnico (Modal Desacoplado) */}
+            <button
+              type="button"
+              onClick={() => setShowTechnicalDiagnostics(true)}
+              className="btn btn-secondary"
+              style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+              title="Exibir métricas e diagnóstico técnico desacoplado"
+            >
+              <Activity size={13} />
               Diagnóstico
             </button>
-
-            {/* Ação de Reconexão se necessário */}
-            {(mediaPermission === 'denied' || mediaPermission === 'unavailable' || audioStatus === 'denied' || audioStatus === 'unavailable' || mediaError) && (
-              <button
-                type="button"
-                onClick={startMediaAndRecognition}
-                className="btn btn-secondary"
-                style={{ fontSize: '10.5px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', borderColor: 'var(--danger)', color: 'var(--danger)' }}
-              >
-                <RefreshCw size={11} />
-                Reconectar Mídia
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Card Expansível de Diagnóstico Técnico (PARTE 1, 9, 10) */}
-        {showTechnicalDiagnostics && (
-          <div style={{
-            padding: '12px 20px',
-            background: '#090e1a',
-            borderBottom: '1px solid var(--border-color)',
-            fontSize: '11px',
-            color: 'var(--text-muted)'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-main)' }}>
-                <Activity size={13} color="var(--primary-color)" />
-                <span>Painel de Diagnóstico Técnico da Transcrição & Mídia</span>
-              </div>
-              <button
-                type="button"
-                onClick={copyDiagnosticToClipboard}
-                className="btn btn-secondary"
-                style={{ fontSize: '10.5px', padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                title="Copiar relatório completo de diagnóstico para a área de transferência sem áudio bruto"
-              >
-                {copiedDiagnostic ? <Check size={11} color="#10b981" /> : <Activity size={11} />}
-                {copiedDiagnostic ? 'Diagnóstico Copiado!' : 'Copiar Diagnóstico'}
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '10px' }}>
-              <div><strong>Navegador:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.browser}</span></div>
-              <div><strong>Origem / Host:</strong> <code style={{ color: '#38bdf8' }}>{diagnosticInfo.origin || 'localhost'}</code></div>
-              <div><strong>Engine:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.engine}</span></div>
-              <div><strong>Idioma:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.lang}</span></div>
-              <div><strong>Sessão ID:</strong> <code style={{ color: '#38bdf8', fontSize: '10px' }}>{diagnosticInfo.activeSessionId ? diagnosticInfo.activeSessionId.slice(0, 18) + '...' : 'none'}</code></div>
-              <div><strong>start() Chamadas:</strong> <span style={{ color: 'var(--text-main)' }}>{diagnosticInfo.startCalledCount}</span></div>
-              <div><strong>Último Evento:</strong> <span style={{ color: '#10b981', fontWeight: 600 }}>{diagnosticInfo.lastEvent}</span> ({diagnosticInfo.lastEventTime || 'nenhum'})</div>
-              <div><strong>Sinal Microfone:</strong> <span style={{ color: audioLevel > 4 ? '#10b981' : '#f87171' }}>{audioLevel}% ({audioLevel > 4 ? 'Sinal detectado' : 'Sem sinal'})</span></div>
-              <div><strong>Trilha de Áudio:</strong> <span style={{ color: 'var(--text-main)', fontSize: '10px' }}>{diagnosticInfo.audioTrackState}</span></div>
-              <div>
-                <strong>STT Backend (faster-whisper):</strong>{' '}
-                <span style={{ color: backendSttStatus.available ? '#10b981' : '#f59e0b', fontWeight: 600 }}>
-                  {backendSttStatus.available
-                    ? `Disponível (${backendSttStatus.provider}, ${backendSttStatus.model})`
-                    : `Indisponível (${backendSttStatus.reason || 'ausente'})`}
-                </span>
-              </div>
-              <div>
-                <strong>Chunks Enviados:</strong>{' '}
-                <span style={{ color: 'var(--text-main)' }}>
-                  {backendChunkStats.chunkCount} {backendChunkStats.lastProcessingTimeMs ? `(${backendChunkStats.lastProcessingTimeMs}ms)` : ''}
-                </span>
-              </div>
-              {diagnosticInfo.lastException && (
-                <div style={{ color: '#f87171', gridColumn: '1 / -1' }}><strong>Exceção em start():</strong> {diagnosticInfo.lastException}</div>
-              )}
-              {diagnosticInfo.lastError && (
-                <div style={{ color: '#f87171', gridColumn: '1 / -1' }}><strong>Último Erro:</strong> {diagnosticInfo.lastError}</div>
-              )}
-            </div>
-
-            {/* Eventos da Web Speech API */}
-            <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '10px', fontWeight: 600 }}>Eventos da Web Speech API:</span>
-              {Object.entries(diagnosticInfo.eventsReceived || {}).map(([evtName, fired]) => (
-                <span
-                  key={evtName}
-                  style={{
-                    fontSize: '10px',
-                    padding: '1px 6px',
-                    borderRadius: '4px',
-                    background: fired ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                    color: fired ? '#10b981' : '#64748b',
-                    border: `1px solid ${fired ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`
-                  }}
-                >
-                  {evtName} {fired ? '✓' : '—'}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Notificação de Câmera Desconectada / Ocupada (Fallback Gracioso) */}
+        {/* Notificação de Câmera Desconectada / Ocupada */}
         {cameraNotice && (
           <div style={{
             display: 'flex',
@@ -2415,7 +2168,8 @@ RTF: ${backendChunkStats.rtf || 0}
             background: 'rgba(234, 179, 8, 0.12)',
             borderBottom: '1px solid rgba(234, 179, 8, 0.3)',
             color: '#fbbf24',
-            fontSize: '11.5px'
+            fontSize: '11.5px',
+            zIndex: 10
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Info size={14} />
@@ -2432,7 +2186,7 @@ RTF: ${backendChunkStats.rtf || 0}
           </div>
         )}
 
-        {/* Notificação de Erro Crítico de Mídia / Microfone */}
+        {/* Notificação de Erro de Mídia / Microfone */}
         {mediaError && (
           <div style={{
             display: 'flex',
@@ -2442,7 +2196,8 @@ RTF: ${backendChunkStats.rtf || 0}
             background: 'rgba(239, 68, 68, 0.15)',
             borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
             color: '#f87171',
-            fontSize: '11.5px'
+            fontSize: '11.5px',
+            zIndex: 10
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <AlertCircle size={14} />
@@ -2459,746 +2214,1425 @@ RTF: ${backendChunkStats.rtf || 0}
           </div>
         )}
 
-        {/* Layout da Sala de Reunião (Palco de Vídeo + Transcrição Lateral) */}
-        <div className="meeting-layout">
-          {/* Palco Principal */}
-          <div className="main-stage">
-            <div className="video-container">
-              <video
-                id="local-video"
-                ref={videoRef}
-                className="local-video"
-                autoPlay
-                playsInline
-                muted
+        {/* Notificação de Erro Geral */}
+        {error && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '6px 16px',
+            background: 'rgba(239, 68, 68, 0.15)',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
+            color: '#f87171',
+            fontSize: '11.5px',
+            zIndex: 10
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <AlertCircle size={14} />
+              <span>{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setError('')}
+              style={{ background: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: '13px' }}
+              title="Fechar aviso"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* =========================================================================
+            PALCO CENTRAL E SALA — VISUAL LIMPO TEAMS / GOOGLE MEET
+            ========================================================================= */}
+        <div style={{
+          position: 'relative',
+          flex: 1,
+          display: 'flex',
+          overflow: 'hidden',
+          background: '#070a13'
+        }}>
+          {/* Palco Principal de Vídeo / Participantes */}
+          <div style={{
+            flex: 1,
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            width: '100%',
+            height: '100%'
+          }}>
+            {/* Feed de Vídeo Local */}
+            <video
+              id="local-video"
+              ref={videoRef}
+              className="local-video"
+              autoPlay
+              playsInline
+              muted
+              style={{
+                display: isCamOff || videoStatus !== 'active' ? 'none' : 'block',
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                borderRadius: '12px'
+              }}
+            />
+
+            {/* Placeholder quando Câmera Desligada ou Indisponível */}
+            {(isCamOff || videoStatus !== 'active') && (
+              <div
+                id="cam-placeholder"
                 style={{
-                  display: isCamOff || videoStatus !== 'active' ? 'none' : 'block',
                   width: '100%',
                   height: '100%',
-                  objectFit: 'contain'
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'radial-gradient(ellipse at center, #0f172a 0%, #070a13 70%)',
+                  gap: '16px',
+                  padding: '20px',
+                  textAlign: 'center'
                 }}
-              ></video>
-
-              {(isCamOff || videoStatus !== 'active') && (
-                <div
-                  id="cam-placeholder"
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: '#090d16',
-                    borderRadius: '12px',
-                    gap: '14px',
-                    padding: '20px',
-                    textAlign: 'center'
-                  }}
-                >
-                  <div style={{
-                    position: 'relative',
-                    width: 90,
-                    height: 90,
-                    borderRadius: '50%',
-                    background: 'rgba(30, 41, 59, 0.8)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '2rem',
-                    fontWeight: 700,
-                    color: 'var(--primary-color)',
-                    border: '2px solid rgba(56, 189, 248, 0.3)',
-                    boxShadow: '0 0 24px rgba(56, 189, 248, 0.1)'
-                  }}>
-                    {(currentMeeting.DEPARTAMENTO || 'TOTVS').substring(0, 2).toUpperCase()}
-                    {audioStatus === 'active' && audioLevel > 15 && (
-                      <div style={{
-                        position: 'absolute',
-                        inset: -4,
-                        borderRadius: '50%',
-                        border: '2px solid #10b981',
-                        pointerEvents: 'none'
-                      }}></div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      {isCamOff ? 'Câmera desativada' : videoStatus === 'denied' ? 'Permissão de câmera não concedida' : 'Câmera não detectada'}
-                    </span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                      {audioStatus === 'active'
-                        ? 'Reunião em modo de voz • Microfone e transcrição funcionando normalmente'
-                        : audioStatus === 'muted'
-                        ? 'Microfone mutado'
-                        : 'Aguardando conexão do microfone...'}
-                    </span>
-                  </div>
-
-                  {audioStatus === 'active' && (
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '4px 10px',
-                        borderRadius: '20px',
-                        background: 'rgba(16, 185, 129, 0.1)',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                        fontSize: '11px',
-                        color: '#10b981'
-                      }}>
-                        <Mic size={12} />
-                        <span>Captação de voz ativa ({audioLevel}%)</span>
-                      </div>
-                      <div style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '4px 10px',
-                        borderRadius: '20px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        background: signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.15)' :
-                                    signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.15)' :
-                                    signalQuality === 'sem_fala' ? 'rgba(100, 116, 139, 0.15)' :
-                                    'rgba(16, 185, 129, 0.15)',
-                        border: `1px solid ${
-                                    signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.35)' :
-                                    signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.35)' :
-                                    signalQuality === 'sem_fala' ? 'rgba(100, 116, 139, 0.35)' :
-                                    'rgba(16, 185, 129, 0.35)'}`,
-                        color: signalQuality === 'saturado' ? '#ef4444' :
-                               signalQuality === 'baixo' ? '#f59e0b' :
-                               signalQuality === 'sem_fala' ? '#94a3b8' :
-                               '#10b981'
-                      }}>
-                        <span>
-                          {signalQuality === 'saturado' ? '⚠️ Áudio Saturado' :
-                           signalQuality === 'baixo' ? '⚠️ Sinal Insuficiente' :
-                           signalQuality === 'sem_fala' ? '🔇 Sem Fala Detectada' :
-                           '🎙️ Sinal Adequado'}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+              >
+                {/* Avatar com Animação de Pulso de Áudio */}
+                <div style={{
+                  position: 'relative',
+                  width: 100,
+                  height: 100,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '2.2rem',
+                  fontWeight: 800,
+                  color: 'var(--primary-color)',
+                  border: '2px solid rgba(56, 189, 248, 0.4)',
+                  boxShadow: audioLevel > 10
+                    ? '0 0 0 8px rgba(16, 185, 129, 0.2), 0 0 35px rgba(16, 185, 129, 0.45)'
+                    : '0 8px 24px rgba(0, 0, 0, 0.4)',
+                  transition: 'box-shadow 0.15s ease'
+                }}>
+                  {(currentMeeting.DEPARTAMENTO || 'TOTVS').substring(0, 2).toUpperCase()}
                 </div>
-              )}
 
-              <div className="video-overlay-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <span>Você ({currentMeeting.DEPARTAMENTO || 'TOTVS'})</span>
-                {isMuted && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 4px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }} title="Microfone mutado">
-                    <MicOff size={11} color="#f87171" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
+                    {isCamOff ? 'Câmera desligada' : videoStatus === 'denied' ? 'Permissão de câmera não concedida' : 'Câmera não detectada'}
                   </span>
-                )}
-                {isRecording && (
-                  <span style={{ fontSize: '11px', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', color: '#38bdf8', fontWeight: 600 }}>
-                    {formatTimer(durationSeconds)}
+                  <span style={{ fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '400px' }}>
+                    O áudio e a transcrição da reunião continuam ativos em segundo plano.
                   </span>
-                )}
+                </div>
+
+                {/* Indicador de Captação e Sinal */}
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    background: audioStatus === 'active' && !isMuted ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    border: `1px solid ${audioStatus === 'active' && !isMuted ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    color: audioStatus === 'active' && !isMuted ? '#10b981' : '#f87171'
+                  }}>
+                    {audioStatus === 'active' && !isMuted ? <Mic size={12} /> : <MicOff size={12} />}
+                    <span>{audioStatus === 'active' && !isMuted ? `Captação ativa (${audioLevel}%)` : 'Microfone silenciado'}</span>
+                  </div>
+
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '4px 12px',
+                    borderRadius: '20px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.15)' :
+                                signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.15)' :
+                                'rgba(16, 185, 129, 0.15)',
+                    border: `1px solid ${
+                                signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.35)' :
+                                signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.35)' :
+                                'rgba(16, 185, 129, 0.35)'}`,
+                    color: signalQuality === 'saturado' ? '#ef4444' :
+                           signalQuality === 'baixo' ? '#f59e0b' :
+                           '#10b981'
+                  }}>
+                    <span>
+                      {signalQuality === 'saturado' ? '⚠️ Áudio Saturado' :
+                       signalQuality === 'baixo' ? '⚠️ Sinal Baixo' :
+                       '🎙️ Sinal Adequado'}
+                    </span>
+                  </div>
+                </div>
               </div>
+            )}
+
+            {/* PÍLULA DISCRETA NO PALCO CENTRAL (IN-ROOM PILL) */}
+            <div style={{
+              position: 'absolute',
+              top: '18px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 20,
+              background: 'rgba(15, 23, 42, 0.88)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '30px',
+              padding: '6px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+              fontSize: '11.5px',
+              color: 'var(--text-main)',
+              whiteSpace: 'nowrap',
+              maxWidth: '90vw'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: isMuted ? '#f59e0b' :
+                              transcriptionStatus === 'receiving_speech' ? '#10b981' :
+                              transcriptionStatus === 'processing_chunk' ? '#38bdf8' :
+                              isRecording ? '#10b981' : '#64748b',
+                  boxShadow: isRecording && !isMuted ? '0 0 8px #10b981' : 'none'
+                }}></span>
+                <span style={{ fontWeight: 600 }}>
+                  {isMuted
+                    ? 'Microfone silenciado • Transcrição pausada'
+                    : currentMeeting.STATUS_MEETING === 'pausada'
+                    ? 'Reunião pausada'
+                    : sttProvider === 'manual'
+                    ? 'Registro manual ativo'
+                    : 'Transcrição ativa • A reunião está sendo registrada para gerar a ata'}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowTranscriptDrawer(!showTranscriptDrawer)}
+                style={{
+                  background: showTranscriptDrawer ? 'rgba(56, 189, 248, 0.25)' : 'rgba(56, 189, 248, 0.12)',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  color: '#38bdf8',
+                  borderRadius: '16px',
+                  padding: '3px 10px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  transition: 'all 0.15s ease'
+                }}
+                title={showTranscriptDrawer ? 'Ocultar painel lateral de transcrição' : 'Abrir painel lateral de transcrição'}
+              >
+                <FileText size={12} />
+                <span>{showTranscriptDrawer ? 'Ocultar transcrição' : 'Abrir transcrição'}</span>
+                {transcription.length > 0 && (
+                  <span style={{ opacity: 0.85, fontSize: '10px' }}>({transcription.length} carac.)</span>
+                )}
+              </button>
+
+              {!['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active'].includes(transcriptionStatus) && isRecording && (
+                <button
+                  type="button"
+                  onClick={handleActivateTranscription}
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid rgba(16, 185, 129, 0.4)',
+                    color: '#10b981',
+                    borderRadius: '16px',
+                    padding: '3px 10px',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                  title="Ativar reconhecimento de voz"
+                >
+                  <Play size={10} fill="#10b981" />
+                  <span>Ativar</span>
+                </button>
+              )}
             </div>
 
-            {/* Barra de Controles da Reunião */}
-            <div className="control-bar">
+            {/* Overlay com Nome do Participante (Canto Inferior Esquerdo) */}
+            <div style={{
+              position: 'absolute',
+              bottom: '18px',
+              left: '20px',
+              zIndex: 15,
+              background: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(8px)',
+              padding: '6px 14px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.08)'
+            }}>
+              <span>Você ({currentMeeting.DEPARTAMENTO || 'TOTVS'})</span>
+              {isMuted && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 5px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }} title="Microfone silenciado">
+                  <MicOff size={11} color="#f87171" />
+                </span>
+              )}
+            </div>
+
+            {/* =========================================================================
+                BARRA DE CONTROLES INFERIOR FLUTUANTE (TEAMS / MEET DOCK)
+                ========================================================================= */}
+            <div style={{
+              position: 'absolute',
+              bottom: '18px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 25,
+              background: 'rgba(15, 23, 42, 0.94)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              borderRadius: '24px',
+              padding: '6px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              boxShadow: '0 12px 36px rgba(0,0,0,0.55)',
+              maxWidth: '92vw',
+              flexWrap: 'wrap',
+              justifyContent: 'center'
+            }}>
+              {/* Botão Microfone */}
               <button
+                type="button"
                 className={`control-btn ${isMuted ? 'active' : ''}`}
                 onClick={toggleMute}
+                style={{ padding: '6px 12px', gap: '4px' }}
                 title={isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}
               >
-                <div className="icon-circle">
-                  {isMuted ? <MicOff size={20} color="#f87171" /> : <Mic size={20} />}
+                <div className="icon-circle" style={{
+                  width: 40,
+                  height: 40,
+                  background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                  borderColor: isMuted ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
+                }}>
+                  {isMuted ? <MicOff size={18} color="#f87171" /> : <Mic size={18} />}
                 </div>
-                <span>{isMuted ? 'Desmutar' : 'Mutar'}</span>
+                <span style={{ fontSize: '11px' }}>{isMuted ? 'Desmutar' : 'Mutar'}</span>
               </button>
 
+              {/* Botão Câmera */}
               <button
+                type="button"
                 className={`control-btn ${isCamOff ? 'active' : ''}`}
                 onClick={toggleCamera}
+                style={{ padding: '6px 12px', gap: '4px' }}
                 title={isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}
               >
-                <div className="icon-circle">
-                  {isCamOff ? <VideoOff size={20} color="#f87171" /> : <Video size={20} />}
+                <div className="icon-circle" style={{
+                  width: 40,
+                  height: 40,
+                  background: isCamOff ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                  borderColor: isCamOff ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
+                }}>
+                  {isCamOff ? <VideoOff size={18} color="#f87171" /> : <Video size={18} />}
                 </div>
-                <span>{isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}</span>
+                <span style={{ fontSize: '11px' }}>{isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}</span>
               </button>
 
-              {/* Botão de Pausar ou Retomar */}
+              {/* Botão Pausar / Retomar */}
               {currentMeeting.STATUS_MEETING === 'ao_vivo' ? (
                 <button
+                  type="button"
                   className="control-btn"
                   onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'pausar')}
-                  title="Pausar a reunião e gravação temporariamente"
+                  style={{ padding: '6px 12px', gap: '4px' }}
+                  title="Pausar a reunião e a gravação"
                 >
-                  <div className="icon-circle" style={{ background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }}>
-                    <Pause size={20} color="#eab308" />
+                  <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }}>
+                    <Pause size={18} color="#eab308" />
                   </div>
-                  <span>Pausar</span>
+                  <span style={{ fontSize: '11px' }}>Pausar</span>
                 </button>
               ) : currentMeeting.STATUS_MEETING === 'pausada' || currentMeeting.STATUS_MEETING === 'agendada' ? (
                 <button
+                  type="button"
                   className="control-btn"
                   onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'iniciar')}
+                  style={{ padding: '6px 12px', gap: '4px' }}
                   title="Iniciar ou Retomar Reunião"
                 >
-                  <div className="icon-circle" style={{ background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
-                    <Play size={20} color="#10b981" />
+                  <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
+                    <Play size={18} color="#10b981" />
                   </div>
-                  <span>{currentMeeting.STATUS_MEETING === 'pausada' ? 'Retomar' : 'Iniciar'}</span>
+                  <span style={{ fontSize: '11px' }}>{currentMeeting.STATUS_MEETING === 'pausada' ? 'Retomar' : 'Iniciar'}</span>
                 </button>
               ) : null}
 
-              {/* Botão de Encerrar e Analisar */}
+              {/* Botão Gaveta de Transcrição */}
               <button
+                type="button"
+                className={`control-btn ${showTranscriptDrawer ? 'active' : ''}`}
+                onClick={() => setShowTranscriptDrawer(!showTranscriptDrawer)}
+                style={{ padding: '6px 12px', gap: '4px' }}
+                title="Abrir ou fechar painel lateral de transcrição"
+              >
+                <div className="icon-circle" style={{
+                  width: 40,
+                  height: 40,
+                  background: showTranscriptDrawer ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                  borderColor: showTranscriptDrawer ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)'
+                }}>
+                  <FileText size={18} color={showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)'} />
+                </div>
+                <span style={{ fontSize: '11px', color: showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)' }}>
+                  Transcrição
+                </span>
+              </button>
+
+              {/* Botão Ajustes */}
+              <button
+                type="button"
+                className="control-btn"
+                onClick={() => setShowSettingsModal(true)}
+                style={{ padding: '6px 12px', gap: '4px' }}
+                title="Ajustes de motor STT, modelo e parâmetros da reunião"
+              >
+                <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                  <Settings size={18} />
+                </div>
+                <span style={{ fontSize: '11px' }}>Ajustes</span>
+              </button>
+
+              {/* Botão Diagnóstico */}
+              <button
+                type="button"
+                className="control-btn"
+                onClick={() => setShowTechnicalDiagnostics(true)}
+                style={{ padding: '6px 12px', gap: '4px' }}
+                title="Abrir painel técnico desacoplado de diagnóstico"
+              >
+                <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                  <Activity size={18} />
+                </div>
+                <span style={{ fontSize: '11px' }}>Diagnóstico</span>
+              </button>
+
+              {/* Botão Finalizar e Gerar Atas */}
+              <button
+                type="button"
                 className="control-btn control-btn-leave"
                 onClick={handleFinishAndAnalyze}
-                title="Encerrar reunião e sintetizar plano de ação e ata com IA"
+                style={{ padding: '6px 14px', gap: '4px' }}
+                title="Encerrar reunião e sintetizar ata operacional e executiva com IA"
               >
-                <div className="icon-circle leave-icon-circle">
-                  <Square size={18} fill="#ffffff" color="#ffffff" />
+                <div className="icon-circle leave-icon-circle" style={{ width: 40, height: 40, background: '#ef4444', borderColor: '#ef4444' }}>
+                  <Square size={16} fill="#ffffff" color="#ffffff" />
                 </div>
-                <span style={{ fontWeight: 600 }}>Finalizar & Gerar Atas</span>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#f87171' }}>Finalizar</span>
               </button>
             </div>
           </div>
 
-          {/* Painel Lateral com Transcrição Isolada */}
-          <div className="ai-sidebar">
-            <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Sparkles size={18} color="var(--primary-color)" />
-                <h2 style={{ fontSize: '1rem', margin: 0 }}>Proton Flow AI</h2>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {(() => {
-                  const statusInfo = getTranscriptionStatusInfo(transcriptionStatus);
-                  return (
-                    <span
-                      className="badge"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '5px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        borderColor: statusInfo.dotColor,
-                        color: statusInfo.color,
-                        fontSize: '11px',
-                        padding: '2px 8px'
-                      }}
-                    >
-                      <span
-                        style={{
-                          width: '6px',
-                          height: '6px',
-                          borderRadius: '50%',
-                          background: statusInfo.dotColor,
-                          boxShadow: isRecording ? `0 0 6px ${statusInfo.dotColor}` : 'none'
-                        }}
-                      />
-                      {statusInfo.label}
-                    </span>
-                  );
-                })()}
-                {isRecording && currentMeeting.DEPARTAMENTO && (
-                  <span
-                    className="badge"
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.15)',
-                      color: 'var(--danger)',
-                      borderColor: 'rgba(239, 68, 68, 0.4)',
-                      fontSize: '10.5px'
-                    }}
-                  >
-                    {currentMeeting.DEPARTAMENTO}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              {error && (
-                <div style={{ padding: '8px 12px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)', borderRadius: '6px', fontSize: '12px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <AlertCircle size={14} style={{ flexShrink: 0 }} />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {/* Seletor de Provedor de Transcrição (PARTE 7, 11) */}
+          {/* =========================================================================
+              SLIDE-OVER DRAWER DE TRANSCRIÇÃO (RETRÁTIL — FECHADO POR PADRÃO)
+              ========================================================================= */}
+          {showTranscriptDrawer && (
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: '430px',
+              maxWidth: '92vw',
+              background: '#0d1322',
+              borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '-12px 0 40px rgba(0,0,0,0.65)',
+              zIndex: 35,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden'
+            }}>
+              {/* Header do Drawer */}
               <div style={{
-                marginBottom: '10px',
-                padding: '8px',
-                background: 'var(--panel-hover)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
+                padding: '14px 18px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(15, 23, 42, 0.7)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sparkles size={16} color="var(--primary-color)" />
+                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Transcrição da Reunião
+                  </h3>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    ({transcription.length} carac.)
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTranscriptDrawer(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: '4px',
+                    borderRadius: '4px'
+                  }}
+                  title="Fechar painel de transcrição"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Subheader / Ações e Filtro */}
+              <div style={{
+                padding: '10px 16px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '6px'
+                gap: '8px',
+                background: 'rgba(0, 0, 0, 0.2)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                  <span>Provedor de Transcrição:</span>
-                  <span style={{
-                    fontSize: '10px',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    fontWeight: 700,
-                    background: sttProvider === 'backend' ? (backendSttStatus.available ? 'rgba(16, 185, 129, 0.15)' : 'rgba(234, 179, 8, 0.15)') : sttProvider === 'browser' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(168, 85, 247, 0.15)',
-                    color: sttProvider === 'backend' ? (backendSttStatus.available ? '#10b981' : '#eab308') : sttProvider === 'browser' ? '#38bdf8' : '#c084fc',
-                    border: `1px solid ${sttProvider === 'backend' ? (backendSttStatus.available ? '#10b981' : '#eab308') : sttProvider === 'browser' ? '#38bdf8' : '#c084fc'}`
-                  }}>
-                    {sttProvider === 'backend' ? (backendSttStatus.available ? 'STT Backend Ativo (faster-whisper)' : 'STT Backend Indisponível') : sttProvider === 'browser' ? 'STT Navegador Ativo' : 'Digitação Manual'}
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectProvider('backend')}
-                    style={{
-                      fontSize: '11px',
-                      padding: '5px 4px',
-                      borderRadius: '6px',
-                      border: '1px solid',
-                      cursor: 'pointer',
-                      fontWeight: 600,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '2px',
-                      background: sttProvider === 'backend' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.04)',
-                      borderColor: sttProvider === 'backend' ? 'var(--primary-color)' : 'var(--border-color)',
-                      color: sttProvider === 'backend' ? '#ffffff' : 'var(--text-muted)'
-                    }}
-                    title="Processamento no servidor com modelo faster-whisper"
-                  >
-                    <span>🎙️ STT Backend</span>
-                    <span style={{ fontSize: '9px', opacity: 0.85 }}>faster-whisper</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectProvider('browser')}
-                    style={{
-                      fontSize: '11px',
-                      padding: '5px 4px',
-                      borderRadius: '6px',
-                      border: '1px solid',
-                      cursor: 'pointer',
-                      fontWeight: 600,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '2px',
-                      background: sttProvider === 'browser' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.04)',
-                      borderColor: sttProvider === 'browser' ? 'var(--primary-color)' : 'var(--border-color)',
-                      color: sttProvider === 'browser' ? '#ffffff' : 'var(--text-muted)'
-                    }}
-                    title="Reconhecimento de voz do navegador (Web Speech API)"
-                  >
-                    <span>🌐 Navegador</span>
-                    <span style={{ fontSize: '9px', opacity: 0.85 }}>Web Speech</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSelectProvider('manual')}
-                    style={{
-                      fontSize: '11px',
-                      padding: '5px 4px',
-                      borderRadius: '6px',
-                      border: '1px solid',
-                      cursor: 'pointer',
-                      fontWeight: 600,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '2px',
-                      background: sttProvider === 'manual' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.04)',
-                      borderColor: sttProvider === 'manual' ? 'var(--primary-color)' : 'var(--border-color)',
-                      color: sttProvider === 'manual' ? '#ffffff' : 'var(--text-muted)'
-                    }}
-                    title="Digitação manual sem motores de voz"
-                  >
-                    <span>✏️ Manual</span>
-                    <span style={{ fontSize: '9px', opacity: 0.85 }}>Digitar Notas</span>
-                  </button>
-                </div>
-
-                {/* Status específico do modo ativo */}
-                {sttProvider === 'backend' && (
-                  <div style={{
-                    fontSize: '10.5px',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    background: backendSttStatus.available ? 'rgba(16, 185, 129, 0.08)' : 'rgba(234, 179, 8, 0.1)',
-                    border: `1px solid ${backendSttStatus.available ? 'rgba(16, 185, 129, 0.25)' : 'rgba(234, 179, 8, 0.3)'}`,
-                    color: backendSttStatus.available ? '#34d399' : '#fbbf24',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '4px'
-                  }}>
-                    {backendSttStatus.available ? (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          <span>🎙️ Gravando áudio • <strong>{backendChunkStats.modelName || backendSttStatus.model_name || backendSttStatus.model || 'faster-whisper-small'}</strong> ({backendChunkStats.device ? backendChunkStats.device.toUpperCase() : (backendSttStatus.device ? backendSttStatus.device.toUpperCase() : 'CPU')} {backendChunkStats.computeType || backendSttStatus.compute_type || 'int8'}, pt-BR) • Perfil: <code style={{ fontSize: '9.5px', background: 'rgba(255,255,255,0.08)', padding: '1px 4px', borderRadius: '3px' }}>{backendChunkStats.hardwareProfile || backendSttStatus.hardware_profile || 'cpu_balanced'}</code> • Chunk #{backendChunkStats.chunkCount} (6s)</span>
-                          {backendChunkStats.rtf > 0 && (
-                            <span style={{
-                              fontSize: '9px',
-                              background: backendChunkStats.rtf <= 0.7 ? 'rgba(16, 185, 129, 0.15)' : backendChunkStats.rtf <= 1.0 ? 'rgba(234, 179, 8, 0.15)' : 'rgba(239, 68, 68, 0.2)',
-                              color: backendChunkStats.rtf <= 0.7 ? '#10b981' : backendChunkStats.rtf <= 1.0 ? '#f59e0b' : '#f87171',
-                              padding: '1px 5px',
-                              borderRadius: '3px',
-                              fontWeight: 600
-                            }}>
-                              RTF: {backendChunkStats.rtf} ({backendChunkStats.rtf <= 0.7 ? 'Tempo real saudável' : backendChunkStats.rtf <= 1.0 ? 'Margem aceitável' : 'Risco de atraso'})
-                            </span>
-                          )}
-                          {backendChunkStats.isDelayed && (
-                            <span style={{ fontSize: '9px', background: 'rgba(239, 68, 68, 0.25)', color: '#f87171', padding: '1px 6px', borderRadius: '3px', fontWeight: 700 }}>
-                              ⚠️ Processamento atrasado ({backendChunkStats.queueSize} chunk(s) na fila)
-                            </span>
-                          )}
-                          {backendChunkStats.lowConfidenceSegments > 0 && (
-                            <span style={{ fontSize: '9px', background: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', padding: '1px 5px', borderRadius: '3px', fontWeight: 600 }}>
-                              ⚠️ Baixa confiança neste trecho / Revisão recomendada
-                            </span>
-                          )}
-                        </div>
-                        {backendChunkStats.lastProcessingTimeMs > 0 && (
-                          <span style={{ fontSize: '9.5px', color: '#94a3b8' }}>
-                            Proc: {backendChunkStats.lastProcessingTimeMs}ms{backendSttStatus.memory_usage_mb ? ` • Mem: ${backendSttStatus.memory_usage_mb}MB` : ''}
-                          </span>
-                        )}
-                      </>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
-                        <span>Fallback Backend STT: faster-whisper indisponível ({backendSttStatus.reason || 'não instalado'}).</span>
-                        <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
-                          <button
-                            type="button"
-                            onClick={() => handleSelectProvider('browser')}
-                            className="btn btn-secondary"
-                            style={{ fontSize: '10px', padding: '2px 6px', color: '#38bdf8', borderColor: '#38bdf8' }}
-                          >
-                            Usar Navegador
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSelectProvider('manual')}
-                            className="btn btn-secondary"
-                            style={{ fontSize: '10px', padding: '2px 6px' }}
-                          >
-                            Digitar Manualmente
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                  {/* Alternador Normalizado / Bruto */}
+                  <div style={{ display: 'inline-flex', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)', fontSize: '10px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setTranscriptViewMode('normalized')}
+                      style={{
+                        padding: '3px 8px',
+                        border: 'none',
+                        background: transcriptViewMode === 'normalized' ? 'var(--primary-color)' : 'transparent',
+                        color: transcriptViewMode === 'normalized' ? '#fff' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                      title="Texto consolidado, deduplicado e limpo"
+                    >
+                      Normalizado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTranscriptViewMode('raw')}
+                      style={{
+                        padding: '3px 8px',
+                        border: 'none',
+                        background: transcriptViewMode === 'raw' ? 'var(--primary-color)' : 'transparent',
+                        color: transcriptViewMode === 'raw' ? '#fff' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: 600
+                      }}
+                      title="Texto bruto original do Whisper para auditoria (sem correções)"
+                    >
+                      Bruto (Auditoria)
+                    </button>
                   </div>
-                )}
 
-                {sttProvider === 'browser' && (
-                  <div style={{
-                    fontSize: '10.5px',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    background: 'rgba(56, 189, 248, 0.08)',
-                    border: '1px solid rgba(56, 189, 248, 0.25)',
-                    color: '#38bdf8',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}>
-                    <span>Ouvindo microfone • Reconhecimento nativo do navegador</span>
-                    {backendSttStatus.available && (
-                      <button
-                        type="button"
-                        onClick={() => handleSelectProvider('backend')}
-                        style={{ background: 'transparent', border: 'none', color: '#34d399', fontSize: '10px', cursor: 'pointer', textDecoration: 'underline' }}
-                      >
-                        Alternar para STT Backend
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {sttProvider === 'manual' && (
-                  <div style={{
-                    fontSize: '10.5px',
-                    padding: '4px 8px',
-                    borderRadius: '4px',
-                    background: 'rgba(168, 85, 247, 0.08)',
-                    border: '1px solid rgba(168, 85, 247, 0.25)',
-                    color: '#c084fc'
-                  }}>
-                    <span>Modo manual ativo • Digite e edite o texto da ata diretamente</span>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h3 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
-                      Transcrição ({transcription.length} carac.)
-                    </h3>
-                    <div style={{ display: 'inline-flex', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)', fontSize: '10px' }}>
-                      <button
-                        type="button"
-                        onClick={() => setTranscriptViewMode('normalized')}
-                        style={{
-                          padding: '2px 6px',
-                          border: 'none',
-                          background: transcriptViewMode === 'normalized' ? 'var(--primary-color)' : 'transparent',
-                          color: transcriptViewMode === 'normalized' ? '#fff' : 'var(--text-muted)',
-                          cursor: 'pointer',
-                          fontWeight: 600
-                        }}
-                        title="Texto consolidado, deduplicado e limpo"
-                      >
-                        Normalizado
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setTranscriptViewMode('raw')}
-                        style={{
-                          padding: '2px 6px',
-                          border: 'none',
-                          background: transcriptViewMode === 'raw' ? 'var(--primary-color)' : 'transparent',
-                          color: transcriptViewMode === 'raw' ? '#fff' : 'var(--text-muted)',
-                          cursor: 'pointer',
-                          fontWeight: 600
-                        }}
-                        title="Texto bruto original do Whisper para auditoria"
-                      >
-                        Bruto (Auditoria)
-                      </button>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    {(currentMeeting?.IS_REPROCESSED || reprocessSuccess) && (
-                      <span style={{
-                        fontSize: '9.5px',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        background: 'rgba(16, 185, 129, 0.15)',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                        color: '#34d399',
-                        fontWeight: 600,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '3px'
-                      }}>
-                        ✨ Transcrição refinada em pós-processamento
-                      </span>
-                    )}
+                  {/* Refinamento e Status */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {!isRecording && activeMeetingId && (
                       <button
                         type="button"
                         onClick={handleReprocessTranscript}
                         disabled={reprocessing}
                         className="btn btn-secondary"
-                        style={{
-                          fontSize: '10px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '3px'
-                        }}
-                        title="Executa reprocessamento de alta precisão com reconciliação de bordas e glossário auditável"
+                        style={{ fontSize: '10px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                        title="Executa reprocessamento de alta precisão com concatenação de áudio e beam search 5"
                       >
                         <RefreshCw size={10} className={reprocessing ? 'spin' : ''} />
-                        {reprocessing ? 'Refinando...' : 'Refinar Transcrição'}
+                        {reprocessing ? 'Refinando...' : 'Refinar'}
                       </button>
                     )}
-                    {syncStatus === 'saving' && (
-                      <span style={{ color: '#eab308' }}>Salvando...</span>
-                    )}
-                    {syncStatus === 'synced' && (
-                      <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                        <Check size={11} /> Salvo no servidor
-                      </span>
-                    )}
-                    {syncStatus === 'unsaved' && (
-                      <span style={{ color: '#f87171' }}>Rascunho local</span>
-                    )}
+
+                    {reprocessSuccess && <span style={{ color: '#10b981', fontSize: '10.5px' }}>✨ {reprocessSuccess}</span>}
+                    {syncStatus === 'saving' && <span style={{ color: '#eab308', fontSize: '10.5px' }}>Salvando...</span>}
+                    {syncStatus === 'synced' && <span style={{ color: '#10b981', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '2px' }}><Check size={11} /> Salvo</span>}
+                    {syncStatus === 'unsaved' && <span style={{ color: '#f87171', fontSize: '10.5px' }}>Rascunho local</span>}
                   </div>
                 </div>
 
-                <div
-                  className="transcription-live"
-                  ref={scrollRef}
-                  style={{
-                    flex: 1,
-                    maxHeight: 'none',
-                    height: 'auto',
-                    overflowY: 'auto',
-                    padding: '12px',
-                    borderRadius: '8px',
-                    background: 'var(--panel-hover)',
-                    border: '1px solid var(--border-color)',
-                    fontSize: '13px',
-                    lineHeight: '1.6'
-                  }}
-                >
-                  {isManualEditMode ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '200px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', color: '#38bdf8' }}>
-                        <span>Modo de Digitação / Edição Manual</span>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Digite ou cole as notas da reunião</span>
-                      </div>
-                      <textarea
-                        value={transcription}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setTranscription(val);
-                          finalTranscriptRef.current = val;
-                          setSyncStatus('unsaved');
-                        }}
-                        placeholder="Digite aqui as notas, falas ou pauta da reunião..."
-                        style={{
-                          flex: 1,
-                          width: '100%',
-                          minHeight: '180px',
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: '6px',
-                          padding: '10px',
-                          color: 'var(--text-main)',
-                          fontSize: '13px',
-                          lineHeight: '1.6',
-                          resize: 'none',
-                          outline: 'none',
-                          fontFamily: 'inherit'
-                        }}
-                      />
-                    </div>
-                  ) : (transcription.trim() || transcriptRaw.trim()) ? (
-                    <div>
-                      {transcriptViewMode === 'raw' ? (
-                        <div style={{ marginBottom: '6px', fontSize: '10.5px', color: '#94a3b8', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <span>🔍 Visualizando transcrição bruta do Whisper para auditoria (imutável, sem correções aplicadas)</span>
-                        </div>
-                      ) : (
-                        backendChunkStats.glossaryCorrectionsCount > 0 && (
-                          <div style={{ marginBottom: '6px', fontSize: '10.5px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span>✨ {backendChunkStats.glossaryCorrectionsCount} ajuste(s) de termos corporativos aplicado(s) com evidência fonética. Clique em "Bruto (Auditoria)" para ver o texto original.</span>
-                          </div>
-                        )
-                      )}
-                      <span style={{ whiteSpace: 'pre-wrap' }}>
-                        {transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription)}
-                      </span>
-                      {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
-                    </div>
-                  ) : (
-                    <div style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      height: '100%',
-                      minHeight: '180px',
-                      textAlign: 'center',
-                      gap: '12px',
-                      padding: '20px',
-                      color: 'var(--text-muted)'
-                    }}>
-                      <div style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: getTranscriptionStatusInfo(transcriptionStatus).dotColor,
-                        boxShadow: `0 0 8px ${getTranscriptionStatusInfo(transcriptionStatus).dotColor}`
-                      }} />
-                      <p style={{ margin: 0, fontSize: '12px', maxWidth: '320px', lineHeight: 1.5 }}>
-                        {getEmptyMessage(transcriptionStatus, currentMeeting.TITULO_REUNIAO)}
-                      </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        {(transcriptionStatus === 'service_unavailable' || transcriptionStatus === 'browser_blocked' || transcriptionStatus === 'error') ? (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); startSpeechRecognition(true); }}
-                            className="btn btn-secondary"
-                            style={{
-                              fontSize: '11px',
-                              padding: '6px 12px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              borderColor: 'var(--primary-color)',
-                              color: 'var(--primary-color)'
-                            }}
-                          >
-                            <RefreshCw size={12} />
-                            Tentar Novamente
-                          </button>
-                        ) : transcriptionStatus !== 'listening' && transcriptionStatus !== 'receiving_speech' ? (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); startSpeechRecognition(true); }}
-                            className="btn btn-secondary"
-                            style={{
-                              fontSize: '11px',
-                              padding: '6px 12px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              borderColor: 'var(--primary-color)',
-                              color: 'var(--primary-color)'
-                            }}
-                          >
-                            <Play size={12} />
-                            Ativar Transcrição
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => setIsManualEditMode(true)}
-                          className="btn btn-secondary"
-                          style={{
-                            fontSize: '11px',
-                            padding: '6px 12px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          <FileText size={12} />
-                          Digitar Manualmente
-                        </button>
-                      </div>
-                    </div>
+                {/* Campo de Busca na Transcrição */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '6px',
+                  padding: '4px 8px',
+                  gap: '6px'
+                }}>
+                  <Search size={12} color="var(--text-muted)" />
+                  <input
+                    type="text"
+                    value={transcriptSearchQuery}
+                    onChange={(e) => setTranscriptSearchQuery(e.target.value)}
+                    placeholder="Pesquisar termos na transcrição..."
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-main)',
+                      fontSize: '11px',
+                      outline: 'none',
+                      width: '100%'
+                    }}
+                  />
+                  {transcriptSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setTranscriptSearchQuery('')}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px' }}
+                    >
+                      ✕
+                    </button>
                   )}
                 </div>
               </div>
 
-              {/* Ações da Transcrição */}
-              <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+              {/* Corpo da Transcrição */}
+              <div
+                ref={scrollRef}
+                style={{
+                  flex: 1,
+                  overflowY: 'auto',
+                  padding: '16px',
+                  fontSize: '13px',
+                  lineHeight: '1.65',
+                  background: 'rgba(0, 0, 0, 0.15)'
+                }}
+              >
+                {isManualEditMode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', color: '#38bdf8' }}>
+                      <span>Modo de Edição / Digitação Manual</span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Digite ou cole as notas da reunião</span>
+                    </div>
+                    <textarea
+                      value={transcription}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTranscription(val);
+                        finalTranscriptRef.current = val;
+                        setSyncStatus('unsaved');
+                      }}
+                      placeholder="Digite aqui as notas ou a pauta da reunião..."
+                      style={{
+                        flex: 1,
+                        width: '100%',
+                        minHeight: '260px',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '6px',
+                        padding: '12px',
+                        color: 'var(--text-main)',
+                        fontSize: '13px',
+                        lineHeight: '1.6',
+                        resize: 'none',
+                        outline: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+                  </div>
+                ) : (transcription.trim() || transcriptRaw.trim()) ? (
+                  <div>
+                    {transcriptViewMode === 'raw' ? (
+                      <div style={{ marginBottom: '8px', fontSize: '10.5px', color: '#94a3b8', fontStyle: 'italic' }}>
+                        🔍 Visualizando transcrição bruta do Whisper para auditoria (imutável)
+                      </div>
+                    ) : (
+                      backendChunkStats.glossaryCorrectionsCount > 0 && (
+                        <div style={{ marginBottom: '8px', fontSize: '10.5px', color: '#38bdf8' }}>
+                          ✨ {backendChunkStats.glossaryCorrectionsCount} ajuste(s) de termos corporativos aplicado(s) com evidência fonética.
+                        </div>
+                      )
+                    )}
+
+                    <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-main)' }}>
+                      {(() => {
+                        const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
+                        if (!transcriptSearchQuery.trim()) {
+                          return text;
+                        }
+                        const parts = text.split(new RegExp(`(${transcriptSearchQuery.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
+                        return parts.map((part, i) =>
+                          part.toLowerCase() === transcriptSearchQuery.toLowerCase() ? (
+                            <mark key={i} style={{ background: '#f59e0b', color: '#000', borderRadius: '2px', padding: '1px 3px' }}>
+                              {part}
+                            </mark>
+                          ) : (
+                            part
+                          )
+                        );
+                      })()}
+                    </div>
+                    {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
+                  </div>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    minHeight: '220px',
+                    textAlign: 'center',
+                    gap: '12px',
+                    padding: '24px',
+                    color: 'var(--text-muted)'
+                  }}>
+                    <div style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: getTranscriptionStatusInfo(transcriptionStatus).dotColor,
+                      boxShadow: `0 0 8px ${getTranscriptionStatusInfo(transcriptionStatus).dotColor}`
+                    }} />
+                    <p style={{ margin: 0, fontSize: '12.5px', maxWidth: '300px', lineHeight: 1.5 }}>
+                      {getEmptyMessage(transcriptionStatus, currentMeeting.TITULO_REUNIAO)}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => setIsManualEditMode(true)}
+                        className="btn btn-secondary"
+                        style={{ fontSize: '11px', padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      >
+                        <FileText size={12} />
+                        Digitar Manualmente
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer do Drawer */}
+              <div style={{
+                padding: '12px 16px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                display: 'flex',
+                gap: '8px',
+                background: 'rgba(15, 23, 42, 0.8)'
+              }}>
                 <button
                   type="button"
-                  onClick={() => saveTranscriptToBackend(transcription)}
+                  onClick={() => {
+                    const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
+                    if (navigator.clipboard && text) {
+                      navigator.clipboard.writeText(text);
+                    }
+                  }}
                   className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '11.5px', padding: '6px' }}
+                  style={{ flex: 1, fontSize: '11px', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                 >
-                  Salvar Rascunho
+                  <Copy size={12} />
+                  Copiar Texto
                 </button>
+
                 <button
                   type="button"
-                  onClick={handleFinishAndAnalyze}
-                  className="btn btn-primary"
-                  style={{ flex: 2, fontSize: '11.5px', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  onClick={() => setIsManualEditMode(!isManualEditMode)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '11px', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
                 >
-                  <FileText size={13} />
-                  Sair e Gerar Resumo IA
+                  <FileText size={12} />
+                  {isManualEditMode ? 'Ver Texto Voz' : 'Editar Manual'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* =========================================================================
+            MODAL DE DIAGNÓSTICO TÉCNICO DESACOPLADO (3 BLOCOS)
+            ========================================================================= */}
+        {showTechnicalDiagnostics && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}>
+            <div style={{
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '14px',
+              width: '100%',
+              maxWidth: '720px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7)',
+              overflow: 'hidden'
+            }}>
+              {/* Modal Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(255, 255, 255, 0.03)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Activity size={18} color="var(--primary-color)" />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Painel de Diagnóstico Técnico — Mídia & STT
+                  </h3>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={copyDiagnosticToClipboard}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '11px', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  >
+                    {copiedDiagnostic ? <Check size={12} color="#10b981" /> : <Copy size={12} />}
+                    {copiedDiagnostic ? 'Copiado!' : 'Copiar Relatório'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowTechnicalDiagnostics(false)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body: 3 Blocos Estruturados */}
+              <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '12px' }}>
+                {/* BLOCO 1: CONEXÃO E MÍDIA */}
+                <div style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Mic size={14} />
+                    <span>Bloco 1 — Conexão e Mídia</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Microfone: </span>
+                      <strong style={{ color: audioStatus === 'active' && !isMuted ? '#10b981' : isMuted ? '#f59e0b' : '#ef4444' }}>
+                        {audioStatus === 'active' && !isMuted ? 'Conectado e Ativo' : isMuted ? 'Silenciado' : audioStatus}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Nível de VU Meter: </span>
+                      <strong style={{ color: audioLevel > 5 ? '#10b981' : '#94a3b8' }}>
+                        {audioLevel}% ({signalQuality})
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Câmera: </span>
+                      <strong>{videoStatus === 'active' && !isCamOff ? 'Conectada' : isCamOff ? 'Desligada pelo usuário' : videoStatus}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Permissões: </span>
+                      <strong>{mediaPermission}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Dispositivo Microfone: </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-main)' }}>{selectedAudioDeviceId ? 'Selecionado' : 'Padrão do Sistema'}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Trilha de Áudio: </span>
+                      <code style={{ fontSize: '10.5px', color: '#38bdf8' }}>{diagnosticInfo.audioTrackState || 'não iniciada'}</code>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BLOCO 2: TRANSCRIÇÃO E MOTOR STT */}
+                <div style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div style={{ fontWeight: 700, color: '#a78bfa', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles size={14} />
+                    <span>Bloco 2 — Transcrição & Motor STT</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Provedor Ativo: </span>
+                      <strong style={{ color: sttProvider === 'backend' ? '#10b981' : '#38bdf8' }}>
+                        {sttProvider === 'backend' ? 'Backend faster-whisper' : sttProvider === 'browser' ? 'Navegador Web Speech' : 'Manual'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Modelo faster-whisper: </span>
+                      <strong>{backendSttStatus.model || selectedModelSize} (CPU int8)</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Perfil de Hardware: </span>
+                      <code>{backendSttStatus.hardware_profile || 'cpu_balanced'}</code>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Latência Último Chunk: </span>
+                      <strong>{backendChunkStats.lastProcessingTimeMs || 0}ms</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Fator Tempo Real (RTF): </span>
+                      <strong style={{ color: backendChunkStats.rtf <= 0.7 ? '#10b981' : '#f59e0b' }}>
+                        {backendChunkStats.rtf || '0.00'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>VAD Threshold: </span>
+                      <span>{vadSensitivity} (Silero VAD)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BLOCO 3: SESSÃO E FILA DE UPLOAD */}
+                <div style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div style={{ fontWeight: 700, color: '#34d399', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Clock size={14} />
+                    <span>Bloco 3 — Sessão e Fila de Chunks</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>ID Reunião: </span>
+                      <code style={{ fontSize: '11px', color: '#38bdf8' }}>{currentMeeting.ID_MEETING}</code>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>ID Sessão STT: </span>
+                      <code style={{ fontSize: '10.5px' }}>{backendSessionIdRef.current ? backendSessionIdRef.current.slice(0, 16) + '...' : 'none'}</code>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Chunks Capturados: </span>
+                      <strong>{backendChunkStats.chunksCaptured || 0}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Chunks Confirmados: </span>
+                      <strong style={{ color: '#10b981' }}>{backendChunkStats.chunksConfirmed || 0}</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Fila Pendente: </span>
+                      <strong style={{ color: (chunkQueueRef.current?.length || 0) > 0 ? '#f59e0b' : '#94a3b8' }}>
+                        {chunkQueueRef.current?.length || backendChunkStats.chunksPending || 0}
+                      </strong>
+                    </div>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)' }}>Chunks Falhos: </span>
+                      <strong style={{ color: backendChunkStats.chunksFailed > 0 ? '#ef4444' : '#94a3b8' }}>
+                        {backendChunkStats.chunksFailed || 0}
+                      </strong>
+                    </div>
+                    {diagnosticInfo.lastError && (
+                      <div style={{ gridColumn: '1 / -1', color: '#f87171' }}>
+                        <strong>Último Erro:</strong> {diagnosticInfo.lastError}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div style={{
+                padding: '12px 20px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                background: 'rgba(255, 255, 255, 0.02)'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDiagnostics(false)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px', padding: '6px 16px' }}
+                >
+                  Fechar
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* =========================================================================
+            MODAL DE AJUSTES DA REUNIÃO (SETTINGS MODAL)
+            ========================================================================= */}
+        {showSettingsModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}>
+            <div style={{
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '14px',
+              width: '100%',
+              maxWidth: '640px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.7)',
+              overflow: 'hidden'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(255, 255, 255, 0.03)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Settings size={18} color="var(--primary-color)" />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Ajustes da Reunião & Transcrição
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px', fontSize: '12.5px' }}>
+                {/* 1. Provedor de Transcrição */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px', color: 'var(--text-main)' }}>
+                    Motor de Transcrição
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectProvider('backend')}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid',
+                        borderColor: sttProvider === 'backend' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.1)',
+                        background: sttProvider === 'backend' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                        color: sttProvider === 'backend' ? '#38bdf8' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <div>🎙️ Backend STT</div>
+                      <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px' }}>faster-whisper</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectProvider('browser')}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid',
+                        borderColor: sttProvider === 'browser' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.1)',
+                        background: sttProvider === 'browser' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                        color: sttProvider === 'browser' ? '#38bdf8' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <div>🌐 Navegador</div>
+                      <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px' }}>Web Speech API</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleSelectProvider('manual')}
+                      style={{
+                        padding: '10px 8px',
+                        borderRadius: '8px',
+                        border: '1px solid',
+                        borderColor: sttProvider === 'manual' ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.1)',
+                        background: sttProvider === 'manual' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                        color: sttProvider === 'manual' ? '#38bdf8' : 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '11.5px',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <div>✏️ Manual</div>
+                      <div style={{ fontSize: '10px', opacity: 0.8, marginTop: '2px' }}>Digitar notas</div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Modelo faster-whisper */}
+                {sttProvider === 'backend' && (
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px', color: 'var(--text-main)' }}>
+                      Modelo do faster-whisper
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchModel('small')}
+                        disabled={switchingModel}
+                        style={{
+                          padding: '10px',
+                          borderRadius: '8px',
+                          border: '1px solid',
+                          borderColor: selectedModelSize === 'small' ? '#10b981' : 'rgba(255, 255, 255, 0.1)',
+                          background: selectedModelSize === 'small' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                          color: selectedModelSize === 'small' ? '#10b981' : 'var(--text-main)',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: '12px' }}>⭐ small (Recomendado)</div>
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Máxima precisão em PT-BR (0% WER no benchmark corporativo)
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSwitchModel('base')}
+                        disabled={switchingModel}
+                        style={{
+                          padding: '10px',
+                          borderRadius: '8px',
+                          border: '1px solid',
+                          borderColor: selectedModelSize === 'base' ? '#10b981' : 'rgba(255, 255, 255, 0.1)',
+                          background: selectedModelSize === 'base' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                          color: selectedModelSize === 'base' ? '#10b981' : 'var(--text-main)',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, fontSize: '12px' }}>⚡ base (Mais Rápido)</div>
+                        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                          Menor consumo de CPU e RAM para reuniões simples
+                        </div>
+                      </button>
+                    </div>
+
+                    {switchingModel && (
+                      <div style={{ marginTop: '6px', fontSize: '11px', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <RefreshCw size={11} className="spin" />
+                        <span>Carregando novo modelo...</span>
+                      </div>
+                    )}
+                    {modelSwitchSuccess && (
+                      <div style={{ marginTop: '6px', fontSize: '11px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Check size={11} />
+                        <span>{modelSwitchSuccess}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. Dispositivo de Microfone */}
+                {audioDevices.length > 0 && (
+                  <div>
+                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px', color: 'var(--text-main)' }}>
+                      Microfone de Entrada
+                    </label>
+                    <select
+                      value={selectedAudioDeviceId}
+                      onChange={(e) => {
+                        setSelectedAudioDeviceId(e.target.value);
+                        if (isRecording) {
+                          stopMediaAndRecognition();
+                          setTimeout(() => startMediaAndRecognition(), 300);
+                        }
+                      }}
+                      className="form-select"
+                      style={{ width: '100%', fontSize: '12px', padding: '8px' }}
+                    >
+                      {audioDevices.map((d, idx) => (
+                        <option key={d.deviceId || idx} value={d.deviceId}>
+                          {d.label || `Microfone ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* 4. Sensibilidade do VAD */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px', color: 'var(--text-main)' }}>
+                    Sensibilidade de Detecção de Voz (VAD Silero)
+                  </label>
+                  <select
+                    value={vadSensitivity}
+                    onChange={(e) => setVadSensitivity(e.target.value)}
+                    className="form-select"
+                    style={{ width: '100%', fontSize: '12px', padding: '8px' }}
+                  >
+                    <option value="0.30">Sensível (0.30) — Indicado para vozes baixas ou microfones distantes</option>
+                    <option value="0.38">Padrão Equilibrado (0.38) — Recomendado para salas de reunião</option>
+                    <option value="0.50">Conservador (0.50) — Indicado para ambientes com ruído constante</option>
+                  </select>
+                </div>
+
+                {/* 5. Vocabulário Contextual */}
+                <div>
+                  <label style={{ display: 'block', fontWeight: 700, marginBottom: '6px', color: 'var(--text-main)' }}>
+                    Termos Corporativos e Pauta de Contexto
+                  </label>
+                  <textarea
+                    value={customContextTerms}
+                    onChange={(e) => setCustomContextTerms(e.target.value)}
+                    rows={3}
+                    placeholder="Digite termos corporativos, siglas ou nomes de participantes separados por vírgula..."
+                    style={{
+                      width: '100%',
+                      background: 'rgba(0, 0, 0, 0.3)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      padding: '8px 10px',
+                      color: 'var(--text-main)',
+                      fontSize: '12px',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                    Estes termos orientam a inferência do Whisper sem forçar substituições fonéticas arbitrárias.
+                  </span>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '12px 20px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                background: 'rgba(255, 255, 255, 0.02)'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(false)}
+                  className="btn btn-primary"
+                  style={{ fontSize: '12px', padding: '6px 18px' }}
+                >
+                  Salvar e Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =========================================================================
+            MODAL DE CONFIRMAÇÃO DE ENCERRAMENTO (FINISH SUMMARY MODAL)
+            ========================================================================= */}
+        {showFinishConfirmModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px'
+          }}>
+            <div style={{
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '14px',
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
+              overflow: 'hidden'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(255, 255, 255, 0.03)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CheckCircle2 size={20} color="#10b981" />
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Finalizar Reunião & Gerar Atas
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFinishConfirmModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '12.5px' }}>
+                <p style={{ margin: 0, color: 'var(--text-muted)' }}>
+                  A reunião será encerrada e a transcrição consolidada será enviada para a geração da <strong>Ata Operacional</strong> e <strong>Ata Executiva</strong> com IA.
+                </p>
+
+                {/* Resumo da Sessão */}
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gap: '10px',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Duração Total</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#38bdf8' }}>{formatTimer(durationSeconds)}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Chunks Processados</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#10b981' }}>
+                      {backendChunkStats.chunksConfirmed || backendChunkStats.chunkCount || 0}
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Caracteres Transcritos</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                      {transcription.length} carac.
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Motor STT</span>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#a78bfa' }}>
+                      {sttProvider === 'backend' ? `faster-whisper (${selectedModelSize})` : sttProvider}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Checkbox de Refinamento */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  padding: '12px',
+                  borderRadius: '8px'
+                }}>
+                  <input
+                    type="checkbox"
+                    id="chk-refine"
+                    checked={refineBeforeFinish}
+                    onChange={(e) => setRefineBeforeFinish(e.target.checked)}
+                    style={{ marginTop: '2px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="chk-refine" style={{ cursor: 'pointer', fontSize: '12px', color: 'var(--text-main)', lineHeight: 1.4 }}>
+                    <strong>Refinar transcrição antes de gerar atas (Recomendado)</strong>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                      Executa reprocessamento de alta fidelidade com beam search 5 e concatenação de todo o áudio da sessão para garantir 0% WER em termos corporativos.
+                    </div>
+                  </label>
+                </div>
+
+                {/* Prévia da Transcrição */}
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: '6px', color: 'var(--text-muted)', fontSize: '11px' }}>
+                    Pré-visualização da Transcrição:
+                  </div>
+                  <div style={{
+                    maxHeight: '120px',
+                    overflowY: 'auto',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: '11.5px',
+                    lineHeight: '1.5',
+                    color: transcription ? 'var(--text-main)' : 'var(--text-muted)',
+                    fontStyle: transcription ? 'normal' : 'italic'
+                  }}>
+                    {transcription || 'Nenhuma fala transcrita até o momento. Digite notas manuais ou confirme o encerramento.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '14px 20px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px',
+                background: 'rgba(255, 255, 255, 0.02)'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setShowFinishConfirmModal(false)}
+                  className="btn btn-secondary"
+                  disabled={reprocessing}
+                  style={{ fontSize: '12px', padding: '7px 16px' }}
+                >
+                  Continuar na Reunião
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmFinishAndAnalyze}
+                  className="btn btn-primary"
+                  disabled={reprocessing}
+                  style={{ fontSize: '12px', padding: '7px 18px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {reprocessing && <RefreshCw size={13} className="spin" />}
+                  {reprocessing ? 'Refinando e Gerando Atas...' : 'Confirmar Encerramento e Gerar Atas'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

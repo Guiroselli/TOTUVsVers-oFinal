@@ -127,7 +127,7 @@ DEFAULT_CORPORATE_GLOSSARY: Dict[str, Dict[str, Any]] = {
         "canonical": "RH",
         "category": "departamento",
         "phonetic_variants": [
-            "erre aga", "r h", "r.h.", "recursos humanos"
+            "erre aga", "r h", "r.h.", "erreaga"
         ],
         "min_logprob_threshold": -0.75,
         "context_keywords": ["departamento pessoal", "folha", "atestado", "sesmt", "benefícios", "admissão"]
@@ -136,7 +136,7 @@ DEFAULT_CORPORATE_GLOSSARY: Dict[str, Dict[str, Any]] = {
         "canonical": "TI",
         "category": "departamento",
         "phonetic_variants": [
-            "te i", "t i", "t.i.", "tecnologia"
+            "te i", "t i", "t.i.", "tei"
         ],
         "min_logprob_threshold": -0.75,
         "context_keywords": ["deploy", "sprint", "desenvolvimento", "protheus", "fluig", "sistema", "cluster", "servidor"]

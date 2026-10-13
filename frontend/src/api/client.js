@@ -82,6 +82,31 @@ export const api = {
 
   getSttStatus: () => request('/api/stt/status'),
 
+  switchSttModel: (model) =>
+    request('/api/stt/model', {
+      method: 'POST',
+      body: JSON.stringify({ model }),
+    }),
+
+  reprocessLiveMeeting: (meetingId, reanalyze = true) =>
+    request(`/api/live/meetings/${meetingId}/reprocess?reanalyze=${reanalyze}`, {
+      method: 'POST',
+    }),
+
+  get: (endpoint) => request(endpoint.startsWith('/api') ? endpoint : `/api${endpoint}`),
+
+  post: (endpoint, body = {}) =>
+    request(endpoint.startsWith('/api') ? endpoint : `/api${endpoint}`, {
+      method: 'POST',
+      body: body instanceof FormData ? body : JSON.stringify(body),
+    }),
+
+  patch: (endpoint, body = {}) =>
+    request(endpoint.startsWith('/api') ? endpoint : `/api${endpoint}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
   uploadAudioChunk: async (meetingId, audioBlob, { sessionId, sequence, isFinal = false, mimeType = null, language = 'pt' } = {}) => {
     const formData = new FormData();
     formData.append('audio', audioBlob, `chunk_${sequence}.webm`);

@@ -477,6 +477,23 @@ def get_stt_status():
     return stt.get_status()
 
 
+@router.post("/stt/model")
+@router.post("/live/stt/model")
+def switch_stt_model(payload: Dict[str, Any]):
+    """
+    Permite alternar dinamicamente entre modelos (ex: 'small', 'base') de forma segura.
+    """
+    model_name = payload.get("model")
+    if not model_name:
+        raise HTTPException(status_code=400, detail="Campo 'model' é obrigatório (ex: 'small', 'base').")
+    stt = get_stt_service()
+    try:
+        res = stt.set_model_size(str(model_name).lower().strip())
+        return {"status": "success", "data": res}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/live/meetings/{meeting_id}/transcript/audio")
 async def upload_live_meeting_audio_chunk(
     meeting_id: str,
@@ -655,7 +672,8 @@ def reprocess_meeting_transcript(
         raw_text=raw_text,
         segments=meeting.get("CHUNKS_PROCESSADOS", []),
         existing_corrections=meeting.get("TRANSCRIPT_CORRECTIONS", []),
-        meeting_context=meeting_ctx
+        meeting_context=meeting_ctx,
+        meeting_id=meeting_id
     )
 
     updated_meeting = repo.reprocess_live_meeting(
@@ -679,6 +697,8 @@ def reprocess_meeting_transcript(
         "badge": "Transcrição refinada em pós-processamento",
         "raw_text": raw_text,
         "reprocessed_text": reprocess_res["reprocessed_text"],
+        "reprocessing_method": reprocess_res.get("reprocessing_method", "text_consolidation"),
+        "processing_time_ms": reprocess_res.get("processing_time_ms", 0.0),
         "glossary_audits": reprocess_res.get("glossary_audits", []),
         "meeting": updated_meeting
     }
@@ -687,11 +707,15 @@ def reprocess_meeting_transcript(
 @router.delete("/live/meetings/{meeting_id}")
 def delete_live_meeting(meeting_id: str):
     """
-    Exclui uma reunião do sistema.
+    Exclui uma reunião do sistema e limpa buffers em memória.
     """
     success = repo.delete_meeting(meeting_id)
     if not success:
         raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    try:
+        get_stt_service().clear_meeting_audio(meeting_id)
+    except Exception:
+        pass
     return {"status": "success", "message": f"Reunião {meeting_id} excluída com sucesso."}
 
 
