@@ -23,7 +23,8 @@ import {
   Info,
   Volume2,
   Activity,
-  Check
+  Check,
+  Trash2
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -1474,6 +1475,24 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
     } catch (err) {
       console.error(`Erro ao executar ${action} na reunião ${meetingId}:`, err);
       alert(`Erro na transição da reunião: ${err.message || err}`);
+    }
+  };
+
+  // Exclusão de reunião ao vivo com confirmação
+  const handleDeleteMeeting = async (meetingId, title) => {
+    if (!window.confirm(`Tem certeza que deseja excluir a reunião "${title || 'sem título'}"?`)) {
+      return;
+    }
+    try {
+      await api.deleteLiveMeeting(meetingId);
+      if (meetingId === activeMeetingId) {
+        stopMediaAndRecognition();
+        setActiveMeetingId(null);
+      }
+      await loadLiveMeetings();
+    } catch (err) {
+      console.error(`Erro ao excluir reunião ${meetingId}:`, err);
+      alert(`Erro ao excluir reunião: ${err.message || err}`);
     }
   };
 
@@ -3403,6 +3422,17 @@ Chunks de Áudio Processados: ${backendChunkStats.chunkCount} (último: ${backen
                     title="Abrir em aba independente"
                   >
                     <ExternalLink size={13} />
+                  </button>
+
+                  {/* Excluir reunião */}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMeeting(item.ID_MEETING, item.TITULO_REUNIAO || item.TITULO)}
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 8px', color: '#dc2626' }}
+                    title="Excluir reunião"
+                  >
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
