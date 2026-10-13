@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-10-13T13:36:41.252965",
+  "backup_path": "backend\\dataset_limpo.backup.20261013_133641.json",
+  "dataset_path": "backend\\dataset_limpo.json",
+  "total_records": 46,
+  "records_with_transcript": 43,
+  "records_empty_or_short_transcript": 14,
+  "records_with_resumo": 20,
+  "records_short_with_resumo": 9,
+  "total_tasks": 23,
+  "tasks_with_valid_evidence_literal": 11,
+  "tasks_with_invalid_evidence": 12,
+  "tasks_marked_valid_with_missing_evidence": 12,
+  "total_decisions_detected": 0,
+  "concrete_decisions": 0,
+  "generic_or_discussion_decisions": 0,
+  "total_placeholders_found": 4424,
+  "placeholder_breakdown": {
+    "PESSOA": 3192,
+    "EMPRESA": 1232
+  },
+  "total_totvs_recommendations": 27,
+  "totvs_recommendations_with_validated_pain": 25,
+  "totvs_recommendations_without_validated_pain": 2
+}

@@ -48,3 +48,17 @@ Thumbs.db
 *.zip
 pdf_test_outputs/
 cartboost-upsell/
+
+# Scratch & Form Helpers
+*_all_cases.txt
+all_cases.txt
+*_form_questions.json
+form_questions.json
+*_prefill*.txt
+prefill_url.txt
+clean_pm_url.txt
+*_full_url.txt
+test_*prefill*.py
+make_launcher.py
+check_partial.py
+abrir_formulario_*.html

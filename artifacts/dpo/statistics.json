@@ -1,0 +1,14 @@
+{
+  "source_csv": "C:\\Users\\lucas\\Downloads\\Proton Flow — Respostas das 50 situações - Form Responses 1.csv",
+  "total_situations": 50,
+  "valid_dpo_pairs": 14,
+  "train_samples": 11,
+  "validation_samples": 3,
+  "excluded_samples": 36,
+  "consensus_threshold": 0.75,
+  "overall_a_preference_pct": 88.0,
+  "exclusion_breakdown": {
+    "no_counterpart_in_responses": 34,
+    "consensus_below_75": 2
+  }
+}

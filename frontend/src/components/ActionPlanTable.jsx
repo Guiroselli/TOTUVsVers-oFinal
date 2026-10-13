@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Calendar, AlertCircle, Clock, CheckCircle2, Edit3, XCircle, VolumeX, Check, X, Quote } from 'lucide-react';
+import { Calendar, AlertCircle, CheckCircle2, Edit3, XCircle, VolumeX, Check, X, Quote } from 'lucide-react';
 import { api } from '../api/client';
 
 export default function ActionPlanTable({

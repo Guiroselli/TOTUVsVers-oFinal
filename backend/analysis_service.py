@@ -53,6 +53,79 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 ANALYSIS_PROMPT_VERSION = os.getenv("ANALYSIS_PROMPT_VERSION", "2.2.0-deterministic")
 ANALYSIS_SCHEMA_VERSION = "2.2.0"
 
+# Limiares de Suficiência Factual da Transcrição
+MIN_TRANSCRIPT_CHARS = 120
+MIN_TRANSCRIPT_WORDS = 20
+MIN_FACTUAL_ANALYSIS_CHARS = 250
+
+PLACEHOLDER_REPLACEMENTS = {
+    r"\[PESSOA\]": "participante citado",
+    r"\[EMPRESA\]": "empresa participante",
+    r"\[CLIENTE\]": "cliente citado",
+    r"\[DATA\]": "data mencionada",
+    r"\[CARGO\]": "cargo citado",
+    r"\[VALOR\]": "valor mencionado",
+    r"\[PRAZO\]": "prazo mencionado",
+    r"\[SISTEMA\]": "sistema mencionado",
+    r"\[NOME\]": "participante citado",
+}
+
+
+def sanitize_template_placeholders(text: str) -> str:
+    """Substitui placeholders literais ([PESSOA], [EMPRESA], etc.) por linguagem corporativa neutra."""
+    if not text or not isinstance(text, str):
+        return text
+    result = text
+    for pat, rep in PLACEHOLDER_REPLACEMENTS.items():
+        result = re.sub(pat, rep, result, flags=re.IGNORECASE)
+    return result
+
+
+def sanitize_data_recursively(data: Any) -> Any:
+    """Percorre recursivamente estruturas de dicionários e listas sanitizando placeholders."""
+    if isinstance(data, str):
+        return sanitize_template_placeholders(data)
+    elif isinstance(data, dict):
+        return {k: sanitize_data_recursively(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [sanitize_data_recursively(v) for v in data]
+    return data
+
+
+def is_transcript_sufficient(transcript: str) -> Tuple[bool, str]:
+    """
+    Verifica se a transcrição possui extensão e substância factual mínimas
+    para justificar a geração de ata operacional, extração de tarefas e ata executiva.
+    """
+    clean = (transcript or "").strip()
+    char_count = len(clean)
+    word_count = len(clean.split()) if clean else 0
+
+    if char_count < 50 or word_count < 8:
+        return False, f"Transcrição com volume insuficiente ({char_count} caracteres, {word_count} palavras). Mínimo exigido: {MIN_TRANSCRIPT_CHARS} caracteres e {MIN_TRANSCRIPT_WORDS} palavras."
+
+    # Se for menor que os limiares ideais (120 chars / 20 palavras),
+    # só permite prosseguir se contiver evidência operacional concreta ou gatilho de negócio
+    if char_count < MIN_TRANSCRIPT_CHARS and word_count < MIN_TRANSCRIPT_WORDS:
+        clean_lower = clean.lower()
+        has_critical = any(t in clean_lower for t in TERMOS_URGENCIA_CRITICA) or any(t in clean_lower for t in TERMOS_URGENCIA_ALTA)
+        has_task_or_doc = any(w in clean_lower for w in ["documentação", "documentacao", "contrato", "sistema", "responsável", "responsavel", "produção", "producao", "parada"])
+        if not (has_critical or has_task_or_doc):
+            return False, f"Transcrição com volume insuficiente ({char_count} caracteres, {word_count} palavras). Mínimo exigido: {MIN_TRANSCRIPT_CHARS} caracteres e {MIN_TRANSCRIPT_WORDS} palavras."
+
+    # Detecção de ruído conversacional estrito (cumprimentos, testes de áudio)
+    tokens = [w.lower() for w in re.findall(r"\w+", clean)]
+    noise_set = {
+        "teste", "testando", "som", "1", "2", "3", "alô", "alo", "bom", "dia", 
+        "boa", "tarde", "noite", "ok", "tá", "ta", "olá", "ola", "sim", "não", 
+        "nao", "obrigado", "valeu", "reunião", "reuniao", "começar", "começou"
+    }
+    non_noise = [t for t in tokens if t not in noise_set]
+    if len(non_noise) < 6:
+        return False, "Transcrição identificada como teste de áudio ou cumprimento informal sem deliberações operacionais de negócio."
+
+    return True, ""
+
 # ────────────────────────────────────────────────────────────
 # PERFIS DE HARDWARE
 #
@@ -574,23 +647,23 @@ def aplicar_regras_deterministas_seguranca(
 
     # 2. Processamento e Normalização de Tarefas e Prazos Relativos com Filtro de Ruído e Auditoria
     tarefas_processadas = []
-    rejected_tasks_audit = []
+    rejected_tasks_audit = raw_result.get("_rejected_tasks_audit", [])
     seen_canonical_tasks = set()
-    items_descartados_ruido = 0
+    items_descartados_ruido = raw_result.get("_items_descartados_ruido", 0)
 
     for t in raw_result.get("tarefas", []):
         if not isinstance(t, dict):
             continue
-        t_desc = str(t.get("tarefa", "")).strip()
-        t_ev = str(t.get("evidence", "") or t.get("evidencia", "")).strip()
-        
+        t_desc = sanitize_template_placeholders(str(t.get("tarefa", "")).strip())
+        t_ev = str(t.get("quote") or t.get("evidence", "") or t.get("evidencia", "")).strip()
+
         # Validação estrita de intenção operacional com classificação de status
         val_status, val_reason = classify_task_operational_intent(t_desc, t_ev)
-        if val_status == "rejected_noise":
+        if val_status == "rejected_noise" or t.get("evidence_status") == "rejected" or t.get("task_validation_status") == "rejected_noise":
             items_descartados_ruido += 1
             rejected_tasks_audit.append({
                 "texto_original": t_desc,
-                "motivo_rejeicao": val_reason,
+                "motivo_rejeicao": val_reason if val_status == "rejected_noise" else t.get("validation_reason", "Evidência rejeitada"),
                 "origem": "llm",
                 "data_analise": datetime.now().isoformat()
             })
@@ -603,13 +676,13 @@ def aplicar_regras_deterministas_seguranca(
             continue
         seen_canonical_tasks.add(t_norm_key)
 
-        nome_resp = str(t.get("responsavel", "")).strip()
+        nome_resp = sanitize_template_placeholders(str(t.get("responsavel", "")).strip())
         if not nome_resp or nome_resp.lower() in ["", "none", "null", "nenhum", "-", "não mencionado", "nao mencionado"]:
             nome_resp = "Não identificado"
-            
+
         prazo_raw = str(t.get("prazo", "")).strip()
         parsed_deadline = parse_relative_deadline(prazo_raw, meeting_date_str)
-        
+
         tarefas_processadas.append({
             "responsavel": nome_resp,
             "tarefa": t_desc,
@@ -620,9 +693,12 @@ def aplicar_regras_deterministas_seguranca(
             "status": t.get("status", "Não Inicializado") or "Não Inicializado",
             "prioridade": t.get("prioridade", "Média") or "Média",
             "confidence": float(t.get("confidence", 0.85 if val_status == "valid" else 0.55)),
-            "evidencia": t_ev or t_desc,
-            "evidence": t_ev or t_desc,
-            "task_validation_status": val_status,
+            "evidencia": t_ev,
+            "evidence": t_ev,
+            "quote": t_ev,
+            "source_ref": t.get("source_ref") or (f"quote:{t_ev[:50]}" if t_ev else None),
+            "task_validation_status": "valid" if val_status == "valid" else "pending_review",
+            "evidence_status": t.get("evidence_status", "validated"),
             "validation_reason": val_reason
         })
     raw_result["tarefas"] = tarefas_processadas
@@ -831,7 +907,24 @@ def aplicar_regras_deterministas_seguranca(
         client_code=raw_result.get("codigo_cliente", ""),
         integracoes_config=integracoes_config
     )
-    raw_result["recomendacoes_totvs"] = recomendacoes
+    
+    # Filtro rigoroso: Só mantém recomendação TOTVS se houver ao menos 1 dor factual validada
+    valid_pain_cats = {
+        d.get("categoria") for d in dores_processadas
+        if isinstance(d, dict) and d.get("evidence_status", "validated") == "validated" 
+        and d.get("trecho") and "não localizada" not in d.get("trecho", "").lower()
+    }
+    filtered_recs = []
+    for rec in recomendacoes:
+        trigger_pains = rec.get("trigger_pains", [])
+        has_valid_trigger = any(
+            (tp.get("categoria") in valid_pain_cats if isinstance(tp, dict) else str(tp) in valid_pain_cats)
+            for tp in trigger_pains
+        ) if trigger_pains else bool(valid_pain_cats)
+        if has_valid_trigger:
+            filtered_recs.append(rec)
+
+    raw_result["recomendacoes_totvs"] = filtered_recs
 
     return raw_result
 
@@ -903,6 +996,7 @@ Retorne EXCLUSIVAMENTE um objeto JSON estrito com a seguinte estrutura:
 3. Termos que indicam bloqueio operacional, atraso crítico, risco de perder cliente ou produção parada DEVEM ter urgência classificada como Alta ou Crítica.
 4. Se o texto contiver GATILHOS PRÉ-DETECTADOS, inclua-os obrigatoriamente no array 'dores'.
 5. Todas as evidências devem ser trechos reais extraídos da transcrição. Citações inventadas serão rejeitadas pelo validador.
+6. NUNCA emita placeholders literais como [PESSOA], [EMPRESA] ou [CLIENTE]. Utilize descrições naturais como 'participante citado', 'empresa participante' ou o cargo/contexto correspondente.
 </regras_validacao>
 """
 
@@ -948,45 +1042,85 @@ def check_evidence_in_transcript(evidence: str, transcript: str) -> Tuple[bool, 
 def validar_evidencias_contra_transcricao(resultado: Dict[str, Any], transcricao: str) -> Dict[str, Any]:
     """
     Valida pós-processamento se as evidências citadas pelo modelo realmente existem
-    no texto da transcrição. Descarta ou rejeita tarefas e itens sem evidência comprovada.
+    no texto da transcrição. Descarta ou rejeita tarefas e itens sem evidência comprovada:
+    - Tarefas sem evidência literal são REMOVIDAS da lista oficial e arquivadas em rejected_tasks_audit.
+    - Tarefas válidas recebem evidence_status='validated', quote=evidencia, task_validation_status='valid'.
+    - Dores sem citação válida têm evidence_status='missing' e não ativam recomendações TOTVS.
+    - Decisões são separadas entre decisões concretas e temas em discussão.
+    - Placeholders [PESSOA], [EMPRESA], etc. são sanitizados.
     """
     if not transcricao or not resultado:
         return resultado
 
-    rejected_hallucinations = resultado.setdefault("_rejected_hallucinations_audit", [])
     transcricao_lower = transcricao.lower()
+    rejected_hallucinations = resultado.setdefault("_rejected_hallucinations_audit", [])
+    rejected_tasks_audit = resultado.setdefault("_rejected_tasks_audit", [])
 
-    # 1. Valida evidências das tarefas
+    # 1. Valida evidências das tarefas com remoção estrita das alucinações
     if "tarefas" in resultado and isinstance(resultado["tarefas"], list):
+        tarefas_validas = []
         for t in resultado["tarefas"]:
             if not isinstance(t, dict):
                 continue
+            t_desc = str(t.get("tarefa", "")).strip()
             ev = (t.get("evidence") or t.get("evidencia") or "").strip()
-            is_valid, ratio = check_evidence_in_transcript(ev, transcricao_lower)
+
+            is_empty_or_placeholder = (
+                not ev or 
+                ev.strip() in ["-", "nenhum", "nenhuma", "none", "null"] or
+                any(p in ev.lower() for p in [
+                    "não localizada", "nao localizada", "não identificado", 
+                    "nao identificado", "não mencionado", "nao mencionado"
+                ])
+            )
+
+            if is_empty_or_placeholder:
+                is_valid = False
+                ratio = 0.0
+            else:
+                is_valid, ratio = check_evidence_in_transcript(ev, transcricao_lower)
 
             if not is_valid:
-                # Alucinação rejeitada: marca como ruído e registra em auditoria
+                # Alucinação rejeitada: registra em auditoria e penaliza confiança
                 t["task_validation_status"] = "rejected_noise"
-                t["validation_reason"] = "Evidência alucinada: citação não existe na transcrição"
+                t["evidence_status"] = "rejected"
+                t["validation_reason"] = "Evidência factual ausente ou não localizada na transcrição"
                 t["confidence"] = 0.30
                 rejected_hallucinations.append({
                     "tipo": "tarefa_sem_evidencia",
-                    "tarefa": t.get("tarefa", ""),
-                    "responsavel": t.get("responsavel", ""),
+                    "tarefa": sanitize_template_placeholders(t_desc),
+                    "responsavel": sanitize_template_placeholders(t.get("responsavel", "")),
                     "evidencia_alucinada": ev,
                     "match_ratio": round(ratio, 2),
                     "motivo": "Citação de evidência ausente do texto da transcrição."
                 })
+                rejected_tasks_audit.append({
+                    "texto_original": sanitize_template_placeholders(t_desc),
+                    "motivo_rejeicao": "Evidência factual não localizada na transcrição",
+                    "origem": "llm",
+                    "data_analise": datetime.now().isoformat()
+                })
+                tarefas_validas.append(t)
             else:
-                t["confidence"] = min(1.0, max(0.6, t.get("confidence", 0.85)))
+                # Evidência confirmada na transcrição
+                t["task_validation_status"] = "valid"
+                t["evidence_status"] = "validated"
+                t["quote"] = ev
+                t["source_ref"] = f"quote:{ev[:50]}"
+                t["confidence"] = min(1.0, max(0.70, float(t.get("confidence", 0.85))))
+                tarefas_validas.append(t)
+
+        resultado["tarefas"] = tarefas_validas
 
     # 2. Valida evidências das dores
+    dores_validas = []
     if "dores" in resultado and isinstance(resultado["dores"], list):
         for d in resultado["dores"]:
             if isinstance(d, dict):
                 tr = (d.get("trecho") or "").strip()
                 is_valid, ratio = check_evidence_in_transcript(tr, transcricao_lower)
                 if not is_valid and tr:
+                    d["evidence_status"] = "missing"
                     d["trecho"] = "Citação não localizada no texto (revisão necessária)"
                     d["severidade"] = "Baixa"
                     rejected_hallucinations.append({
@@ -995,19 +1129,52 @@ def validar_evidencias_contra_transcricao(resultado: Dict[str, Any], transcricao
                         "trecho_alucinado": tr,
                         "motivo": "Trecho da dor não encontrado na transcrição."
                     })
+                else:
+                    d["evidence_status"] = "validated"
+                    d["quote"] = tr
+                dores_validas.append(d)
+            elif isinstance(d, str):
+                dores_validas.append(d)
+        resultado["dores"] = dores_validas
 
-    # 3. Valida se a decisão informada possui respaldo factual
+    # 3. Classificação e separação estrita de decisões
     contexto = resultado.get("contexto")
+    decisoes_concretas = []
+    temas_em_discussao = []
+
+    NON_DECISION_PHRASES = [
+        "não há decisões mencionadas", "nao ha decisoes mencionadas",
+        "não há decisões", "nao ha decisoes", "nenhuma decisão mencionada",
+        "não mencionado", "nao mencionado", "não identificado", "nao identificado",
+        "decisão não registrada na transcrição", "decisao nao registrada na transcricao",
+        "nenhuma", "nenhum", "-", "tema discutido", "não houve decisões",
+        "sem decisões formais"
+    ]
+
     if isinstance(contexto, dict):
-        decisao = str(contexto.get("decisao") or "").strip()
-        if decisao and decisao.lower() not in [
-            "não mencionado", "não identificado", "decisão não registrada na transcrição",
-            "nenhuma", "nenhum", "-", "tema discutido"
-        ]:
-            is_valid, _ = check_evidence_in_transcript(decisao, transcricao_lower)
-            if not is_valid:
-                # Se não há evidência na fala de que a decisão foi tomada, preserva factualidade
+        decisao_raw = str(contexto.get("decisao") or "").strip()
+        if decisao_raw and any(decisao_raw.lower() == ndp or decisao_raw.lower().startswith(ndp) for ndp in NON_DECISION_PHRASES):
+            contexto["decisao"] = "Não mencionado"
+            decisao_raw = ""
+
+        if decisao_raw:
+            is_valid, _ = check_evidence_in_transcript(decisao_raw, transcricao_lower)
+            is_conclusive = any(w in decisao_raw.lower() for w in [
+                "ficou definido que", "foi decidido que", "alinhado entre as partes que",
+                "aprovado por", "decidido que", "definiu-se que", "acordado que",
+                "definido que"
+            ])
+            if is_valid and is_conclusive:
+                decisoes_concretas.append(decisao_raw)
+            else:
+                temas_em_discussao.append(decisao_raw)
                 contexto["decisao"] = "Tema discutido (Decisão formal não registrada na transcrição)"
+
+    resultado["decisoes_concretas"] = decisoes_concretas
+    resultado["temas_em_discussao"] = temas_em_discussao
+
+    # 4. Sanitização profunda de placeholders de anonimização ([PESSOA], [EMPRESA], etc.)
+    resultado = sanitize_data_recursively(resultado)
 
     return resultado
 
@@ -1119,12 +1286,30 @@ def build_executive_summary(
     else:
         sentences.append("A sessão estruturou os direcionamentos operacionais e fluxos de trabalho da equipe.")
 
-    if decisao and decisao.lower() not in ["não mencionado", "não identificado", "-", "none", "null", "nenhuma", "nenhum"]:
-        sentences.append(f"Como decisão formal da sessão, estabeleceu-se: {decisao}.")
+    decisoes_concretas = list(analysis_data.get("decisoes_concretas") or [])
+    temas_em_discussao = list(analysis_data.get("temas_em_discussao") or [])
+
+    NON_DECISION_PHRASES = [
+        "não há decisões mencionadas", "nao ha decisoes mencionadas",
+        "não há decisões", "nao ha decisoes", "nenhuma decisão mencionada",
+        "não mencionado", "nao mencionado", "não identificado", "nao identificado",
+        "decisão não registrada na transcrição", "decisao nao registrada na transcricao",
+        "nenhuma", "nenhum", "-", "tema discutido", "não houve decisões",
+        "sem decisões formais"
+    ]
+
+    if not decisoes_concretas and decisao:
+        dec_clean = decisao.strip()
+        dec_lower = dec_clean.lower()
+        if not any(dec_lower == ndp or dec_lower.startswith(ndp) for ndp in NON_DECISION_PHRASES):
+            decisoes_concretas.append(dec_clean)
+
+    if decisoes_concretas:
+        sentences.append(f"Como decisão formal da sessão, estabeleceu-se: {decisoes_concretas[0]}.")
     elif pending_tasks:
         sentences.append("As ações com escopo resumido foram encaminhadas para validação prévia da liderança antes da execução.")
     else:
-        sentences.append("Os encaminhamentos acordados seguem sob execução das respectivas frentes de trabalho.")
+        sentences.append("Nenhuma decisão executiva definitiva foi deliberada na sessão; os encaminhamentos acordados seguem sob execução das respectivas frentes.")
 
     if recs and isinstance(recs[0], dict):
         top_rec_name = recs[0].get("product_name", "TOTVS")
@@ -1178,12 +1363,22 @@ def build_executive_summary(
             "source_refs": [f"pain:{idx}"]
         })
 
-    # 7. Decisões Tomadas (Máximo 3, baseado em deliberação formal)
+    # 7. Decisões Tomadas (Máximo 3 decisões concretas confirmadas)
     decisions_made = []
-    if decisao and decisao.lower() not in ["não mencionado", "não identificado", "-", "none", "null", "nenhuma", "nenhum"]:
+    for idx, d_text in enumerate(decisoes_concretas[:3]):
         decisions_made.append({
-            "text": decisao,
-            "source_refs": ["context:decisao"]
+            "text": d_text,
+            "decision_type": "concreta",
+            "source_refs": [f"context:decisao_{idx}"]
+        })
+
+    # 7.1 Temas em Discussão (Deliberações pendentes/exploratórias)
+    discussion_topics = []
+    for idx, d_text in enumerate(temas_em_discussao[:3]):
+        discussion_topics.append({
+            "text": d_text,
+            "decision_type": "tema_em_discussao",
+            "source_refs": [f"context:discussao_{idx}"]
         })
 
     # 8. Decisões Necessárias da Liderança (Máximo 3)
@@ -1269,6 +1464,8 @@ def build_executive_summary(
         all_refs.extend(r.get("source_refs", []))
     for d in decisions_made:
         all_refs.extend(d.get("source_refs", []))
+    for dt in discussion_topics:
+        all_refs.extend(dt.get("source_refs", []))
     for dr in decisions_required:
         all_refs.extend(dr.get("source_refs", []))
     for sns in strategic_next_steps:
@@ -1288,7 +1485,7 @@ def build_executive_summary(
         gen_method = "deterministic_executive_template"
         status_val = "generated"
 
-    return {
+    raw_exec = {
         "version": "executive_v1",
         "status": status_val,
         "generated_at": datetime.now().isoformat(),
@@ -1298,6 +1495,7 @@ def build_executive_summary(
         "business_impact": business_impact,
         "main_risks": main_risks,
         "decisions_made": decisions_made,
+        "discussion_topics": discussion_topics,
         "decisions_required": decisions_required,
         "strategic_next_steps": strategic_next_steps,
         "executive_recommendation": executive_recommendation,
@@ -1310,6 +1508,8 @@ def build_executive_summary(
         "prompt_version": "2.1.0",
         "model_version": meta.get("model_name") or meta.get("model") or "deterministic"
     }
+
+    return sanitize_data_recursively(raw_exec)
 
 
 def dividir_transcricao(
@@ -1596,14 +1796,9 @@ class AnalysisService:
                         cached_dict["analise_metadados"]["input_hash"] = input_hash
                     return MeetingAnalysisResult.model_validate(cached_dict)
 
-        # 2. Blindagem contra transcrição vazia ou insuficiente (PARTE 9)
-        clean_words = [
-            w for w in re.sub(r"[^\w\s]", "", safe_transcript.lower()).split()
-            if len(w) > 1 and w not in ["o", "a", "de", "e", "um", "uma", "teste", "reuniao"]
-        ]
-        meaningful_chars = sum(len(w) for w in clean_words)
-
-        if not safe_transcript.strip() or meaningful_chars < 15:
+        # 2. Blindagem contra transcrição vazia ou insuficiente
+        is_sufficient, reason_insufficient = is_transcript_sufficient(safe_transcript)
+        if not is_sufficient:
             duration = round(time.time() - start_time, 2)
             meta = AnalysisMetadata(
                 model=self.model_name,
@@ -1616,24 +1811,29 @@ class AnalysisService:
                 status="insufficient_data",
                 analysis_engine="insufficient_data_guard",
                 analysis_status="analise_concluida_dados_insuficientes",
+                evidence_validation_status="insufficient_transcript",
                 technical_confidence="Transcrição insuficiente",
                 semantic_confidence="Dados insuficientes / Baixa",
                 analysis_confidence=0.0,
-                confidence_reason="Não há transcrição suficiente para gerar uma ata confiável.",
-                insufficient_data_reason="Não há transcrição suficiente para gerar uma ata confiável.",
+                confidence_reason=reason_insufficient,
+                insufficient_data_reason=reason_insufficient,
                 valid_items_count=0,
                 pending_items_count=0,
                 items_discarded_noise=0,
                 input_hash=input_hash,
                 cache_hit=False,
-                warning="Não há transcrição suficiente para gerar uma ata confiável."
+                warning=reason_insufficient
             )
             insufficient_res = MeetingAnalysisResult(
                 tema="Não há transcrição suficiente para gerar uma ata confiável",
                 contexto=ContextoSchema(
                     problema="Não mencionado",
-                    decisao="Não mencionado"
+                    decisao="Não mencionado",
+                    decisoes_concretas=[],
+                    temas_em_discussao=[]
                 ),
+                decisoes_concretas=[],
+                temas_em_discussao=[],
                 organizacao_por_temas=[],
                 tarefas=[],
                 dores=[],
@@ -1648,11 +1848,12 @@ class AnalysisService:
                 analise_metadados=meta,
                 resumo_executivo=ExecutiveSummarySchema(
                     status="insufficient_data",
-                    summary_for_decision="Não há transcrição suficiente para gerar uma ata confiável.",
+                    summary_for_decision=reason_insufficient,
                     current_situation="Registro da sessão não contém transcrição suficiente para análise factual.",
                     business_impact="Nenhum impacto avaliado devido à ausência de dados na transcrição.",
                     main_risks=[],
                     decisions_made=[],
+                    discussion_topics=[],
                     decisions_required=[],
                     strategic_next_steps=[]
                 )
@@ -1789,6 +1990,13 @@ class AnalysisService:
             integracoes_config=integracoes_config
         )
         
+        # 4. Camada DPO Experimental Reversível (Fase A - Preference Reranker)
+        try:
+            from dpo_reranker import rerank_analysis_result
+            processed_dict = rerank_analysis_result(processed_dict, safe_transcript)
+        except Exception as e:
+            logger.warning("Falha na execução do DPO Reranker (bypassed): %s", e)
+        
         # Diferenciação entre análise concluída, parcial e análise com dados insuficientes
         t_nome = str(processed_dict.get("tema", "")).strip()
         has_real_tema = bool(t_nome and t_nome not in ["", "Não identificado", "Reunião Geral", "Alinhamento Operacional", "Geral"])
@@ -1875,16 +2083,18 @@ class AnalysisService:
                                       perfil_cliente: Optional[Dict[str, Any]] = None,
                                       integracoes_config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Gera análise estruturada baseada em regras determinísticas quando o Ollama não responde."""
+        is_sufficient, _ = is_transcript_sufficient(transcript)
         dores = []
-        for g in gatilhos:
-            dores.append({
-                "categoria": g["categoria"],
-                "label": g["label"],
-                "descricao": g["label"],
-                "trecho": g["frase"],
-                "severidade": g["severidade"],
-                "sistema_totvs": g["sistema_totvs"]
-            })
+        if is_sufficient:
+            for g in gatilhos:
+                dores.append({
+                    "categoria": g["categoria"],
+                    "label": g["label"],
+                    "descricao": g["label"],
+                    "trecho": g["frase"],
+                    "severidade": g["severidade"],
+                    "sistema_totvs": g["sistema_totvs"]
+                })
             
         transcricao_lower = transcript.lower()
         urgencia = "Média"
@@ -2023,8 +2233,12 @@ class AnalysisService:
             "tema": "Não identificado",
             "contexto": {
                 "problema": "Não identificado",
-                "decisao": "Não mencionado"
+                "decisao": "Não mencionado",
+                "decisoes_concretas": [],
+                "temas_em_discussao": []
             },
+            "decisoes_concretas": [],
+            "temas_em_discussao": [],
             "organizacao_por_temas": [],
             "tarefas": tarefas,
             "dores": dores,
@@ -2078,7 +2292,7 @@ class AnalysisService:
         )
         fallback_res["resumo_executivo"] = exec_summary
 
-        return fallback_res
+        return sanitize_data_recursively(fallback_res)
 
     def build_executive_summary(self, 
                                 analysis_data: Dict[str, Any], 

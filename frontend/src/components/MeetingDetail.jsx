@@ -20,7 +20,6 @@ import {
   Check,
   X
 } from 'lucide-react';
-import { api } from '../api/client';
 
 export default function MeetingDetail({
   meeting,

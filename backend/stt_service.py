@@ -770,7 +770,10 @@ class STTService:
             "temperature": self.temperature,
             "initial_prompt": self.initial_prompt,
             "vad_filter": self.vad_filter,
-            "vad_parameters": self.vad_parameters,
+            "vad_parameters": {
+                k: (None if (isinstance(v, float) and (math.isinf(v) or math.isnan(v))) else v)
+                for k, v in self.vad_parameters.items()
+            } if self.vad_parameters else {},
             "vad_speech_pad_ms": self.vad_speech_pad_ms,
             "vad_min_speech_duration_ms": self.vad_min_speech_duration_ms,
             "vad_min_silence_duration_ms": self.vad_min_silence_duration_ms,

@@ -18,9 +18,14 @@ class TaskSchema(BaseModel):
     confidence: Optional[float] = 1.0
     evidencia: Optional[str] = ""
     evidence: Optional[str] = ""
+    quote: Optional[str] = None
+    source_ref: Optional[str] = None
     meeting_id: Optional[str] = None
-    task_validation_status: Optional[str] = "valid"  # "valid" | "pending_review" | "rejected_noise"
+    task_validation_status: Optional[str] = "valid"  # "valid" | "pending_review" | "rejected_noise" | "rejected" | "missing"
+    evidence_status: Optional[str] = "validated"  # "validated" | "pending_review" | "missing" | "rejected" | "insufficient_transcript"
     validation_reason: Optional[str] = None
+    dpo_faithfulness_score: Optional[float] = None
+    dpo_signals: Optional[List[str]] = None
 
 
 class PainSchema(BaseModel):
@@ -28,8 +33,11 @@ class PainSchema(BaseModel):
     label: Optional[str] = None
     descricao: str = ""
     trecho: Optional[str] = ""
+    quote: Optional[str] = None
+    source_ref: Optional[str] = None
     severidade: Optional[str] = "Média"
     sistema_totvs: Optional[str] = "fluig"
+    evidence_status: Optional[str] = "validated"  # "validated" | "pending_review" | "missing" | "rejected" | "insufficient_transcript"
 
 
 class TopicGroupSchema(BaseModel):
@@ -41,6 +49,8 @@ class TopicGroupSchema(BaseModel):
 class ContextoSchema(BaseModel):
     problema: Optional[str] = "Não mencionado"
     decisao: Optional[str] = "Não mencionado"
+    decisoes_concretas: Optional[List[str]] = Field(default_factory=list)
+    temas_em_discussao: Optional[List[str]] = Field(default_factory=list)
 
 
 class CandidateResponsible(BaseModel):
@@ -154,6 +164,7 @@ class AnalysisMetadata(BaseModel):
     input_hash: Optional[str] = None
     evidence_validation_status: Optional[str] = "valid"
     rejected_hallucinations_audit: Optional[List[Dict[str, Any]]] = []
+    dpo_layer: Optional[Dict[str, Any]] = None
     warning: Optional[str] = None
     parsing_error: Optional[str] = None
 
@@ -166,6 +177,7 @@ class ExecutiveRiskItem(BaseModel):
 
 class ExecutiveDecisionItem(BaseModel):
     text: str
+    decision_type: Optional[str] = "concreta"  # "concreta" | "tema_em_discussao"
     source_refs: List[str] = Field(default_factory=list)
 
 
@@ -198,6 +210,7 @@ class ExecutiveSummarySchema(BaseModel):
     business_impact: str = ""
     main_risks: List[ExecutiveRiskItem] = Field(default_factory=list)
     decisions_made: List[ExecutiveDecisionItem] = Field(default_factory=list)
+    discussion_topics: Optional[List[ExecutiveDecisionItem]] = Field(default_factory=list)
     decisions_required: List[ExecutiveDecisionRequiredItem] = Field(default_factory=list)
     strategic_next_steps: List[ExecutiveNextStepItem] = Field(default_factory=list)
     executive_recommendation: Optional[ExecutiveRecommendationItem] = None
@@ -214,6 +227,8 @@ class ExecutiveSummarySchema(BaseModel):
 class MeetingAnalysisResult(BaseModel):
     tema: str = "Reunião Geral"
     contexto: Optional[ContextoSchema] = ContextoSchema()
+    decisoes_concretas: Optional[List[str]] = Field(default_factory=list)
+    temas_em_discussao: Optional[List[str]] = Field(default_factory=list)
     organizacao_por_temas: List[TopicGroupSchema] = []
     tarefas: List[TaskSchema] = []
     dores: List[Union[PainSchema, str, Dict[str, Any]]] = []
