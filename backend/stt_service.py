@@ -826,18 +826,22 @@ class STTService:
                         logger.info(
                             f"Tentando carregar faster-whisper em CUDA (model={self.model_size}, compute_type={target_compute}, download_root={download_root})..."
                         )
-                        self._model = WhisperModel(
+                        candidate_model = WhisperModel(
                             self._model_ref(download_root),
                             device="cuda",
                             compute_type=target_compute,
                             download_root=download_root,
                             local_files_only=True
                         )
+                        # Teste preventivo de inferência para garantir que cublas64_12.dll e dependências CUDA estão presentes
+                        import numpy as np
+                        candidate_model.model.encode(np.zeros((1, 80, 3000), dtype=np.float32))
+                        self._model = candidate_model
                         logger.info("Modelo faster-whisper carregado com sucesso em CUDA.")
                         return self._model
                     except Exception as cuda_err:
                         logger.warning(
-                            f"Falha ao carregar faster-whisper com CUDA ({cuda_err}). "
+                            f"Falha ao validar faster-whisper com CUDA ({cuda_err}). "
                             f"Acionando fallback automático e seguro para CPU int8."
                         )
                         self.fallback_occurred = True
