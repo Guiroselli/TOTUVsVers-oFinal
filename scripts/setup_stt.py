@@ -139,8 +139,9 @@ def validate_model_loading(model_size: str, abs_cache_dir: str):
 
     print(f"[*] Validando carregamento do modelo '{model_size}' a partir de '{abs_cache_dir}'...")
     try:
+        flat_layout = os.path.isfile(os.path.join(abs_cache_dir, "model.bin"))
         model = WhisperModel(
-            model_size,
+            abs_cache_dir if flat_layout else model_size,
             device="cpu",
             compute_type="int8",
             download_root=abs_cache_dir,

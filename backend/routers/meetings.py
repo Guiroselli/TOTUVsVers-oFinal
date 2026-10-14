@@ -1,9 +1,11 @@
 import os
+import shutil
 import uuid
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form, Depends
 from fastapi.responses import JSONResponse
 
+import recording_jobs
 from stt_service import get_stt_service
 from repositories import MeetingRepository, ProfileRepository, IntegrationsRepository, PDF_DIR, pdf_path_for
 from schemas import (
@@ -685,6 +687,58 @@ async def upload_live_meeting_audio_chunk(
         "no_speech_prob": result.get("no_speech_prob", 0.0),
         "already_processed": record_result.get("already_processed", False) if record_result else False
     }
+
+
+@router.post("/live/meetings/{meeting_id}/recording")
+async def upload_meeting_recording(meeting_id: str, audio: UploadFile = File(...)):
+    """
+    Recebe a gravação completa (chamada online gravada no navegador ou arquivo enviado),
+    salva em disco e a coloca na fila de transcrição em segundo plano.
+    Responde 202 imediatamente; acompanhe por GET /live/recordings/jobs.
+    """
+    meeting = repo.get_by_id(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Reunião não encontrada.")
+    if meeting.get("ORIGEM") != "live":
+        raise HTTPException(status_code=400, detail="Apenas reuniões criadas em 'Reuniões ao vivo' aceitam gravações.")
+    if str(meeting.get("STATUS_MEETING", "")).lower().strip() == "cancelada":
+        raise HTTPException(status_code=400, detail="Reunião cancelada não aceita gravações.")
+
+    original_name = audio.filename or "gravacao.webm"
+    ext = os.path.splitext(original_name)[1].lower() or ".webm"
+    if ext not in recording_jobs.ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Formato '{ext}' não suportado. Use: {', '.join(sorted(recording_jobs.ALLOWED_EXTENSIONS))}.",
+        )
+
+    dest = recording_jobs.save_upload_path(meeting_id, original_name)
+    total = 0
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                block = await audio.read(1024 * 1024)
+                if not block:
+                    break
+                total += len(block)
+                if total > recording_jobs.MAX_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Arquivo maior que o limite de 2 GB.")
+                out.write(block)
+        if total < recording_jobs.MIN_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="Gravação vazia ou curta demais.")
+    except HTTPException:
+        shutil.rmtree(os.path.dirname(dest), ignore_errors=True)
+        raise
+
+    job = recording_jobs.get_job_queue().enqueue(meeting_id, dest, original_name, total)
+    return JSONResponse(status_code=202, content={"status": "queued", "job": job})
+
+
+@router.get("/live/recordings/jobs")
+def list_recording_jobs(meeting_id: Optional[str] = Query(None)):
+    """Lista os trabalhos de transcrição de gravações (mais recentes primeiro)."""
+    q = recording_jobs.get_job_queue()
+    return {"jobs": q.list_jobs(meeting_id), "has_active": q.has_active()}
 
 
 @router.post("/live/meetings/{meeting_id}/reprocess")
