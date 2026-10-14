@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint src",
-    "test": "node --test src/tests/speech_recognition_flow.test.mjs src/tests/stt_backend_flow.test.mjs src/tests/mobile_experience.test.mjs src/tests/live_chat_flow.test.mjs",
+    "test": "node --test src/tests/speech_recognition_flow.test.mjs src/tests/stt_backend_flow.test.mjs src/tests/mobile_experience.test.mjs src/tests/live_chat_flow.test.mjs src/tests/production_build_bundle.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

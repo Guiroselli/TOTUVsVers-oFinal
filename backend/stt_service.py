@@ -623,9 +623,11 @@ class STTService:
             return False
 
         raw_target = model_size if model_size is not None else self.model_size
-        target = str(raw_target or "small").lower().strip()
+        target = str(raw_target or "").lower().strip()
         if target in ("auto", ""):
-            target = "small"
+            target = getattr(self, "model_size", "")
+            if target in ("auto", "", None):
+                target = "medium" if getattr(self, "device", "cpu") == "cuda" else "small"
         cache_target = self.model_cache_dir
 
         try:
@@ -666,9 +668,11 @@ class STTService:
         Evita downloads repetidos com lock de thread e lock interprocessos.
         """
         raw_target = model_size if model_size is not None else self.model_size
-        target_model = str(raw_target or "small").lower().strip()
+        target_model = str(raw_target or "").lower().strip()
         if target_model in ("auto", ""):
-            target_model = "small"
+            target_model = getattr(self, "model_size", "")
+            if target_model in ("auto", "", None):
+                target_model = "medium" if getattr(self, "device", "cpu") == "cuda" else "small"
 
         if self._mock_model is not None:
             return True

@@ -8,9 +8,6 @@ import {
   ChevronDown,
   ChevronUp,
   Trash2,
-  Calendar,
-  User,
-  Building,
   FileWarning,
   Loader2
 } from 'lucide-react';
@@ -18,7 +15,7 @@ import api from '../api/client';
 
 export default function ImportTranscriptModal({ isOpen, onClose, onImportSuccess }) {
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [_selectedFiles, setSelectedFiles] = useState([]);
   const [previewItems, setPreviewItems] = useState([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -198,6 +195,7 @@ export default function ImportTranscriptModal({ isOpen, onClose, onImportSuccess
 
   return (
     <div
+      className="import-modal-overlay"
       style={{
         position: 'fixed',
         inset: 0,
@@ -216,6 +214,7 @@ export default function ImportTranscriptModal({ isOpen, onClose, onImportSuccess
       }}
     >
       <div
+        className="import-modal-card"
         style={{
           background: 'var(--panel-bg, #ffffff)',
           color: 'var(--text-primary, #0f172a)',
@@ -647,7 +646,7 @@ export default function ImportTranscriptModal({ isOpen, onClose, onImportSuccess
                           {isExpanded && (
                             <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                               {/* Grid de Metadados Editáveis */}
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 140px', gap: '0.75rem' }}>
+                              <div className="import-meta-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 140px 140px', gap: '0.75rem' }}>
                                 <div>
                                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, marginBottom: '4px', color: 'var(--text-secondary, #64748b)' }}>
                                     Título da Reunião:
@@ -779,7 +778,7 @@ export default function ImportTranscriptModal({ isOpen, onClose, onImportSuccess
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <div className="import-modal-footer-actions" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={handleCloseModal}

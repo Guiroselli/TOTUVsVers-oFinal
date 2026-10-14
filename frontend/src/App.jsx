@@ -2000,7 +2000,10 @@ export default function MeetingApp() {
     );
   }
 
-  const pendingAnalysisCount = meetings.filter(m => !m.RESUMO_IA || m.STATUS_ANALISE === 'aguardando_analise').length;
+  const pendingAnalysisCount = meetings.filter(m => {
+    const hasT = Boolean((m.ANON_TRANSCRICAO || m.TRANSCRIPT_NORMALIZED || m.TRANSCRIPT_FINAL || m.TRANSCRIPT_RAW || m.transcription || '').trim());
+    return hasT && (!m.RESUMO_IA || m.STATUS_ANALISE === 'aguardando_analise');
+  }).length;
   const totalMeetingsCount = pagination.total || meetings.length;
 
   return (

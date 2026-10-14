@@ -53,14 +53,38 @@ export default function MeetingHistoryTable({
     const isFallback = meta.analysis_engine === 'deterministic_fallback' || stAnalise === 'fallback_deterministico';
     const isInsufficient = meta.status === 'insufficient_data' || stAnalise === 'analise_concluida_dados_insuficientes';
 
+    const hasTranscript = Boolean((
+      item.ANON_TRANSCRICAO ||
+      item.TRANSCRIPT_NORMALIZED ||
+      item.TRANSCRIPT_FINAL ||
+      item.TRANSCRIPT_RAW ||
+      item.transcription ||
+      ''
+    ).trim());
+
     if (item.STATUS_MEETING === 'erro_na_analise' || stAnalise === 'erro_na_analise' || stAnalise === 'analise_com_erro') {
       return { label: 'Falha na Análise', bg: 'rgba(239, 68, 68, 0.2)', color: 'var(--danger)' };
     }
     if (item.STATUS_MEETING === 'analise_em_andamento' || stAnalise === 'analise_em_andamento') {
       return { label: 'Analisando...', bg: 'rgba(2, 132, 199, 0.2)', color: 'var(--primary-light)' };
     }
-    if (!item.RESUMO_IA || stAnalise === 'aguardando_analise') {
+    if (item.STATUS_MEETING === 'falha_na_transcricao' || stAnalise === 'falha_na_transcricao' || item.ERRO_TRANSCRICAO) {
+      return { label: 'Falha na Transcrição', bg: 'rgba(239, 68, 68, 0.2)', color: 'var(--danger)' };
+    }
+    if (!item.RESUMO_IA) {
+      if (!hasTranscript || stAnalise === 'sem_transcricao') {
+        return { label: 'Sem Transcrição', bg: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)' };
+      }
       return { label: 'Aguardando Análise', bg: 'rgba(107, 114, 128, 0.2)', color: 'var(--text-secondary)' };
+    }
+    if (stAnalise === 'aguardando_analise') {
+      if (!hasTranscript) {
+        return { label: 'Sem Transcrição', bg: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)' };
+      }
+      return { label: 'Aguardando Análise', bg: 'rgba(107, 114, 128, 0.2)', color: 'var(--text-secondary)' };
+    }
+    if (stAnalise === 'sem_transcricao') {
+      return { label: 'Sem Transcrição', bg: 'rgba(239, 68, 68, 0.15)', color: 'var(--danger)' };
     }
     if (stRevisao === 'revisao_concluida' || stRevisao === 'concluida') {
       return { label: 'Revisão Concluída', bg: 'rgba(16, 185, 129, 0.25)', color: 'var(--success)' };
@@ -192,6 +216,7 @@ export default function MeetingHistoryTable({
               {meetings.map((item) => {
                 const isExpanded = expandedMeetingId === item.ID_MEETING;
                 const hasAnalysis = Boolean(item.RESUMO_IA && (item.RESUMO_IA.tema || (item.RESUMO_IA.dores && item.RESUMO_IA.dores.length > 0) || (item.RESUMO_IA.tarefas && item.RESUMO_IA.tarefas.length > 0)));
+                const hasTranscript = Boolean((item.ANON_TRANSCRICAO || item.TRANSCRIPT_NORMALIZED || item.TRANSCRIPT_FINAL || item.TRANSCRIPT_RAW || item.transcription || '').trim());
                 const stBadge = getStatusBadge(item);
                 const urgBadge = getUrgencyBadge(item.NIVEL_URGENCIA);
                 const segmentName = item.segment || item.NOME_SEGMENTO || (item.STATUS_MEETING === 'ao_vivo' ? 'Ao Vivo' : 'Corporativo');
@@ -314,8 +339,10 @@ export default function MeetingHistoryTable({
                           <button
                             type="button"
                             className="btn-pf btn-pf-primary btn-pf-sm"
-                            onClick={() => onAnalyzeMeeting && onAnalyzeMeeting(item.ID_MEETING)}
-                            title="Analisar reunião com IA e extrair plano de ação"
+                            onClick={() => hasTranscript && onAnalyzeMeeting && onAnalyzeMeeting(item.ID_MEETING)}
+                            disabled={!hasTranscript}
+                            title={hasTranscript ? "Analisar reunião com IA e extrair plano de ação" : "Transcrição ausente ou não capturada. Não é possível gerar ata sem texto."}
+                            style={hasTranscript ? {} : { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(0.6)' }}
                           >
                             <Zap size={13} />
                             <span>Analisar IA</span>
@@ -395,6 +422,7 @@ export default function MeetingHistoryTable({
               {meetings.map((item) => {
                 const isExpanded = expandedMeetingId === item.ID_MEETING;
                 const hasAnalysis = Boolean(item.RESUMO_IA && (item.RESUMO_IA.tema || (item.RESUMO_IA.dores && item.RESUMO_IA.dores.length > 0) || (item.RESUMO_IA.tarefas && item.RESUMO_IA.tarefas.length > 0)));
+                const hasTranscript = Boolean((item.ANON_TRANSCRICAO || item.TRANSCRIPT_NORMALIZED || item.TRANSCRIPT_FINAL || item.TRANSCRIPT_RAW || item.transcription || '').trim());
                 const stBadge = getStatusBadge(item);
 
                 return (
@@ -522,9 +550,10 @@ export default function MeetingHistoryTable({
                           {!hasAnalysis ? (
                             <button
                               className="btn-pf btn-pf-primary btn-pf-sm"
-                              style={{ flex: 1, padding: '5px 10px', fontSize: '11px', fontWeight: 600 }}
-                              onClick={() => onAnalyzeMeeting && onAnalyzeMeeting(item.ID_MEETING)}
-                              title="Analisar reunião com IA e extrair plano de ação"
+                              style={{ flex: 1, padding: '5px 10px', fontSize: '11px', fontWeight: 600, ...(hasTranscript ? {} : { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(0.6)' }) }}
+                              onClick={() => hasTranscript && onAnalyzeMeeting && onAnalyzeMeeting(item.ID_MEETING)}
+                              disabled={!hasTranscript}
+                              title={hasTranscript ? "Analisar reunião com IA e extrair plano de ação" : "Transcrição ausente ou não capturada. Não é possível gerar ata sem texto."}
                             >
                               <Zap size={13} />
                               <span>Analisar</span>

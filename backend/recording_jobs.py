@@ -144,13 +144,31 @@ def split_audio(src_path: str, out_dir: str, segment_seconds: int = SEGMENT_SECO
     caso ffmpeg não esteja instalado ou falhe.
     """
     ffmpeg = find_ffmpeg()
+    ffmpeg_err = None
     if ffmpeg:
         try:
             return _split_audio_ffmpeg(ffmpeg, src_path, out_dir, segment_seconds)
         except Exception as exc:
+            ffmpeg_err = exc
             logger.warning("Falha com ffmpeg externo (%s), tentando PyAV...", exc)
+    else:
+        logger.info("FFmpeg externo não encontrado no servidor. Utilizando PyAV nativo para processar o áudio.")
 
-    return _split_audio_pyav(src_path, out_dir, segment_seconds)
+    try:
+        segments = _split_audio_pyav(src_path, out_dir, segment_seconds)
+        if ffmpeg_err:
+            logger.info("PyAV concluiu a divisão de áudio com sucesso após falha do FFmpeg.")
+        return segments
+    except Exception as pyav_err:
+        if ffmpeg_err:
+            raise RuntimeError(
+                f"Falha ao processar áudio: ffmpeg falhou ({ffmpeg_err}) e PyAV também falhou ({pyav_err})"
+            ) from pyav_err
+        if not ffmpeg:
+            raise RuntimeError(
+                f"FFmpeg não encontrado no servidor e PyAV falhou ao decodificar o áudio: {pyav_err}"
+            ) from pyav_err
+        raise pyav_err
 
 
 class RecordingJobQueue:
@@ -279,14 +297,14 @@ class RecordingJobQueue:
                     self._jobs[job_id] = {
                         "job_id": job_id,
                         "meeting_id": meeting_id,
-                        "filename": "chamada.webm",
+                        "filename": grav_file,
                         "audio_path": audio_path,
                         "size_bytes": os.path.getsize(audio_path),
                         "status": STATUS_ERROR,
                         "progress": 0.0,
                         "segments_total": 0,
                         "segments_done": 0,
-                        "error": "ffmpeg não encontrado no servidor. Instale o ffmpeg ou defina FFMPEG_PATH.",
+                        "error": "gravação antiga sem metadados; revise antes de reprocessar",
                         "created_at": datetime.now().isoformat(),
                         "finished_at": datetime.now().isoformat(),
                     }

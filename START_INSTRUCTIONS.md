@@ -11,9 +11,10 @@ python -m venv venv
 .\venv\Scripts\activate   # No Windows (ou source venv/bin/activate no Linux/macOS)
 pip install -r backend/requirements.txt
 
-# 1.2 Dependências do Frontend
+# 1.2 Dependências e Build de Produção do Frontend
 cd frontend
 npm install
+npm run build   # OBRIGATÓRIO: Compila a SPA para 'frontend/dist', servida pelo backend na porta 8000
 cd ..
 
 # 1.3 Configuração e download do modelo STT no cache canônico
@@ -72,6 +73,17 @@ cloudflared tunnel run --token <SEU_TOKEN>
 ```
 
 O túnel direciona o tráfego de `https://protonflow.com.br` diretamente para o backend na porta 8000, que serve tanto a API FastAPI quanto o frontend compilado em `frontend/dist`.
+
+> [!IMPORTANT]
+> **Atualização de Frontend no Servidor Hospedeiro:**
+> Como os artefatos compilados de `frontend/dist` não são versionados no Git (conforme definido no `.gitignore`), sempre que atualizar o código com `git pull` no PC de hospedagem, é obrigatório recompilar o frontend:
+> ```bash
+> cd frontend
+> npm install
+> npm run build
+> cd ..
+> ```
+> Sem este passo, a porta 8000 continuará servindo o bundle antigo, resultando na ausência de novos componentes como o botão **Importar**, novas modais e ajustes visuais.
 
 ---
 

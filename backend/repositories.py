@@ -127,6 +127,20 @@ def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
     if not item.get("CREATED_AT"):
         item["CREATED_AT"] = item.get("DT_MEETING") or datetime.now().strftime("%Y-%m-%d")
 
+    # Análise vs Transcrição Fiel (PARTE 4)
+    has_trans = bool((
+        item.get("ANON_TRANSCRICAO") or
+        item.get("TRANSCRIPT_RAW") or
+        item.get("TRANSCRIPT_NORMALIZED") or
+        item.get("TRANSCRIPT_FINAL") or
+        item.get("transcription") or
+        ""
+    ).strip())
+    has_res = isinstance(item.get("RESUMO_IA"), dict) and bool(item.get("RESUMO_IA"))
+    if not has_trans and not has_res:
+        if item.get("STATUS_ANALISE") == "aguardando_analise":
+            item["STATUS_ANALISE"] = "sem_transcricao"
+
     return item
 
 
@@ -614,8 +628,18 @@ class MeetingRepository:
                 target_item["STATUS_MEETING"] = "concluida"
                 target_item["FINISHED_AT"] = now_iso
                 target_item["PAUSED_AT"] = None
-                if not target_item.get("STATUS_ANALISE") or target_item.get("STATUS_ANALISE") == "aguardando_analise":
+                has_trans = bool((
+                    target_item.get("ANON_TRANSCRICAO") or
+                    target_item.get("TRANSCRIPT_RAW") or
+                    target_item.get("TRANSCRIPT_NORMALIZED") or
+                    target_item.get("TRANSCRIPT_FINAL") or
+                    target_item.get("transcription") or
+                    ""
+                ).strip())
+                if has_trans:
                     target_item["STATUS_ANALISE"] = "aguardando_analise"
+                else:
+                    target_item["STATUS_ANALISE"] = "sem_transcricao"
                 eventos.append({"tipo": "finalizada", "timestamp": now_iso})
             elif act == "cancelar":
                 target_item["STATUS_MEETING"] = "cancelada"
@@ -682,6 +706,9 @@ class MeetingRepository:
 
             if session_id:
                 target_item["LAST_TRANSCRIPT_SESSION_ID"] = str(session_id)
+
+            if clean_text and target_item.get("STATUS_ANALISE") in ("sem_transcricao", None):
+                target_item["STATUS_ANALISE"] = "aguardando_analise"
 
             _atomic_write_json(self.dataset_path, data)
             return _normalize_live_fields(_apply_pdf_state(target_item))

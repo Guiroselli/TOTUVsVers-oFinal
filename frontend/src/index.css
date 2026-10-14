@@ -4803,8 +4803,23 @@ input[type="text"].command-search-input::placeholder,
 
 /* Suporte geral a toques móveis e áreas seguras */
 @media (max-width: 1023px) {
-  button, select, input, .nav-btn, .control-btn {
+  button, select, input, textarea, .nav-btn, .control-btn {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Previne zoom automático indesejado no Safari do iPhone ao focar campos */
+  input[type="text"],
+  input[type="search"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="date"],
+  input[type="time"],
+  select,
+  textarea,
+  .command-search-input,
+  .drawer-input {
+    font-size: 16px !important;
   }
 }
 
@@ -4816,6 +4831,7 @@ input[type="text"].command-search-input::placeholder,
   }
 
   /* Previne qualquer overflow horizontal indevido */
+  html, body,
   .live-room-wrapper,
   .dashboard-main,
   .dashboard-layout {
@@ -4824,14 +4840,65 @@ input[type="text"].command-search-input::placeholder,
     overflow-x: hidden !important;
   }
 
-  /* Controles táteis mínimos de 44x44px */
+  /* Controles táteis confortáveis mínimos de 44x44px */
   .control-btn,
   .btn-touch,
   .mobile-action-btn,
-  .mobile-hamburger-btn {
+  .mobile-hamburger-btn,
+  .header-action-icon-btn,
+  .btn-pf,
+  .quick-pill-filter,
+  .filter-drawer-toggle-btn {
     min-height: 44px !important;
-    min-width: 44px !important;
     touch-action: manipulation;
+  }
+
+  /* Barra de Comando Mobile: botões de ação organizados em grid tátil */
+  .command-bar-actions button,
+  .command-bar-actions .btn-pf,
+  .command-bar-actions .quick-pill-filter,
+  .command-bar-actions .filter-drawer-toggle-btn {
+    flex: 1 1 calc(50% - 6px) !important;
+    min-height: 44px !important;
+  }
+
+  /* Ações dos cards de reunião táteis e responsivas */
+  .meeting-card-actions {
+    flex-wrap: wrap !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .meeting-card-actions button {
+    min-height: 44px !important;
+  }
+
+  /* Modal de Importação de Transcrições Responsivo (Bottom-sheet em celular) */
+  .import-modal-overlay {
+    padding: 0.5rem !important;
+    align-items: flex-end !important;
+  }
+
+  .import-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 94dvh !important;
+    border-radius: 18px 18px 0 0 !important;
+  }
+
+  .import-meta-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .import-modal-footer-actions {
+    width: 100% !important;
+    flex-direction: column-reverse !important;
+  }
+
+  .import-modal-footer-actions button {
+    width: 100% !important;
+    min-height: 44px !important;
+    justify-content: center !important;
   }
 
   /* Dock inferior fixo na área segura do celular */
@@ -4917,6 +4984,23 @@ input[type="text"].command-search-input::placeholder,
 
   .control-btn span {
     font-size: 9px !important;
+  }
+
+  .command-bar-actions button,
+  .command-bar-actions .btn-pf,
+  .command-bar-actions .quick-pill-filter,
+  .command-bar-actions .filter-drawer-toggle-btn {
+    flex: 1 1 100% !important;
+  }
+
+  .meeting-card-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .meeting-card-meta-right {
+    flex-wrap: wrap !important;
   }
 }
 

@@ -14,6 +14,7 @@ import {
   Pause,
   Square,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   FileText,
   RefreshCw,
@@ -4554,6 +4555,24 @@ RTF: ${backendChunkStats.rtf || 0}
                     <li>Ative o botão de alternância do <strong>Microfone</strong>.</li>
                     <li>Recarregue a página ou toque em <strong>Ativar Microfone Agora</strong>.</li>
                   </ol>
+                </div>
+
+                {/* Nota de Limitação de Segundo Plano no iOS */}
+                <div style={{
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(234, 179, 8, 0.1)',
+                  border: '1px solid rgba(234, 179, 8, 0.25)',
+                  fontSize: '12px',
+                  color: '#eab308',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px'
+                }}>
+                  <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <strong>Aviso iOS (iPhone/iPad):</strong> O Safari e o sistema iOS suspendem a captura de microfone e conexões WebSocket se a aba for minimizada, a tela for bloqueada ou outro app for aberto. Mantenha a tela ligada com a reunião visível durante a chamada.
+                  </div>
                 </div>
               </div>
 

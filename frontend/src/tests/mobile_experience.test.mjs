@@ -123,15 +123,18 @@ describe('Mobile Experience & Responsiveness Tests — Proton Flow', () => {
     assert.equal(isRecording, true, 'Gravação permanece ativa');
   });
 
-  test('7. Breakpoint scale test: widths 320px, 360px, 375px, 390px, 412px, 768px, 1024px', () => {
+  test('7. Breakpoint scale test: widths 320px, 360px, 375px, 390px, 412px, 430px, 768px, 1024px, 1280px (portrait and landscape)', () => {
     const viewports = [
-      { name: 'iPhone SE / Small', width: 320, height: 568, category: 'small-mobile' },
-      { name: 'Samsung Galaxy S20 (small)', width: 360, height: 800, category: 'small-mobile' },
-      { name: 'iPhone X / 11 / 12 mini', width: 375, height: 812, category: 'standard-mobile' },
-      { name: 'iPhone 12 / 13 / 14 Pro', width: 390, height: 844, category: 'standard-mobile' },
-      { name: 'Google Pixel 7', width: 412, height: 915, category: 'standard-mobile' },
-      { name: 'iPad Mini / Tablet', width: 768, height: 1024, category: 'tablet' },
-      { name: 'iPad Pro / Desktop', width: 1024, height: 768, category: 'desktop' }
+      { name: 'iPhone SE / Small (Portrait)', width: 320, height: 568, orientation: 'portrait', category: 'small-mobile' },
+      { name: 'iPhone SE / Small (Landscape)', width: 568, height: 320, orientation: 'landscape', category: 'standard-mobile' },
+      { name: 'Samsung Galaxy S20 (small)', width: 360, height: 800, orientation: 'portrait', category: 'small-mobile' },
+      { name: 'iPhone X / 11 / 12 mini', width: 375, height: 812, orientation: 'portrait', category: 'standard-mobile' },
+      { name: 'iPhone 12 / 13 / 14 / 15 Pro', width: 390, height: 844, orientation: 'portrait', category: 'standard-mobile' },
+      { name: 'Google Pixel 7', width: 412, height: 915, orientation: 'portrait', category: 'standard-mobile' },
+      { name: 'iPhone 14 / 15 / 16 Pro Max', width: 430, height: 932, orientation: 'portrait', category: 'standard-mobile' },
+      { name: 'iPad Mini / Tablet (Portrait)', width: 768, height: 1024, orientation: 'portrait', category: 'tablet' },
+      { name: 'iPad Mini / Tablet (Landscape)', width: 1024, height: 768, orientation: 'landscape', category: 'desktop' },
+      { name: 'Desktop Full HD', width: 1280, height: 800, orientation: 'landscape', category: 'desktop' }
     ];
 
     for (const vp of viewports) {
@@ -150,6 +153,41 @@ describe('Mobile Experience & Responsiveness Tests — Proton Flow', () => {
         assert.ok(isDesktop && !isMobile);
       }
     }
+  });
+
+  test('8. iOS Safari 16px font-size protection to prevent unexpected auto-zoom', () => {
+    const cssPath = path.join(projectRoot, 'frontend/src/index.css');
+    const css = fs.readFileSync(cssPath, 'utf-8');
+
+    assert.ok(
+      css.includes('font-size: 16px !important'),
+      'Must enforce 16px font-size on mobile inputs to avoid iOS Safari auto-zoom'
+    );
+  });
+
+  test('9. ImportTranscriptModal defines mobile-ready classes and bottom-sheet styling on <= 640px', () => {
+    const modalPath = path.join(projectRoot, 'frontend/src/components/ImportTranscriptModal.jsx');
+    const modalJsx = fs.readFileSync(modalPath, 'utf-8');
+    assert.ok(modalJsx.includes('import-modal-overlay'), 'Modal must have import-modal-overlay class');
+    assert.ok(modalJsx.includes('import-modal-card'), 'Modal must have import-modal-card class');
+    assert.ok(modalJsx.includes('import-meta-grid'), 'Modal must have import-meta-grid class');
+    assert.ok(modalJsx.includes('import-modal-footer-actions'), 'Modal must have import-modal-footer-actions class');
+
+    const cssPath = path.join(projectRoot, 'frontend/src/index.css');
+    const css = fs.readFileSync(cssPath, 'utf-8');
+    assert.ok(css.includes('.import-modal-overlay'), 'CSS must define .import-modal-overlay');
+    assert.ok(css.includes('.import-modal-card'), 'CSS must define .import-modal-card');
+    assert.ok(css.includes('.import-meta-grid'), 'CSS must define .import-meta-grid');
+  });
+
+  test('10. Live meeting permission help modal explicitly warns about iOS background audio limits', () => {
+    const jsxPath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const jsx = fs.readFileSync(jsxPath, 'utf-8');
+
+    assert.ok(
+      jsx.includes('Aviso iOS (iPhone/iPad)') || jsx.includes('segundo plano no iOS'),
+      'Must document iOS background recording limitations'
+    );
   });
 
 });
