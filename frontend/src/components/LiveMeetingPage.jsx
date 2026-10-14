@@ -4493,10 +4493,10 @@ RTF: ${backendChunkStats.rtf || 0}
           <button
             type="button"
             onClick={() => setShowRecorderModal(true)}
-            className="btn btn-secondary"
+            className="btn btn-primary"
             title="Gravar uma chamada online (Teams, Meet, Zoom) e gerar a ata"
           >
-            <Video size={14} style={{ color: '#dc2626' }} />
+            <span aria-hidden="true" style={{ width: 12, height: 12, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 0 2px rgba(255,255,255,0.35)', display: 'inline-block' }} />
             <span>Gravar chamada online</span>
           </button>
 

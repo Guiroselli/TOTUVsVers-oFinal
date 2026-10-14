@@ -118,7 +118,12 @@ export default function CallRecorderModal({ onClose, onSent }) {
     setPhase('requesting');
     try {
       // O Chrome só libera o áudio da guia se o pedido incluir vídeo; o vídeo é descartado.
-      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const display = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser' }, // abre já na aba "Guia do Chrome"
+        audio: true,
+        systemAudio: 'include',
+        surfaceSwitching: 'include',
+      });
       streamsRef.current.push(display);
       const tabAudio = display.getAudioTracks();
       if (tabAudio.length === 0) {
@@ -268,7 +273,7 @@ export default function CallRecorderModal({ onClose, onSent }) {
           {(phase === 'idle' || phase === 'error') && !pending && (
             <>
               <button type="button" className="btn btn-primary" onClick={startRecording} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Circle size={13} fill="currentColor" /> Gravar chamada online
+                <Circle size={13} fill="#ef4444" color="#ef4444" /> Gravar chamada online
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => fileInputRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Upload size={14} /> Enviar gravação
