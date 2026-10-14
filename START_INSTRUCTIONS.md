@@ -58,6 +58,23 @@ O frontend estará disponível em `http://localhost:5173`.
 
 ---
 
+### 3.1. Subir o Túnel Cloudflare (Acesso Externo / Remoto)
+Para disponibilizar o sistema publicamente através do Cloudflare Tunnel:
+
+```bash
+# Opção A: Usando o executável diretamente
+cloudflared tunnel --url http://localhost:5173
+
+# Opção B: Usando os scripts de inicialização
+.\scripts\start_tunnel.bat   # Windows CMD / Duplo clique
+# ou
+powershell -File .\scripts\start_tunnel.ps1
+```
+
+O Cloudflare fornecerá uma URL pública HTTPS (ex: `https://xxxx.trycloudflare.com`). Como o Vite já faz proxy de `/api`, `/pdfs` e `/ws` para o backend na porta 8000, essa URL serve tanto o frontend quanto a API sem necessidade de túneis adicionais.
+
+---
+
 ### 4. Verificação do Endpoint STT
 Valide se o faster-whisper e o cache canônico estão operacionais acessando:
 
