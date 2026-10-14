@@ -19,8 +19,6 @@ import {
   RefreshCw,
   Menu,
   Settings,
-  Bell,
-  User,
   Upload
 } from 'lucide-react';
 
@@ -2139,39 +2137,6 @@ export default function MeetingApp() {
                 <span>Reunião Ao Vivo</span>
               </button>
 
-              {/* Botão de Notificações com Indicador */}
-              <button
-                type="button"
-                className="header-action-icon-btn"
-                title="Notificações e Alertas do Sistema"
-                style={{
-                  position: 'relative',
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--panel-bg)',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
-                }}
-              >
-                <Bell size={16} />
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: '6px',
-                    right: '6px',
-                    width: '8px',
-                    height: '8px',
-                    backgroundColor: '#ef4444',
-                    borderRadius: '50%'
-                  }}
-                />
-              </button>
-
               {/* Alternador de Tema Rápido no Header */}
               <button
                 type="button"
@@ -2192,27 +2157,6 @@ export default function MeetingApp() {
                 }}
               >
                 {theme === 'dark' ? <Sun size={16} color="#f59e0b" /> : <Moon size={16} color="#0284c7" />}
-              </button>
-
-              {/* Botão de Perfil / Usuário */}
-              <button
-                type="button"
-                className="header-action-icon-btn"
-                title="Perfil do Usuário (Proton Flow Enterprise)"
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--panel-bg)',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
-                }}
-              >
-                <User size={16} />
               </button>
             </div>
           </header>

@@ -17,16 +17,19 @@ import urllib.error
 
 logger = logging.getLogger(__name__)
 
-# URL padrão de comunicação com o Ollama
-DEFAULT_OLLAMA_BASE_URL = "http://localhost:11434"
+# URL padrão de comunicação com o Ollama (utiliza 127.0.0.1 para evitar latência de DNS IPv6 no Windows)
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
 
 def get_ollama_base_url() -> str:
     """Extrai a URL base do Ollama a partir da variável OLLAMA_URL."""
     url = os.getenv("OLLAMA_URL", f"{DEFAULT_OLLAMA_BASE_URL}/api/generate").strip()
     if "/api/" in url:
-        return url.split("/api/")[0]
-    return url.rstrip("/")
+        url = url.split("/api/")[0]
+    url = url.rstrip("/")
+    if "://localhost:" in url:
+        url = url.replace("://localhost:", "://127.0.0.1:")
+    return url
 
 
 def find_ollama_executable() -> Optional[str]:
@@ -64,22 +67,30 @@ def find_ollama_executable() -> Optional[str]:
     return None
 
 
+_cached_gpu_available: Optional[bool] = None
+
 def is_gpu_available() -> bool:
-    """Detecta se uma GPU dedicada está disponível para inferência."""
+    """Detecta se uma GPU dedicada está disponível para inferência (com cache em memória)."""
+    global _cached_gpu_available
+    if _cached_gpu_available is not None:
+        return _cached_gpu_available
+
     try:
         base_url = get_ollama_base_url()
         req = urllib.request.Request(f"{base_url}/api/ps", headers={"User-Agent": "ProtonFlow"})
-        with urllib.request.urlopen(req, timeout=1.5) as response:
+        with urllib.request.urlopen(req, timeout=1.0) as response:
             if response.status == 200:
                 data = json.loads(response.read().decode("utf-8"))
                 models = data.get("models") or []
                 if models and any((m.get("size_vram") or 0) > 0 for m in models):
+                    _cached_gpu_available = True
                     return True
     except Exception:
         pass
 
     # Verifica presença do utilitário nvidia-smi
-    return bool(shutil.which("nvidia-smi") or shutil.which("rocm-smi"))
+    _cached_gpu_available = bool(shutil.which("nvidia-smi") or shutil.which("rocm-smi"))
+    return _cached_gpu_available
 
 
 class OllamaService:
