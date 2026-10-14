@@ -20,6 +20,10 @@
   --danger: #b91c1c;
   --zoom-bg: #ffffff;
   color-scheme: light;
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
 }
 
 [data-theme="dark"] {
@@ -41,17 +45,26 @@
   --danger: #ef4444;
   --zoom-bg: #0c111d;
   color-scheme: dark;
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-body {
+html, body {
   font-family: 'Inter', sans-serif;
   background-color: var(--bg-dark);
   color: var(--text-main);
-  height: 100vh;
-  overflow: hidden;
+  height: 100%;
+  height: 100dvh;
+  min-height: -webkit-fill-available;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden;
   transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-text-size-adjust: 100%;
 }
 
 /* Global Form Controls (100% Sólido, Moderno, Executivo - Branco Primário) */
@@ -3798,34 +3811,26 @@ input[type="text"].command-search-input::placeholder,
     box-sizing: border-box;
   }
 
-  /* Reunião Ao Vivo no Mobile / Tablet */
+  /* Reunião Ao Vivo no Mobile / Tablet — Palco Integral Teams/Meet */
   .meeting-layout {
     display: flex;
     flex-direction: column;
-    height: auto;
-    min-height: 100%;
+    height: 100%;
     width: 100%;
     max-width: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   .main-stage {
-    height: 48vh;
-    min-height: 250px;
-    flex: none;
+    flex: 1;
+    height: 100%;
     width: 100%;
     max-width: 100%;
+    min-height: 0;
   }
 
   .ai-sidebar {
-    width: 100%;
-    max-width: 100%;
-    height: 52vh;
-    min-height: 320px;
-    border-left: none;
-    border-top: 1px solid var(--border-color);
-    flex: none;
+    display: none;
   }
 
   .control-bar {
@@ -4756,6 +4761,165 @@ input[type="text"].command-search-input::placeholder,
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* =========================================================================
+   SISTEMA DE RESPONSIVIDADE MOBILE & BREAKPOINTS OBRIGATÓRIOS (PROTON FLOW)
+   ========================================================================= */
+
+/* Suporte geral a toques móveis e áreas seguras */
+@media (max-width: 1023px) {
+  button, select, input, .nav-btn, .control-btn {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* 1. Todos os Dispositivos Mobile (max-width: 767px) */
+@media (max-width: 767px) {
+  /* Oculta header mobile global quando a sala de reunião ao vivo estiver ativa */
+  .dashboard-layout:has(.live-room-active) .mobile-top-bar {
+    display: none !important;
+  }
+
+  /* Previne qualquer overflow horizontal indevido */
+  .live-room-wrapper,
+  .dashboard-main,
+  .dashboard-layout {
+    width: 100% !important;
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Controles táteis mínimos de 44x44px */
+  .control-btn,
+  .btn-touch,
+  .mobile-action-btn,
+  .mobile-hamburger-btn {
+    min-height: 44px !important;
+    min-width: 44px !important;
+    touch-action: manipulation;
+  }
+
+  /* Dock inferior fixo na área segura do celular */
+  .teams-control-dock {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 18px 18px 0 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    padding: 8px 6px calc(8px + var(--sab, 10px)) 6px !important;
+    justify-content: space-around !important;
+    background: rgba(15, 23, 42, 0.98) !important;
+    backdrop-filter: blur(20px) !important;
+    z-index: 100 !important;
+  }
+
+  /* Pílula discreta de transcrição compacta */
+  .in-room-pill {
+    top: 10px !important;
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+    max-width: 92vw !important;
+  }
+
+  /* Gaveta lateral de transcrição em tela cheia no mobile */
+  .teams-transcript-drawer {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100dvh !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    z-index: 2000 !important;
+  }
+
+  /* Modais adaptados para telas móveis */
+  .teams-modal-container,
+  .modal-dialog {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 90dvh !important;
+    margin: auto !important;
+    border-radius: 14px !important;
+  }
+
+  /* Grade de reuniões do Hub responsiva */
+  .live-hub-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 2. Celular Pequeno: até 374px (320px - 374px: iPhone SE, Galaxy Fold) */
+@media (max-width: 374px) {
+  body {
+    font-size: 13px !important;
+  }
+
+  .mobile-brand-title {
+    font-size: 0.9rem !important;
+  }
+
+  .live-room-header-title {
+    max-width: 120px !important;
+    font-size: 0.85rem !important;
+  }
+
+  .teams-control-dock {
+    gap: 2px !important;
+    padding: 6px 4px calc(6px + var(--sab, 8px)) 4px !important;
+  }
+
+  .control-btn .icon-circle {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .control-btn span {
+    font-size: 9px !important;
+  }
+}
+
+/* 3. Celular Padrão: 375px a 767px (iPhone 12-16, Android 390-412px) */
+@media (min-width: 375px) and (max-width: 767px) {
+  .live-room-header-title {
+    max-width: 180px !important;
+  }
+}
+
+/* 4. Tablets: 768px a 1023px (iPad, iPad Mini, Surface) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dashboard-layout {
+    flex-direction: column !important;
+  }
+
+  .teams-control-dock {
+    bottom: 16px !important;
+    border-radius: 20px !important;
+    max-width: 88vw !important;
+  }
+
+  .teams-transcript-drawer {
+    width: 380px !important;
+    max-width: 50vw !important;
+  }
+}
+
+/* 5. Desktop: a partir de 1024px */
+@media (min-width: 1024px) {
+  .mobile-top-bar {
+    display: none !important;
+  }
+
+  .teams-transcript-drawer {
+    width: 430px !important;
   }
 }
 

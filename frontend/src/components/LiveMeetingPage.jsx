@@ -27,7 +27,11 @@ import {
   Trash2,
   Settings,
   X,
-  Copy
+  Copy,
+  RotateCw,
+  MoreVertical,
+  MoreHorizontal,
+  HelpCircle
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -99,6 +103,10 @@ export default function LiveMeetingPage({
   const [selectedModelSize, setSelectedModelSize] = useState('small');
   const [switchingModel, setSwitchingModel] = useState(false);
   const [modelSwitchSuccess, setModelSwitchSuccess] = useState('');
+  const [facingMode, setFacingMode] = useState('user'); // 'user' | 'environment'
+  const [showPermissionHelpModal, setShowPermissionHelpModal] = useState(false);
+  const [showMobileActionSheet, setShowMobileActionSheet] = useState(false);
+  const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 767);
   // STT Provider (PARTE 7, 8, 11)
   const [sttProvider, setSttProvider] = useState('backend'); // 'backend' | 'browser' | 'manual'
   const [backendSttStatus, setBackendSttStatus] = useState({
@@ -1507,7 +1515,7 @@ RTF: ${backendChunkStats.rtf || 0}
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: audioConstraints,
-        video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } }
       });
       cameraAcquired = true;
     } catch (primaryErr) {
@@ -1614,7 +1622,7 @@ RTF: ${backendChunkStats.rtf || 0}
         startSpeechRecognition(false);
       }
     }
-  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, backendSttStatus.available, handleMicrophoneTrackEnded]);
+  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, backendSttStatus.available, handleMicrophoneTrackEnded, facingMode]);
 
   // Controles de áudio e vídeo
   const toggleMute = () => {
@@ -1644,7 +1652,7 @@ RTF: ${backendChunkStats.rtf || 0}
       // Se a reunião começou sem vídeo, tenta adquirir câmera dinamicamente agora
       try {
         const newStream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } }
+          video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } }
         });
         const newVideoTrack = newStream.getVideoTracks()[0];
         if (newVideoTrack) {
@@ -1935,7 +1943,63 @@ RTF: ${backendChunkStats.rtf || 0}
     return `${hrs > 0 ? `${hrs.toString().padStart(2, '0')}:` : ''}${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Badge visual de status
+  // Alternar entre câmera frontal e traseira no celular sem interromper áudio ou STT
+  const handleToggleFacingMode = async () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    if (!streamRef.current) return;
+    try {
+      const currentVideoTrack = streamRef.current.getVideoTracks()[0];
+      if (currentVideoTrack) {
+        currentVideoTrack.stop();
+        streamRef.current.removeTrack(currentVideoTrack);
+      }
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: nextMode }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      if (newVideoTrack) {
+        streamRef.current.addTrack(newVideoTrack);
+        setIsCamOff(false);
+        setVideoStatus('active');
+        if (videoRef.current) {
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.play().catch(() => {});
+        }
+        newVideoTrack.onended = () => {
+          setIsCamOff(true);
+          setVideoStatus('ended');
+        };
+      }
+    } catch (err) {
+      console.warn('Erro ao alternar câmera frontal/traseira:', err);
+    }
+  };
+
+  // Responsividade e ciclo de vida mobile (rotação, visibilidade e redimensionamento)
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobileScreen(window.innerWidth <= 767);
+    };
+    window.addEventListener('resize', checkMobile);
+    window.addEventListener('orientationchange', checkMobile);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const audioTrack = streamRef.current?.getAudioTracks()[0];
+        if (audioTrack && audioTrack.readyState === 'ended' && isRecordingRef.current) {
+          console.warn('[Mobile] Trilha de microfone pausada pelo SO ao retornar à aba');
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('resize', checkMobile);
+      window.removeEventListener('orientationchange', checkMobile);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
   const getStatusBadge = (status) => {
     switch (status) {
       case 'ao_vivo':
@@ -1976,7 +2040,7 @@ RTF: ${backendChunkStats.rtf || 0}
     const badge = getStatusBadge(currentMeeting.STATUS_MEETING);
 
     return (
-      <div className="live-room-wrapper" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', background: 'var(--bg-main)' }}>
+      <div className="live-room-wrapper live-room-active" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', background: 'var(--bg-main)' }}>
         {/* Barra superior de alternância entre múltiplas reuniões ao vivo simultâneas */}
         {otherLiveMeetings.length > 0 && (
           <div style={{
@@ -2023,139 +2087,236 @@ RTF: ${backendChunkStats.rtf || 0}
         )}
 
         {/* =========================================================================
-            HEADER DA SALA ATIVA — PADRÃO MINIMALISTA TEAMS / GOOGLE MEET
+            HEADER DA SALA ATIVA — RESPONSIVO (MOBILE SLIM / DESKTOP FULL)
             ========================================================================= */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '10px 20px',
+          padding: isMobileScreen ? '8px 12px' : '10px 20px',
           background: 'rgba(15, 23, 42, 0.95)',
           borderBottom: '1px solid var(--border-color)',
-          flexWrap: 'wrap',
-          gap: '12px',
-          zIndex: 10
+          flexWrap: 'nowrap',
+          gap: '8px',
+          zIndex: 10,
+          minHeight: '48px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              type="button"
-              onClick={() => setActiveMeetingId(null)}
-              className="btn btn-secondary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
-              title="Voltar para a central de reuniões"
-            >
-              <ArrowLeft size={14} />
-              Sair da Sala
-            </button>
-
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
-                  {currentMeeting.TITULO_REUNIAO}
-                </h2>
-                <span style={{
-                  fontSize: '11px',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  background: badge.bg,
-                  color: badge.color,
-                  border: `1px solid ${badge.border}`,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}>
-                  {badge.icon && <span style={{ width: 6, height: 6, borderRadius: '50%', background: badge.color }}></span>}
-                  {badge.label}
-                </span>
-                <span style={{
-                  fontSize: '11px',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  color: 'var(--text-muted)',
-                  fontWeight: 600
-                }}>
-                  {currentMeeting.DEPARTAMENTO || 'Geral'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#38bdf8', fontWeight: 600 }}>
-                  <Clock size={12} />
-                  {formatTimer(durationSeconds)}
-                </span>
-                <span>Horário: <strong style={{ color: 'var(--text-main)' }}>{currentMeeting.HORARIO_AGENDADO}</strong></span>
-                <span>Data: {currentMeeting.DT_MEETING}</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* Seletor de dispositivo de microfone */}
-            {audioDevices.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
-                <Volume2 size={14} color="var(--text-muted)" />
-                <select
-                  value={selectedAudioDeviceId}
-                  onChange={(e) => {
-                    setSelectedAudioDeviceId(e.target.value);
-                    if (isRecording) {
-                      stopMediaAndRecognition();
-                      setTimeout(() => startMediaAndRecognition(), 300);
-                    }
+          {isMobileScreen ? (
+            <>
+              {/* Lado Esquerdo Mobile: Voltar + Título compact + Timer */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveMeetingId(null)}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: '40px',
+                    minHeight: '40px',
+                    padding: '6px',
+                    borderRadius: '8px'
                   }}
-                  className="form-select"
-                  style={{ fontSize: '11px', padding: '4px 8px', maxWidth: '170px' }}
-                  title="Selecionar dispositivo de entrada de áudio desta reunião"
+                  title="Sair da sala"
                 >
-                  {audioDevices.map((d, idx) => (
-                    <option key={d.deviceId || idx} value={d.deviceId}>
-                      {d.label || `Microfone ${idx + 1}`}
-                    </option>
-                  ))}
-                </select>
+                  <ArrowLeft size={16} />
+                </button>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <h2 style={{
+                      fontSize: '0.95rem',
+                      fontWeight: 700,
+                      margin: 0,
+                      color: 'var(--text-main)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      maxWidth: '140px'
+                    }}>
+                      {currentMeeting.TITULO_REUNIAO}
+                    </h2>
+                    <span style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: badge.color,
+                      flexShrink: 0
+                    }} title={badge.label} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                    <span style={{ color: '#38bdf8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                      <Clock size={10} />
+                      {formatTimer(durationSeconds)}
+                    </span>
+                    <span>• {currentMeeting.DEPARTAMENTO || 'Geral'}</span>
+                  </div>
+                </div>
               </div>
-            )}
 
-            {/* Abrir em nova aba */}
-            <button
-              type="button"
-              onClick={() => {
-                const url = `${window.location.origin}${window.location.pathname}?view=meeting&id=${currentMeeting.ID_MEETING}`;
-                window.open(url, '_blank');
-              }}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-              title="Abrir esta reunião em janela/aba separada"
-            >
-              <ExternalLink size={13} />
-              Nova Aba
-            </button>
+              {/* Lado Direito Mobile: Alternar Câmera (se ativa) + Menu de Ações (...) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                {videoStatus === 'active' && !isCamOff && (
+                  <button
+                    type="button"
+                    onClick={handleToggleFacingMode}
+                    className="btn btn-secondary"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: '40px',
+                      minHeight: '40px',
+                      padding: '6px',
+                      borderRadius: '8px'
+                    }}
+                    title="Alternar câmera frontal/traseira"
+                  >
+                    <RotateCw size={15} color="#38bdf8" />
+                  </button>
+                )}
 
-            {/* Ajustes da Reunião (Modal Desacoplado) */}
-            <button
-              type="button"
-              onClick={() => setShowSettingsModal(true)}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-              title="Ajustes de motor STT, modelo faster-whisper e vocabulário contextual"
-            >
-              <Settings size={13} />
-              Ajustes
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileActionSheet(true)}
+                  className="btn btn-secondary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minWidth: '40px',
+                    minHeight: '40px',
+                    padding: '6px',
+                    borderRadius: '8px'
+                  }}
+                  title="Mais opções da reunião"
+                >
+                  <MoreVertical size={16} />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Versão Desktop Completa */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setActiveMeetingId(null)}
+                  className="btn btn-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '6px 12px' }}
+                  title="Voltar para a central de reuniões"
+                >
+                  <ArrowLeft size={14} />
+                  Sair da Sala
+                </button>
 
-            {/* Diagnóstico Técnico (Modal Desacoplado) */}
-            <button
-              type="button"
-              onClick={() => setShowTechnicalDiagnostics(true)}
-              className="btn btn-secondary"
-              style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-              title="Exibir métricas e diagnóstico técnico desacoplado"
-            >
-              <Activity size={13} />
-              Diagnóstico
-            </button>
-          </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
+                      {currentMeeting.TITULO_REUNIAO}
+                    </h2>
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      background: badge.bg,
+                      color: badge.color,
+                      border: `1px solid ${badge.border}`,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      {badge.icon && <span style={{ width: 6, height: 6, borderRadius: '50%', background: badge.color }}></span>}
+                      {badge.label}
+                    </span>
+                    <span style={{
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      color: 'var(--text-muted)',
+                      fontWeight: 600
+                    }}>
+                      {currentMeeting.DEPARTAMENTO || 'Geral'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#38bdf8', fontWeight: 600 }}>
+                      <Clock size={12} />
+                      {formatTimer(durationSeconds)}
+                    </span>
+                    <span>Horário: <strong style={{ color: 'var(--text-main)' }}>{currentMeeting.HORARIO_AGENDADO}</strong></span>
+                    <span>Data: {currentMeeting.DT_MEETING}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {audioDevices.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
+                    <Volume2 size={14} color="var(--text-muted)" />
+                    <select
+                      value={selectedAudioDeviceId}
+                      onChange={(e) => {
+                        setSelectedAudioDeviceId(e.target.value);
+                        if (isRecording) {
+                          stopMediaAndRecognition();
+                          setTimeout(() => startMediaAndRecognition(), 300);
+                        }
+                      }}
+                      className="form-select"
+                      style={{ fontSize: '11px', padding: '4px 8px', maxWidth: '170px' }}
+                      title="Selecionar dispositivo de entrada de áudio desta reunião"
+                    >
+                      {audioDevices.map((d, idx) => (
+                        <option key={d.deviceId || idx} value={d.deviceId}>
+                          {d.label || `Microfone ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}${window.location.pathname}?view=meeting&id=${currentMeeting.ID_MEETING}`;
+                    window.open(url, '_blank');
+                  }}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  title="Abrir esta reunião em janela/aba separada"
+                >
+                  <ExternalLink size={13} />
+                  Nova Aba
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowSettingsModal(true)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  title="Ajustes de motor STT, modelo faster-whisper e vocabulário contextual"
+                >
+                  <Settings size={13} />
+                  Ajustes
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTechnicalDiagnostics(true)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '5px 9px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                  title="Exibir métricas e diagnóstico técnico desacoplado"
+                >
+                  <Activity size={13} />
+                  Diagnóstico
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Notificação de Câmera Desconectada / Ocupada */}
@@ -2373,6 +2534,49 @@ RTF: ${backendChunkStats.rtf || 0}
                     </span>
                   </div>
                 </div>
+
+                {/* Card de autorização prévia de microfone no celular */}
+                {audioStatus !== 'active' && (
+                  <div className="mobile-pre-permission-card" style={{
+                    marginTop: '10px',
+                    padding: '14px 18px',
+                    borderRadius: '12px',
+                    background: 'rgba(15, 23, 42, 0.95)',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)',
+                    maxWidth: '360px',
+                    width: '92%',
+                    textAlign: 'center'
+                  }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
+                      <Mic size={20} color="#38bdf8" />
+                    </div>
+                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>
+                      Ative o microfone para registrar a reunião
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4 }}>
+                      Navegadores em celulares exigem um toque direto para autorizar a gravação e transcrever continuamente.
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => startMediaAndRecognition()}
+                        style={{ minHeight: '44px', width: '100%', justifyContent: 'center', fontWeight: 600, fontSize: '12.5px' }}
+                      >
+                        <Mic size={15} /> Ativar microfone agora
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => setShowPermissionHelpModal(true)}
+                        style={{ minHeight: '40px', width: '100%', justifyContent: 'center', fontSize: '11px', color: 'var(--text-muted)' }}
+                      >
+                        <HelpCircle size={13} /> Como liberar no Safari / Chrome
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2498,42 +2702,45 @@ RTF: ${backendChunkStats.rtf || 0}
             {/* =========================================================================
                 BARRA DE CONTROLES INFERIOR FLUTUANTE (TEAMS / MEET DOCK)
                 ========================================================================= */}
-            <div style={{
-              position: 'absolute',
-              bottom: '18px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 25,
-              background: 'rgba(15, 23, 42, 0.94)',
-              backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '24px',
-              padding: '6px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              boxShadow: '0 12px 36px rgba(0,0,0,0.55)',
-              maxWidth: '92vw',
-              flexWrap: 'wrap',
-              justifyContent: 'center'
-            }}>
+            <div
+              className="meeting-controls-dock"
+              style={{
+                position: 'absolute',
+                bottom: isMobileScreen ? 'calc(10px + var(--sab, 0px))' : '18px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 25,
+                background: 'rgba(15, 23, 42, 0.94)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '24px',
+                padding: isMobileScreen ? '4px 10px' : '6px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: isMobileScreen ? '6px' : '12px',
+                boxShadow: '0 12px 36px rgba(0,0,0,0.55)',
+                maxWidth: '96vw',
+                flexWrap: 'nowrap',
+                justifyContent: 'center'
+              }}
+            >
               {/* Botão Microfone */}
               <button
                 type="button"
                 className={`control-btn ${isMuted ? 'active' : ''}`}
                 onClick={toggleMute}
-                style={{ padding: '6px 12px', gap: '4px' }}
+                style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
                 title={isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}
               >
                 <div className="icon-circle" style={{
-                  width: 40,
-                  height: 40,
+                  width: isMobileScreen ? 36 : 40,
+                  height: isMobileScreen ? 36 : 40,
                   background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
                   borderColor: isMuted ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
                 }}>
-                  {isMuted ? <MicOff size={18} color="#f87171" /> : <Mic size={18} />}
+                  {isMuted ? <MicOff size={isMobileScreen ? 16 : 18} color="#f87171" /> : <Mic size={isMobileScreen ? 16 : 18} />}
                 </div>
-                <span style={{ fontSize: '11px' }}>{isMuted ? 'Desmutar' : 'Mutar'}</span>
+                <span style={{ fontSize: '10px' }}>{isMuted ? 'Desmutar' : 'Mutar'}</span>
               </button>
 
               {/* Botão Câmera */}
@@ -2541,18 +2748,18 @@ RTF: ${backendChunkStats.rtf || 0}
                 type="button"
                 className={`control-btn ${isCamOff ? 'active' : ''}`}
                 onClick={toggleCamera}
-                style={{ padding: '6px 12px', gap: '4px' }}
+                style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
                 title={isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}
               >
                 <div className="icon-circle" style={{
-                  width: 40,
-                  height: 40,
+                  width: isMobileScreen ? 36 : 40,
+                  height: isMobileScreen ? 36 : 40,
                   background: isCamOff ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
                   borderColor: isCamOff ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
                 }}>
-                  {isCamOff ? <VideoOff size={18} color="#f87171" /> : <Video size={18} />}
+                  {isCamOff ? <VideoOff size={isMobileScreen ? 16 : 18} color="#f87171" /> : <Video size={isMobileScreen ? 16 : 18} />}
                 </div>
-                <span style={{ fontSize: '11px' }}>{isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}</span>
+                <span style={{ fontSize: '10px' }}>{isCamOff ? 'Ligar' : 'Parar'}</span>
               </button>
 
               {/* Botão Pausar / Retomar */}
@@ -2561,26 +2768,26 @@ RTF: ${backendChunkStats.rtf || 0}
                   type="button"
                   className="control-btn"
                   onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'pausar')}
-                  style={{ padding: '6px 12px', gap: '4px' }}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
                   title="Pausar a reunião e a gravação"
                 >
-                  <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }}>
-                    <Pause size={18} color="#eab308" />
+                  <div className="icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }}>
+                    <Pause size={isMobileScreen ? 16 : 18} color="#eab308" />
                   </div>
-                  <span style={{ fontSize: '11px' }}>Pausar</span>
+                  <span style={{ fontSize: '10px' }}>Pausar</span>
                 </button>
               ) : currentMeeting.STATUS_MEETING === 'pausada' || currentMeeting.STATUS_MEETING === 'agendada' ? (
                 <button
                   type="button"
                   className="control-btn"
                   onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'iniciar')}
-                  style={{ padding: '6px 12px', gap: '4px' }}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
                   title="Iniciar ou Retomar Reunião"
                 >
-                  <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
-                    <Play size={18} color="#10b981" />
+                  <div className="icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
+                    <Play size={isMobileScreen ? 16 : 18} color="#10b981" />
                   </div>
-                  <span style={{ fontSize: '11px' }}>{currentMeeting.STATUS_MEETING === 'pausada' ? 'Retomar' : 'Iniciar'}</span>
+                  <span style={{ fontSize: '10px' }}>{currentMeeting.STATUS_MEETING === 'pausada' ? 'Retomar' : 'Iniciar'}</span>
                 </button>
               ) : null}
 
@@ -2589,85 +2796,107 @@ RTF: ${backendChunkStats.rtf || 0}
                 type="button"
                 className={`control-btn ${showTranscriptDrawer ? 'active' : ''}`}
                 onClick={() => setShowTranscriptDrawer(!showTranscriptDrawer)}
-                style={{ padding: '6px 12px', gap: '4px' }}
+                style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
                 title="Abrir ou fechar painel lateral de transcrição"
               >
                 <div className="icon-circle" style={{
-                  width: 40,
-                  height: 40,
+                  width: isMobileScreen ? 36 : 40,
+                  height: isMobileScreen ? 36 : 40,
                   background: showTranscriptDrawer ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
                   borderColor: showTranscriptDrawer ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)'
                 }}>
-                  <FileText size={18} color={showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)'} />
+                  <FileText size={isMobileScreen ? 16 : 18} color={showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)'} />
                 </div>
-                <span style={{ fontSize: '11px', color: showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)' }}>
-                  Transcrição
+                <span style={{ fontSize: '10px', color: showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)' }}>
+                  Texto
                 </span>
               </button>
 
-              {/* Botão Ajustes */}
-              <button
-                type="button"
-                className="control-btn"
-                onClick={() => setShowSettingsModal(true)}
-                style={{ padding: '6px 12px', gap: '4px' }}
-                title="Ajustes de motor STT, modelo e parâmetros da reunião"
-              >
-                <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
-                  <Settings size={18} />
-                </div>
-                <span style={{ fontSize: '11px' }}>Ajustes</span>
-              </button>
+              {/* No celular: Botão "Mais" para abrir Action Sheet */}
+              {isMobileScreen ? (
+                <button
+                  type="button"
+                  className="control-btn"
+                  onClick={() => setShowMobileActionSheet(true)}
+                  style={{ padding: '4px 6px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title="Mais opções e ajustes"
+                >
+                  <div className="icon-circle" style={{ width: 36, height: 36, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                    <MoreHorizontal size={16} />
+                  </div>
+                  <span style={{ fontSize: '10px' }}>Mais</span>
+                </button>
+              ) : (
+                <>
+                  {/* Botão Ajustes (Desktop) */}
+                  <button
+                    type="button"
+                    className="control-btn"
+                    onClick={() => setShowSettingsModal(true)}
+                    style={{ padding: '6px 12px', gap: '4px' }}
+                    title="Ajustes de motor STT, modelo e parâmetros da reunião"
+                  >
+                    <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                      <Settings size={18} />
+                    </div>
+                    <span style={{ fontSize: '11px' }}>Ajustes</span>
+                  </button>
 
-              {/* Botão Diagnóstico */}
-              <button
-                type="button"
-                className="control-btn"
-                onClick={() => setShowTechnicalDiagnostics(true)}
-                style={{ padding: '6px 12px', gap: '4px' }}
-                title="Abrir painel técnico desacoplado de diagnóstico"
-              >
-                <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
-                  <Activity size={18} />
-                </div>
-                <span style={{ fontSize: '11px' }}>Diagnóstico</span>
-              </button>
+                  {/* Botão Diagnóstico (Desktop) */}
+                  <button
+                    type="button"
+                    className="control-btn"
+                    onClick={() => setShowTechnicalDiagnostics(true)}
+                    style={{ padding: '6px 12px', gap: '4px' }}
+                    title="Abrir painel técnico desacoplado de diagnóstico"
+                  >
+                    <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                      <Activity size={18} />
+                    </div>
+                    <span style={{ fontSize: '11px' }}>Diagnóstico</span>
+                  </button>
+                </>
+              )}
 
               {/* Botão Finalizar e Gerar Atas */}
               <button
                 type="button"
                 className="control-btn control-btn-leave"
                 onClick={handleFinishAndAnalyze}
-                style={{ padding: '6px 14px', gap: '4px' }}
+                style={{ padding: isMobileScreen ? '4px 8px' : '6px 14px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
                 title="Encerrar reunião e sintetizar ata operacional e executiva com IA"
               >
-                <div className="icon-circle leave-icon-circle" style={{ width: 40, height: 40, background: '#ef4444', borderColor: '#ef4444' }}>
-                  <Square size={16} fill="#ffffff" color="#ffffff" />
+                <div className="icon-circle leave-icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: '#ef4444', borderColor: '#ef4444' }}>
+                  <Square size={isMobileScreen ? 14 : 16} fill="#ffffff" color="#ffffff" />
                 </div>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#f87171' }}>Finalizar</span>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: '#f87171' }}>Sair</span>
               </button>
             </div>
           </div>
 
           {/* =========================================================================
-              SLIDE-OVER DRAWER DE TRANSCRIÇÃO (RETRÁTIL — FECHADO POR PADRÃO)
+              SLIDE-OVER DRAWER DE TRANSCRIÇÃO (RETRÁTIL — RESPONSIVO NO CELULAR)
               ========================================================================= */}
           {showTranscriptDrawer && (
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              bottom: 0,
-              width: '430px',
-              maxWidth: '92vw',
-              background: '#0d1322',
-              borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
-              boxShadow: '-12px 0 40px rgba(0,0,0,0.65)',
-              zIndex: 35,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden'
-            }}>
+            <div
+              className="transcript-slideover-drawer"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                bottom: 0,
+                left: isMobileScreen ? 0 : 'auto',
+                width: isMobileScreen ? '100%' : '430px',
+                maxWidth: isMobileScreen ? '100vw' : '92vw',
+                background: '#0d1322',
+                borderLeft: isMobileScreen ? 'none' : '1px solid rgba(255, 255, 255, 0.12)',
+                boxShadow: '-12px 0 40px rgba(0,0,0,0.65)',
+                zIndex: isMobileScreen ? 50 : 35,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden'
+              }}
+            >
               {/* Header do Drawer */}
               <div style={{
                 padding: '14px 18px',
@@ -3633,6 +3862,239 @@ RTF: ${backendChunkStats.rtf || 0}
             </div>
           </div>
         )}
+
+        {/* =========================================================================
+            MODAL DE AJUDA DE PERMISSÃO MOBILE (SAFARI & CHROME)
+            ========================================================================= */}
+        {showPermissionHelpModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 110,
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}>
+            <div style={{
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '500px',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.8)',
+              overflow: 'hidden'
+            }}>
+              {/* Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(255, 255, 255, 0.03)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <HelpCircle size={18} color="#38bdf8" />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
+                    Como liberar o microfone no celular
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPermissionHelpModal(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    minWidth: '44px',
+                    minHeight: '44px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title="Fechar ajuda"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div style={{ padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', fontSize: '13px', lineHeight: 1.5 }}>
+                {/* iPhone / Safari */}
+                <div style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🍎 iPhone (iOS Safari)</span>
+                  </div>
+                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-secondary)' }}>
+                    <li>Toque no ícone <strong>aA</strong> no lado esquerdo da barra de endereços do Safari.</li>
+                    <li>Selecione <strong>Ajustes do Site</strong> (Website Settings).</li>
+                    <li>Em <strong>Microfone</strong>, selecione <strong>Permitir</strong>.</li>
+                    <li>Se o microfone estiver desabilitado no iOS: abra <em>Ajustes do iPhone &gt; Safari &gt; Microfone</em> e marque como <em>Perguntar</em> ou <em>Permitir</em>.</li>
+                  </ol>
+                </div>
+
+                {/* Android / Chrome */}
+                <div style={{
+                  padding: '14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.08)'
+                }}>
+                  <div style={{ fontWeight: 700, color: '#10b981', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span>🤖 Android (Google Chrome)</span>
+                  </div>
+                  <ol style={{ margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-secondary)' }}>
+                    <li>Toque no ícone de <strong>ajustes / cadeado</strong> à esquerda do endereço do site.</li>
+                    <li>Toque em <strong>Permissões</strong>.</li>
+                    <li>Ative o botão de alternância do <strong>Microfone</strong>.</li>
+                    <li>Recarregue a página ou toque em <strong>Ativar Microfone Agora</strong>.</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div style={{
+                padding: '14px 20px',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                background: 'rgba(255, 255, 255, 0.02)'
+              }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => {
+                    setShowPermissionHelpModal(false);
+                    startMediaAndRecognition();
+                  }}
+                  style={{ minHeight: '44px', padding: '0 20px', fontWeight: 600 }}
+                >
+                  Entendi, testar microfone
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* =========================================================================
+            BOTTOM SHEET DE AÇÕES MOBILE (ACTION SHEET)
+            ========================================================================= */}
+        {showMobileActionSheet && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 105,
+              background: 'rgba(0, 0, 0, 0.7)',
+              backdropFilter: 'blur(6px)',
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'center'
+            }}
+            onClick={() => setShowMobileActionSheet(false)}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '600px',
+                background: '#0f172a',
+                borderTopLeftRadius: '20px',
+                borderTopRightRadius: '20px',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                padding: '20px 20px calc(20px + var(--sab, 0px))',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+                boxShadow: '0 -10px 40px rgba(0, 0, 0, 0.6)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ width: 40, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.25)', margin: '0 auto 8px' }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                <h4 style={{ margin: 0, fontSize: '15px', color: 'var(--text-main)', fontWeight: 700 }}>
+                  Opções da Reunião
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileActionSheet(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Botão Alternar Câmera Frontal / Traseira */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowMobileActionSheet(false);
+                  handleToggleFacingMode();
+                }}
+                style={{ minHeight: '48px', justifyContent: 'flex-start', padding: '0 16px', gap: '12px', fontSize: '14px' }}
+              >
+                <RotateCw size={18} color="#38bdf8" />
+                <span>Virar Câmera ({facingMode === 'user' ? 'Mudar para Traseira' : 'Mudar para Frontal'})</span>
+              </button>
+
+              {/* Botão Ajustes */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowMobileActionSheet(false);
+                  setShowSettingsModal(true);
+                }}
+                style={{ minHeight: '48px', justifyContent: 'flex-start', padding: '0 16px', gap: '12px', fontSize: '14px' }}
+              >
+                <Settings size={18} color="#a78bfa" />
+                <span>Ajustes & Parâmetros STT</span>
+              </button>
+
+              {/* Botão Diagnóstico Técnico */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowMobileActionSheet(false);
+                  setShowTechnicalDiagnostics(true);
+                }}
+                style={{ minHeight: '48px', justifyContent: 'flex-start', padding: '0 16px', gap: '12px', fontSize: '14px' }}
+              >
+                <Activity size={18} color="#10b981" />
+                <span>Diagnóstico Técnico Desacoplado</span>
+              </button>
+
+              {/* Botão Abrir em Nova Aba */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowMobileActionSheet(false);
+                  const url = `${window.location.origin}${window.location.pathname}?view=meeting&id=${currentMeeting.ID_MEETING}`;
+                  window.open(url, '_blank');
+                }}
+                style={{ minHeight: '48px', justifyContent: 'flex-start', padding: '0 16px', gap: '12px', fontSize: '14px' }}
+              >
+                <ExternalLink size={18} color="#f59e0b" />
+                <span>Abrir Reunião em Nova Aba</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -3873,7 +4335,7 @@ RTF: ${backendChunkStats.rtf || 0}
       ) : (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 290px), 1fr))',
           gap: '16px'
         }}>
           {filteredMeetings.map((item) => {
@@ -4231,7 +4693,7 @@ RTF: ${backendChunkStats.rtf || 0}
               </div>
 
               {/* Equipe / Área e Horário */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 200px), 1fr))', gap: '12px', marginBottom: '14px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '5px' }}>
                     Área / Equipe *
