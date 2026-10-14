@@ -80,6 +80,15 @@ export const api = {
       body: JSON.stringify({ transcript, is_incremental: isIncremental, session_id: sessionId }),
     }),
 
+  getLiveChatMessages: (meetingId) =>
+    request(`/api/live/meetings/${meetingId}/chat/messages`),
+
+  sendLiveChatMessage: (meetingId, data) =>
+    request(`/api/live/meetings/${meetingId}/chat/messages`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   getSttStatus: () => request('/api/stt/status'),
 
   switchSttModel: (model) =>

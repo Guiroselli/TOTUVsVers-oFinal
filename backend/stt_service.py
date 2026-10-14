@@ -283,9 +283,9 @@ def preprocess_and_analyze_audio(
         mean_offset = float(np.mean(mono_samples))
         mono_samples = mono_samples - mean_offset
 
-        # 2. Filtro Passa-Altas suave @ ~70Hz para atenuação de rumble subsônico sem cortar voz (alpha = 0.973 @ 16kHz)
+        # 2. Filtro Passa-Altas leve @ 80Hz para atenuação de rumble subsônico/ruído de baixa frequência sem cortar voz (alpha = 0.9695 @ 16kHz)
         if total_samples > 10:
-            alpha = 0.973
+            alpha = 0.9695
             filtered = np.zeros_like(mono_samples)
             filtered[0] = mono_samples[0]
             for i in range(1, total_samples):

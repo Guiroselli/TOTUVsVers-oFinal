@@ -24,31 +24,51 @@
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
+
+  /* Proton Flow Design Tokens — Light Theme */
+  --pf-bg-base: #f8fafc;
+  --pf-surface: #ffffff;
+  --pf-surface-elevated: #f1f5f9;
+  --pf-border: #e2e8f0;
+  --pf-text-primary: #0f172a;
+  --pf-text-secondary: #475569;
+  --pf-accent: #0284c7;
+  --pf-accent-hover: #0369a1;
 }
 
 [data-theme="dark"] {
-  /* TOTVS Enterprise Dark Palette: Azul Corporativo, Preto Profundo e Tons de Branco (Modo Escuro Opcional) */
-  --bg-dark: #07090e;
-  --bg-main: #0b0f19;
-  --panel-bg: #0f172a;
-  --panel-hover: #1e293b;
-  --text-main: #ffffff;
+  /* TOTVS Enterprise Dark Palette: Slate/Navy escuro sofisticado (#0b1120 / #0f172a), nunca preto absoluto */
+  --bg-dark: #0b1120;
+  --bg-main: #0f172a;
+  --panel-bg: #1e293b;
+  --panel-hover: #243244;
+  --text-main: #f8fafc;
   --text-secondary: #e2e8f0;
   --text-muted: #94a3b8;
   --primary-color: #0284c7;
-  --primary-hover: #0369a1;
+  --primary-hover: #38bdf8;
   --primary-light: #38bdf8;
-  --border-color: rgba(255, 255, 255, 0.08);
+  --border-color: rgba(255, 255, 255, 0.12);
   --glass-shadow: 0 10px 30px 0 rgba(0, 0, 0, 0.6);
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
-  --zoom-bg: #0c111d;
+  --zoom-bg: #0f172a;
   color-scheme: dark;
   --sat: env(safe-area-inset-top, 0px);
   --sar: env(safe-area-inset-right, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
+
+  /* Proton Flow Design Tokens — Dark Theme */
+  --pf-bg-base: #0b1120;
+  --pf-surface: #131d31;
+  --pf-surface-elevated: #1e293b;
+  --pf-border: rgba(255, 255, 255, 0.12);
+  --pf-text-primary: #f8fafc;
+  --pf-text-secondary: #94a3b8;
+  --pf-accent: #0284c7;
+  --pf-accent-hover: #38bdf8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -4921,5 +4941,259 @@ input[type="text"].command-search-input::placeholder,
   .teams-transcript-drawer {
     width: 430px !important;
   }
+}
+
+/* =========================================================================
+   LIVE MEETING ROOM — DIGITAL ROOM, COLLABORATION PANEL & LIVE CHAT
+   ========================================================================= */
+
+.meeting-stage-container {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--pf-bg-base);
+  position: relative;
+}
+
+/* Palco Central de Vídeo / Áudio */
+.meeting-stage-main {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  height: 100%;
+  background: radial-gradient(ellipse at center, var(--pf-surface-elevated) 0%, var(--pf-bg-base) 80%);
+  border-right: 1px solid var(--pf-border);
+}
+
+/* Painel de Colaboração Lateral (Desktop) */
+.meeting-collab-panel {
+  width: 380px;
+  max-width: 420px;
+  min-width: 320px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--pf-surface);
+  border-left: 1px solid var(--pf-border);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.25);
+  z-index: 20;
+  transition: transform 0.2s ease, width 0.2s ease;
+}
+
+/* Abas de Colaboração (Chat e Transcrição) */
+.collab-tabs-header {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--pf-border);
+  background: var(--pf-surface);
+  padding: 0 8px;
+  gap: 4px;
+}
+
+.collab-tab-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--pf-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.collab-tab-btn:hover {
+  color: var(--pf-text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.collab-tab-btn.active {
+  color: var(--pf-accent);
+  border-bottom-color: var(--pf-accent);
+}
+
+/* Segmented Control no Celular (Sala | Chat | Transcrição) */
+.mobile-meeting-segmented-nav {
+  display: flex;
+  background: var(--pf-surface-elevated);
+  border: 1px solid var(--pf-border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+  margin: 6px 12px;
+}
+
+.mobile-segment-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  min-height: 44px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--pf-text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mobile-segment-btn.active {
+  background: var(--pf-accent);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+}
+
+/* Área de Mensagens de Chat */
+.chat-messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--pf-text-secondary);
+  padding: 24px;
+  gap: 10px;
+}
+
+.chat-empty-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(2, 132, 199, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pf-accent);
+}
+
+/* Balões de Chat */
+.chat-bubble-row {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
+}
+
+.chat-bubble-row.own {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-bubble-row.other {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-bubble-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 11px;
+  color: var(--pf-text-secondary);
+}
+
+.chat-bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  word-break: break-word;
+  white-space: pre-wrap;
+  position: relative;
+}
+
+.chat-bubble.own {
+  background: var(--pf-accent);
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+}
+
+.chat-bubble.other {
+  background: var(--pf-surface-elevated);
+  color: var(--pf-text-primary);
+  border: 1px solid var(--pf-border);
+  border-bottom-left-radius: 4px;
+}
+
+/* Barra de Entrada de Chat */
+.chat-input-bar {
+  padding: 12px 14px;
+  border-top: 1px solid var(--pf-border);
+  background: var(--pf-surface);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.chat-textarea {
+  flex: 1;
+  background: var(--pf-bg-base);
+  color: var(--pf-text-primary);
+  border: 1px solid var(--pf-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  resize: none;
+  min-height: 44px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  font-family: inherit;
+}
+
+.chat-textarea:focus {
+  border-color: var(--pf-accent);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.chat-send-btn {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px;
+  border: none;
+  background: var(--pf-accent);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.chat-send-btn:hover:not(:disabled) {
+  background: var(--pf-accent-hover);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 

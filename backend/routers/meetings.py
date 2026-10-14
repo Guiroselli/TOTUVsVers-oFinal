@@ -22,6 +22,9 @@ from schemas import (
     LiveMeetingCreateRequest,
     LiveMeetingStatusUpdateRequest,
     LiveMeetingTranscriptUpdateRequest,
+    LiveChatMessageCreate,
+    LiveChatMessageResponse,
+    LiveChatListResponse,
     ItemReviewRequest
 )
 from normalization import normalize_client_code, normalize_urgency
@@ -465,6 +468,46 @@ def update_live_meeting_transcript(meeting_id: str, req: LiveMeetingTranscriptUp
     if not updated:
         raise HTTPException(status_code=404, detail="Reunião não encontrada.")
     return {"status": "success", "meeting": updated}
+
+
+@router.get("/live/meetings/{meeting_id}/chat/messages", response_model=LiveChatListResponse)
+def get_live_chat_messages(meeting_id: str):
+    """
+    Retorna a lista de mensagens de chat da reunião.
+    Totalmente isolado da transcrição técnica e das atas automatizadas.
+    """
+    try:
+        messages = repo.get_chat_messages(meeting_id)
+        return LiveChatListResponse(
+            meeting_id=str(meeting_id),
+            total=len(messages),
+            messages=messages
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/live/meetings/{meeting_id}/chat/messages", response_model=LiveChatMessageResponse)
+def send_live_chat_message(meeting_id: str, req: LiveChatMessageCreate):
+    """
+    Envia uma mensagem textual de chat para os participantes da reunião.
+    Mensagens enviadas NÃO alimentam automaticamente tarefas, prazos ou decisões.
+    Garante idempotência caso client_message_id seja fornecido.
+    """
+    try:
+        created = repo.add_chat_message(
+            meeting_id=meeting_id,
+            author=req.author,
+            text=req.text,
+            client_message_id=req.client_message_id
+        )
+        return created
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/stt/status")

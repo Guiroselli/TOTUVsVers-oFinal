@@ -31,7 +31,9 @@ import {
   RotateCw,
   MoreVertical,
   MoreHorizontal,
-  HelpCircle
+  HelpCircle,
+  MessageSquare,
+  Send
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -93,7 +95,6 @@ export default function LiveMeetingPage({
   const [_videoDevices, setVideoDevices] = useState([]);
   const [syncStatus, setSyncStatus] = useState('idle'); // 'idle' | 'saving' | 'synced' | 'unsaved'
   const [showTechnicalDiagnostics, setShowTechnicalDiagnostics] = useState(false);
-  const [showTranscriptDrawer, setShowTranscriptDrawer] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showFinishConfirmModal, setShowFinishConfirmModal] = useState(false);
   const [refineBeforeFinish, setRefineBeforeFinish] = useState(true);
@@ -107,6 +108,15 @@ export default function LiveMeetingPage({
   const [showPermissionHelpModal, setShowPermissionHelpModal] = useState(false);
   const [showMobileActionSheet, setShowMobileActionSheet] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 767);
+  // Chat da Reunião Ao Vivo (Independente da transcrição)
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInputText, setChatInputText] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [collabTab, setCollabTab] = useState('chat'); // 'chat' | 'transcript' (Chat é padrão!)
+  const [mobileRoomTab, setMobileRoomTab] = useState('room'); // 'room' | 'chat' | 'transcript' (Sala é padrão!)
+  const [showCollabPanel, setShowCollabPanel] = useState(true);
+  const chatScrollRef = useRef(null);
+  const isChatUserScrolledUpRef = useRef(false);
   // STT Provider (PARTE 7, 8, 11)
   const [sttProvider, setSttProvider] = useState('backend'); // 'backend' | 'browser' | 'manual'
   const [backendSttStatus, setBackendSttStatus] = useState({
@@ -361,6 +371,96 @@ export default function LiveMeetingPage({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [transcription]);
+
+  // Busca mensagens do Chat Ao Vivo
+  const fetchChatMessages = useCallback(async (meetingId) => {
+    if (!meetingId) return;
+    try {
+      const res = await api.getLiveChatMessages(meetingId);
+      if (res && Array.isArray(res.messages)) {
+        setChatMessages(res.messages);
+      }
+    } catch {
+      // Ignora falhas de polling silenciosamente
+    }
+  }, []);
+
+  // Polling periódico do Chat a cada 2.5s enquanto houver reunião ativa
+  useEffect(() => {
+    if (!activeMeetingId) {
+      setChatMessages([]);
+      return;
+    }
+    fetchChatMessages(activeMeetingId);
+    const interval = setInterval(() => {
+      fetchChatMessages(activeMeetingId);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [activeMeetingId, fetchChatMessages]);
+
+  // Monitora scroll manual do chat para respeitar se o usuário subiu a barra
+  const handleChatScroll = () => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const isUp = el.scrollHeight - el.scrollTop - el.clientHeight > 60;
+    isChatUserScrolledUpRef.current = isUp;
+  };
+
+  // Auto-scroll do chat para o rodapé apenas se o usuário não subiu manualmente
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    if (!isChatUserScrolledUpRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [chatMessages, collabTab, mobileRoomTab]);
+
+  // Envio de nova mensagem de chat
+  const handleSendChatMessage = async (e) => {
+    if (e) e.preventDefault();
+    const clean = chatInputText.trim();
+    if (!clean || !activeMeetingId || chatSending) return;
+
+    setChatSending(true);
+    const clientMsgId = `cmsg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const myAuthor = currentMeeting?.DEPARTAMENTO ? `Você (${currentMeeting.DEPARTAMENTO})` : 'Você';
+
+    const optimisticMsg = {
+      id: clientMsgId,
+      meeting_id: String(activeMeetingId),
+      author: myAuthor,
+      text: clean,
+      timestamp: new Date().toISOString(),
+      client_message_id: clientMsgId
+    };
+
+    setChatMessages((prev) => [...prev, optimisticMsg]);
+    setChatInputText('');
+    isChatUserScrolledUpRef.current = false;
+
+    try {
+      const saved = await api.sendLiveChatMessage(activeMeetingId, {
+        author: myAuthor,
+        text: clean,
+        client_message_id: clientMsgId
+      });
+      if (saved && saved.id) {
+        setChatMessages((prev) => prev.map((m) => m.client_message_id === clientMsgId ? saved : m));
+      }
+    } catch (err) {
+      console.error('Falha ao enviar mensagem de chat:', err);
+    } finally {
+      setChatSending(false);
+    }
+  };
+
+  // Envio com Enter e quebra com Shift+Enter
+  const handleChatKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendChatMessage();
+    }
+  };
 
   // Cronômetro da reunião em tempo real
   useEffect(() => {
@@ -2039,6 +2139,401 @@ RTF: ${backendChunkStats.rtf || 0}
   if (currentMeeting) {
     const badge = getStatusBadge(currentMeeting.STATUS_MEETING);
 
+    // Sub-render do Chat da Reunião (Totalmente independente da transcrição)
+    const renderChatView = () => (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'var(--pf-surface)' }}>
+        {/* Header informativo do Chat */}
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--pf-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--pf-surface-elevated)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <MessageSquare size={16} color="var(--pf-accent)" />
+            <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--pf-text-primary)' }}>
+              Chat da Reunião
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--pf-text-secondary)' }}>
+              ({chatMessages.length} {chatMessages.length === 1 ? 'mensagem' : 'mensagens'})
+            </span>
+          </div>
+          {!isMobileScreen && (
+            <button
+              type="button"
+              onClick={() => setShowCollabPanel(false)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--pf-text-secondary)', cursor: 'pointer', padding: '4px' }}
+              title="Fechar painel lateral"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Lista de Mensagens de Chat com Scroll */}
+        <div
+          ref={chatScrollRef}
+          onScroll={handleChatScroll}
+          className="chat-messages-container"
+        >
+          {chatMessages.length === 0 ? (
+            <div className="chat-empty-state">
+              <div className="chat-empty-icon">
+                <MessageSquare size={24} />
+              </div>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--pf-text-primary)' }}>
+                Nenhuma mensagem ainda
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--pf-text-secondary)', maxWidth: '240px' }}>
+                Escreva uma mensagem para interagir com os participantes durante a reunião.
+              </div>
+            </div>
+          ) : (
+            chatMessages.map((msg) => {
+              const isOwn = (msg.author || '').startsWith('Você') || msg.author === (currentMeeting?.DEPARTAMENTO ? `Você (${currentMeeting.DEPARTAMENTO})` : 'Você');
+              const timeFormatted = msg.timestamp
+                ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '';
+
+              return (
+                <div
+                  key={msg.id || msg.client_message_id}
+                  className={`chat-bubble-row ${isOwn ? 'own' : 'other'}`}
+                >
+                  <div className="chat-bubble-meta">
+                    <span style={{ fontWeight: 600 }}>{msg.author}</span>
+                    {timeFormatted && <span>• {timeFormatted}</span>}
+                  </div>
+                  <div className={`chat-bubble ${isOwn ? 'own' : 'other'}`}>
+                    {msg.text}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Barra de Envio de Mensagem */}
+        <form onSubmit={handleSendChatMessage} className="chat-input-bar">
+          <textarea
+            value={chatInputText}
+            onChange={(e) => setChatInputText(e.target.value)}
+            onKeyDown={handleChatKeyDown}
+            placeholder="Escreva uma mensagem... (Enter envia, Shift+Enter quebra linha)"
+            className="chat-textarea"
+            rows={1}
+            maxLength={1500}
+          />
+          <button
+            type="submit"
+            disabled={!chatInputText.trim() || chatSending}
+            className="chat-send-btn"
+            title="Enviar mensagem (Enter)"
+          >
+            <Send size={16} />
+          </button>
+        </form>
+      </div>
+    );
+
+    // Sub-render da Transcrição
+    const renderTranscriptView = () => (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'var(--pf-surface)' }}>
+        {/* Header da Transcrição */}
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--pf-border)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--pf-surface-elevated)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={16} color="var(--pf-accent)" />
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--pf-text-primary)' }}>
+              Transcrição da Reunião
+            </h3>
+            <span style={{ fontSize: '11px', color: 'var(--pf-text-secondary)' }}>
+              ({transcription.length} carac.)
+            </span>
+          </div>
+          {!isMobileScreen && (
+            <button
+              type="button"
+              onClick={() => setShowCollabPanel(false)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--pf-text-secondary)',
+                cursor: 'pointer',
+                padding: '4px',
+                borderRadius: '4px'
+              }}
+              title="Fechar painel lateral"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Subheader / Ações e Filtro */}
+        <div style={{
+          padding: '10px 16px',
+          borderBottom: '1px solid var(--pf-border)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          background: 'rgba(0, 0, 0, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+            {/* Alternador Normalizado / Bruto */}
+            <div style={{ display: 'inline-flex', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--pf-border)', fontSize: '10px' }}>
+              <button
+                type="button"
+                onClick={() => setTranscriptViewMode('normalized')}
+                style={{
+                  padding: '4px 8px',
+                  border: 'none',
+                  background: transcriptViewMode === 'normalized' ? 'var(--pf-accent)' : 'transparent',
+                  color: transcriptViewMode === 'normalized' ? '#fff' : 'var(--pf-text-secondary)',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title="Texto consolidado, deduplicado e limpo"
+              >
+                Normalizado
+              </button>
+              <button
+                type="button"
+                onClick={() => setTranscriptViewMode('raw')}
+                style={{
+                  padding: '4px 8px',
+                  border: 'none',
+                  background: transcriptViewMode === 'raw' ? 'var(--pf-accent)' : 'transparent',
+                  color: transcriptViewMode === 'raw' ? '#fff' : 'var(--pf-text-secondary)',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+                title="Texto bruto original do Whisper para auditoria (sem correções)"
+              >
+                Bruto (Auditoria)
+              </button>
+            </div>
+
+            {/* Refinamento e Status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {!isRecording && activeMeetingId && (
+                <button
+                  type="button"
+                  onClick={handleReprocessTranscript}
+                  disabled={reprocessing}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '10px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  title="Executa reprocessamento de alta precisão com concatenação de áudio e beam search 5"
+                >
+                  <RefreshCw size={10} className={reprocessing ? 'spin' : ''} />
+                  {reprocessing ? 'Refinando...' : 'Refinar'}
+                </button>
+              )}
+
+              {reprocessSuccess && <span style={{ color: '#10b981', fontSize: '10.5px' }}>✨ {reprocessSuccess}</span>}
+              {syncStatus === 'saving' && <span style={{ color: '#eab308', fontSize: '10.5px' }}>Salvando...</span>}
+              {syncStatus === 'synced' && <span style={{ color: '#10b981', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '2px' }}><Check size={11} /> Salvo</span>}
+              {syncStatus === 'unsaved' && <span style={{ color: '#f87171', fontSize: '10.5px' }}>Rascunho local</span>}
+            </div>
+          </div>
+
+          {/* Campo de Busca na Transcrição */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: 'var(--pf-bg-base)',
+            border: '1px solid var(--pf-border)',
+            borderRadius: '6px',
+            padding: '4px 8px',
+            gap: '6px'
+          }}>
+            <Search size={12} color="var(--pf-text-secondary)" />
+            <input
+              type="text"
+              value={transcriptSearchQuery}
+              onChange={(e) => setTranscriptSearchQuery(e.target.value)}
+              placeholder="Pesquisar termos na transcrição..."
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--pf-text-primary)',
+                fontSize: '11px',
+                outline: 'none',
+                width: '100%'
+              }}
+            />
+            {transcriptSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setTranscriptSearchQuery('')}
+                style={{ background: 'transparent', border: 'none', color: 'var(--pf-text-secondary)', cursor: 'pointer', fontSize: '11px' }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Corpo da Transcrição */}
+        <div
+          ref={scrollRef}
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            padding: '16px',
+            fontSize: '13px',
+            lineHeight: '1.65',
+            background: 'rgba(0, 0, 0, 0.04)'
+          }}
+        >
+          {isManualEditMode ? (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', color: '#38bdf8' }}>
+                <span>Modo de Edição / Digitação Manual</span>
+                <span style={{ fontSize: '10px', color: 'var(--pf-text-secondary)' }}>Digite ou cole as notas da reunião</span>
+              </div>
+              <textarea
+                value={transcription}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTranscription(val);
+                  finalTranscriptRef.current = val;
+                  setSyncStatus('unsaved');
+                }}
+                placeholder="Digite aqui as notas ou a pauta da reunião..."
+                style={{
+                  flex: 1,
+                  width: '100%',
+                  minHeight: '260px',
+                  background: 'var(--pf-bg-base)',
+                  border: '1px solid var(--pf-border)',
+                  borderRadius: '6px',
+                  padding: '12px',
+                  color: 'var(--pf-text-primary)',
+                  fontSize: '13px',
+                  lineHeight: '1.6',
+                  resize: 'none',
+                  outline: 'none',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+          ) : (transcription.trim() || transcriptRaw.trim()) ? (
+            <div>
+              {transcriptViewMode === 'raw' ? (
+                <div style={{ marginBottom: '8px', fontSize: '10.5px', color: 'var(--pf-text-secondary)', fontStyle: 'italic' }}>
+                  🔍 Visualizando transcrição bruta do Whisper para auditoria (imutável)
+                </div>
+              ) : (
+                backendChunkStats.glossaryCorrectionsCount > 0 && (
+                  <div style={{ marginBottom: '8px', fontSize: '10.5px', color: '#38bdf8' }}>
+                    ✨ {backendChunkStats.glossaryCorrectionsCount} ajuste(s) de termos corporativos aplicado(s) com evidência fonética.
+                  </div>
+                )
+              )}
+
+              <div style={{ whiteSpace: 'pre-wrap', color: 'var(--pf-text-primary)' }}>
+                {(() => {
+                  const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
+                  if (!transcriptSearchQuery.trim()) {
+                    return text;
+                  }
+                  const parts = text.split(new RegExp(`(${transcriptSearchQuery.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
+                  return parts.map((part, i) =>
+                    part.toLowerCase() === transcriptSearchQuery.toLowerCase() ? (
+                      <mark key={i} style={{ background: '#f59e0b', color: '#000', borderRadius: '2px', padding: '1px 3px' }}>
+                        {part}
+                      </mark>
+                    ) : (
+                      part
+                    )
+                  );
+                })()}
+              </div>
+              {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              minHeight: '220px',
+              textAlign: 'center',
+              gap: '12px',
+              padding: '24px',
+              color: 'var(--pf-text-secondary)'
+            }}>
+              <div style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: getTranscriptionStatusInfo(transcriptionStatus).dotColor,
+                boxShadow: `0 0 8px ${getTranscriptionStatusInfo(transcriptionStatus).dotColor}`
+              }} />
+              <p style={{ margin: 0, fontSize: '12.5px', maxWidth: '300px', lineHeight: 1.5 }}>
+                {getEmptyMessage(transcriptionStatus, currentMeeting.TITULO_REUNIAO)}
+              </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsManualEditMode(true)}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                >
+                  <FileText size={12} />
+                  Digitar Manualmente
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer da Transcrição */}
+        <div style={{
+          padding: '12px 16px',
+          borderTop: '1px solid var(--pf-border)',
+          display: 'flex',
+          gap: '8px',
+          background: 'var(--pf-surface-elevated)'
+        }}>
+          <button
+            type="button"
+            onClick={() => {
+              const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
+              if (navigator.clipboard && text) {
+                navigator.clipboard.writeText(text);
+              }
+            }}
+            className="btn btn-secondary"
+            style={{ flex: 1, fontSize: '11px', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+          >
+            <Copy size={12} />
+            Copiar Texto
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsManualEditMode(!isManualEditMode)}
+            className="btn btn-secondary"
+            style={{ flex: 1, fontSize: '11px', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+          >
+            <FileText size={12} />
+            {isManualEditMode ? 'Ver Texto Voz' : 'Editar Manual'}
+          </button>
+        </div>
+      </div>
+    );
+
     return (
       <div className="live-room-wrapper live-room-active" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', background: 'var(--bg-main)' }}>
         {/* Barra superior de alternância entre múltiplas reuniões ao vivo simultâneas */}
@@ -2406,787 +2901,604 @@ RTF: ${backendChunkStats.rtf || 0}
         {/* =========================================================================
             PALCO CENTRAL E SALA — VISUAL LIMPO TEAMS / GOOGLE MEET
             ========================================================================= */}
-        <div style={{
-          position: 'relative',
-          flex: 1,
-          display: 'flex',
-          overflow: 'hidden',
-          background: '#070a13'
-        }}>
-          {/* Palco Principal de Vídeo / Participantes */}
-          <div style={{
-            flex: 1,
-            position: 'relative',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-            width: '100%',
-            height: '100%'
-          }}>
-            {/* Feed de Vídeo Local */}
-            <video
-              id="local-video"
-              ref={videoRef}
-              className="local-video"
-              autoPlay
-              playsInline
-              muted
-              style={{
-                display: isCamOff || videoStatus !== 'active' ? 'none' : 'block',
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                borderRadius: '12px'
-              }}
-            />
+        {/* Navegação por Segmentos no Celular (Sala | Chat | Transcrição) — Padrão: Sala */}
+        {isMobileScreen && (
+          <div className="mobile-meeting-segmented-nav">
+            <button
+              type="button"
+              className={`mobile-segment-btn ${mobileRoomTab === 'room' ? 'active' : ''}`}
+              onClick={() => setMobileRoomTab('room')}
+              title="Sala da reunião e controles"
+            >
+              <Users size={15} />
+              <span>Sala</span>
+            </button>
+            <button
+              type="button"
+              className={`mobile-segment-btn ${mobileRoomTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setMobileRoomTab('chat')}
+              title="Chat com os participantes"
+            >
+              <MessageSquare size={15} />
+              <span>Chat</span>
+              {chatMessages.length > 0 && (
+                <span style={{
+                  fontSize: '10px',
+                  padding: '1px 5px',
+                  borderRadius: '10px',
+                  background: mobileRoomTab === 'chat' ? '#ffffff' : 'var(--pf-accent)',
+                  color: mobileRoomTab === 'chat' ? 'var(--pf-accent)' : '#ffffff',
+                  fontWeight: 700
+                }}>
+                  {chatMessages.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className={`mobile-segment-btn ${mobileRoomTab === 'transcript' ? 'active' : ''}`}
+              onClick={() => setMobileRoomTab('transcript')}
+              title="Transcrição automática da reunião"
+            >
+              <FileText size={15} />
+              <span>Transcrição</span>
+            </button>
+          </div>
+        )}
 
-            {/* Placeholder quando Câmera Desligada ou Indisponível */}
-            {(isCamOff || videoStatus !== 'active') && (
-              <div
-                id="cam-placeholder"
+        {/* CONTAINER PRINCIPAL DA SALA DIGITAL (Desktop e Celular) */}
+        <div className="meeting-stage-container">
+          {/* PALCO CENTRAL DA REUNIÃO (Desktop ou Celular na aba 'room') */}
+          {(!isMobileScreen || mobileRoomTab === 'room') && (
+            <div className="meeting-stage-main">
+              {/* Feed de Vídeo Local */}
+              <video
+                id="local-video"
+                ref={videoRef}
+                className="local-video"
+                autoPlay
+                playsInline
+                muted
                 style={{
+                  display: isCamOff || videoStatus !== 'active' ? 'none' : 'block',
                   width: '100%',
                   height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'radial-gradient(ellipse at center, #0f172a 0%, #070a13 70%)',
-                  gap: '16px',
-                  padding: '20px',
-                  textAlign: 'center'
+                  objectFit: 'contain',
+                  borderRadius: '12px'
                 }}
-              >
-                {/* Avatar com Animação de Pulso de Áudio */}
-                <div style={{
-                  position: 'relative',
-                  width: 100,
-                  height: 100,
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '2.2rem',
-                  fontWeight: 800,
-                  color: 'var(--primary-color)',
-                  border: '2px solid rgba(56, 189, 248, 0.4)',
-                  boxShadow: audioLevel > 10
-                    ? '0 0 0 8px rgba(16, 185, 129, 0.2), 0 0 35px rgba(16, 185, 129, 0.45)'
-                    : '0 8px 24px rgba(0, 0, 0, 0.4)',
-                  transition: 'box-shadow 0.15s ease'
-                }}>
-                  {(currentMeeting.DEPARTAMENTO || 'TOTVS').substring(0, 2).toUpperCase()}
-                </div>
+              />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-main)' }}>
-                    {isCamOff ? 'Câmera desligada' : videoStatus === 'denied' ? 'Permissão de câmera não concedida' : 'Câmera não detectada'}
-                  </span>
-                  <span style={{ fontSize: '12.5px', color: 'var(--text-muted)', maxWidth: '400px' }}>
-                    O áudio e a transcrição da reunião continuam ativos em segundo plano.
-                  </span>
-                </div>
-
-                {/* Indicador de Captação e Sinal */}
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '4px 12px',
-                    borderRadius: '20px',
-                    background: audioStatus === 'active' && !isMuted ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                    border: `1px solid ${audioStatus === 'active' && !isMuted ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: audioStatus === 'active' && !isMuted ? '#10b981' : '#f87171'
-                  }}>
-                    {audioStatus === 'active' && !isMuted ? <Mic size={12} /> : <MicOff size={12} />}
-                    <span>{audioStatus === 'active' && !isMuted ? `Captação ativa (${audioLevel}%)` : 'Microfone silenciado'}</span>
-                  </div>
-
-                  <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    padding: '4px 12px',
-                    borderRadius: '20px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    background: signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.15)' :
-                                signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.15)' :
-                                'rgba(16, 185, 129, 0.15)',
-                    border: `1px solid ${
-                                signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.35)' :
-                                signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.35)' :
-                                'rgba(16, 185, 129, 0.35)'}`,
-                    color: signalQuality === 'saturado' ? '#ef4444' :
-                           signalQuality === 'baixo' ? '#f59e0b' :
-                           '#10b981'
-                  }}>
-                    <span>
-                      {signalQuality === 'saturado' ? '⚠️ Áudio Saturado' :
-                       signalQuality === 'baixo' ? '⚠️ Sinal Baixo' :
-                       '🎙️ Sinal Adequado'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Card de autorização prévia de microfone no celular */}
-                {audioStatus !== 'active' && (
-                  <div className="mobile-pre-permission-card" style={{
-                    marginTop: '10px',
-                    padding: '14px 18px',
-                    borderRadius: '12px',
-                    background: 'rgba(15, 23, 42, 0.95)',
-                    border: '1px solid rgba(56, 189, 248, 0.35)',
-                    boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)',
-                    maxWidth: '360px',
-                    width: '92%',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
-                      <Mic size={20} color="#38bdf8" />
-                    </div>
-                    <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>
-                      Ative o microfone para registrar a reunião
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4 }}>
-                      Navegadores em celulares exigem um toque direto para autorizar a gravação e transcrever continuamente.
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => startMediaAndRecognition()}
-                        style={{ minHeight: '44px', width: '100%', justifyContent: 'center', fontWeight: 600, fontSize: '12.5px' }}
-                      >
-                        <Mic size={15} /> Ativar microfone agora
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => setShowPermissionHelpModal(true)}
-                        style={{ minHeight: '40px', width: '100%', justifyContent: 'center', fontSize: '11px', color: 'var(--text-muted)' }}
-                      >
-                        <HelpCircle size={13} /> Como liberar no Safari / Chrome
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* PÍLULA DISCRETA NO PALCO CENTRAL (IN-ROOM PILL) */}
-            <div style={{
-              position: 'absolute',
-              top: '18px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 20,
-              background: 'rgba(15, 23, 42, 0.88)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '30px',
-              padding: '6px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
-              fontSize: '11.5px',
-              color: 'var(--text-main)',
-              whiteSpace: 'nowrap',
-              maxWidth: '90vw'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: isMuted ? '#f59e0b' :
-                              transcriptionStatus === 'receiving_speech' ? '#10b981' :
-                              transcriptionStatus === 'processing_chunk' ? '#38bdf8' :
-                              isRecording ? '#10b981' : '#64748b',
-                  boxShadow: isRecording && !isMuted ? '0 0 8px #10b981' : 'none'
-                }}></span>
-                <span style={{ fontWeight: 600 }}>
-                  {isMuted
-                    ? 'Microfone silenciado • Transcrição pausada'
-                    : currentMeeting.STATUS_MEETING === 'pausada'
-                    ? 'Reunião pausada'
-                    : sttProvider === 'manual'
-                    ? 'Registro manual ativo'
-                    : 'Transcrição ativa • A reunião está sendo registrada para gerar a ata'}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowTranscriptDrawer(!showTranscriptDrawer)}
-                style={{
-                  background: showTranscriptDrawer ? 'rgba(56, 189, 248, 0.25)' : 'rgba(56, 189, 248, 0.12)',
-                  border: '1px solid rgba(56, 189, 248, 0.35)',
-                  color: '#38bdf8',
-                  borderRadius: '16px',
-                  padding: '3px 10px',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s ease'
-                }}
-                title={showTranscriptDrawer ? 'Ocultar painel lateral de transcrição' : 'Abrir painel lateral de transcrição'}
-              >
-                <FileText size={12} />
-                <span>{showTranscriptDrawer ? 'Ocultar transcrição' : 'Abrir transcrição'}</span>
-                {transcription.length > 0 && (
-                  <span style={{ opacity: 0.85, fontSize: '10px' }}>({transcription.length} carac.)</span>
-                )}
-              </button>
-
-              {!['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active'].includes(transcriptionStatus) && isRecording && (
-                <button
-                  type="button"
-                  onClick={handleActivateTranscription}
+              {/* Placeholder quando Câmera Desligada ou Indisponível */}
+              {(isCamOff || videoStatus !== 'active') && (
+                <div
+                  id="cam-placeholder"
                   style={{
-                    background: 'rgba(16, 185, 129, 0.2)',
-                    border: '1px solid rgba(16, 185, 129, 0.4)',
-                    color: '#10b981',
-                    borderRadius: '16px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                  title="Ativar reconhecimento de voz"
-                >
-                  <Play size={10} fill="#10b981" />
-                  <span>Ativar</span>
-                </button>
-              )}
-            </div>
-
-            {/* Overlay com Nome do Participante (Canto Inferior Esquerdo) */}
-            <div style={{
-              position: 'absolute',
-              bottom: '18px',
-              left: '20px',
-              zIndex: 15,
-              background: 'rgba(0, 0, 0, 0.65)',
-              backdropFilter: 'blur(8px)',
-              padding: '6px 14px',
-              borderRadius: '8px',
-              fontSize: '12px',
-              fontWeight: 600,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.08)'
-            }}>
-              <span>Você ({currentMeeting.DEPARTAMENTO || 'TOTVS'})</span>
-              {isMuted && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 5px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }} title="Microfone silenciado">
-                  <MicOff size={11} color="#f87171" />
-                </span>
-              )}
-            </div>
-
-            {/* =========================================================================
-                BARRA DE CONTROLES INFERIOR FLUTUANTE (TEAMS / MEET DOCK)
-                ========================================================================= */}
-            <div
-              className="meeting-controls-dock"
-              style={{
-                position: 'absolute',
-                bottom: isMobileScreen ? 'calc(10px + var(--sab, 0px))' : '18px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 25,
-                background: 'rgba(15, 23, 42, 0.94)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '24px',
-                padding: isMobileScreen ? '4px 10px' : '6px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: isMobileScreen ? '6px' : '12px',
-                boxShadow: '0 12px 36px rgba(0,0,0,0.55)',
-                maxWidth: '96vw',
-                flexWrap: 'nowrap',
-                justifyContent: 'center'
-              }}
-            >
-              {/* Botão Microfone */}
-              <button
-                type="button"
-                className={`control-btn ${isMuted ? 'active' : ''}`}
-                onClick={toggleMute}
-                style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                title={isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}
-              >
-                <div className="icon-circle" style={{
-                  width: isMobileScreen ? 36 : 40,
-                  height: isMobileScreen ? 36 : 40,
-                  background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
-                  borderColor: isMuted ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
-                }}>
-                  {isMuted ? <MicOff size={isMobileScreen ? 16 : 18} color="#f87171" /> : <Mic size={isMobileScreen ? 16 : 18} />}
-                </div>
-                <span style={{ fontSize: '10px' }}>{isMuted ? 'Desmutar' : 'Mutar'}</span>
-              </button>
-
-              {/* Botão Câmera */}
-              <button
-                type="button"
-                className={`control-btn ${isCamOff ? 'active' : ''}`}
-                onClick={toggleCamera}
-                style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                title={isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}
-              >
-                <div className="icon-circle" style={{
-                  width: isMobileScreen ? 36 : 40,
-                  height: isMobileScreen ? 36 : 40,
-                  background: isCamOff ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
-                  borderColor: isCamOff ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
-                }}>
-                  {isCamOff ? <VideoOff size={isMobileScreen ? 16 : 18} color="#f87171" /> : <Video size={isMobileScreen ? 16 : 18} />}
-                </div>
-                <span style={{ fontSize: '10px' }}>{isCamOff ? 'Ligar' : 'Parar'}</span>
-              </button>
-
-              {/* Botão Pausar / Retomar */}
-              {currentMeeting.STATUS_MEETING === 'ao_vivo' ? (
-                <button
-                  type="button"
-                  className="control-btn"
-                  onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'pausar')}
-                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                  title="Pausar a reunião e a gravação"
-                >
-                  <div className="icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }}>
-                    <Pause size={isMobileScreen ? 16 : 18} color="#eab308" />
-                  </div>
-                  <span style={{ fontSize: '10px' }}>Pausar</span>
-                </button>
-              ) : currentMeeting.STATUS_MEETING === 'pausada' || currentMeeting.STATUS_MEETING === 'agendada' ? (
-                <button
-                  type="button"
-                  className="control-btn"
-                  onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'iniciar')}
-                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                  title="Iniciar ou Retomar Reunião"
-                >
-                  <div className="icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
-                    <Play size={isMobileScreen ? 16 : 18} color="#10b981" />
-                  </div>
-                  <span style={{ fontSize: '10px' }}>{currentMeeting.STATUS_MEETING === 'pausada' ? 'Retomar' : 'Iniciar'}</span>
-                </button>
-              ) : null}
-
-              {/* Botão Gaveta de Transcrição */}
-              <button
-                type="button"
-                className={`control-btn ${showTranscriptDrawer ? 'active' : ''}`}
-                onClick={() => setShowTranscriptDrawer(!showTranscriptDrawer)}
-                style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                title="Abrir ou fechar painel lateral de transcrição"
-              >
-                <div className="icon-circle" style={{
-                  width: isMobileScreen ? 36 : 40,
-                  height: isMobileScreen ? 36 : 40,
-                  background: showTranscriptDrawer ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
-                  borderColor: showTranscriptDrawer ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)'
-                }}>
-                  <FileText size={isMobileScreen ? 16 : 18} color={showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)'} />
-                </div>
-                <span style={{ fontSize: '10px', color: showTranscriptDrawer ? '#38bdf8' : 'var(--text-main)' }}>
-                  Texto
-                </span>
-              </button>
-
-              {/* No celular: Botão "Mais" para abrir Action Sheet */}
-              {isMobileScreen ? (
-                <button
-                  type="button"
-                  className="control-btn"
-                  onClick={() => setShowMobileActionSheet(true)}
-                  style={{ padding: '4px 6px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                  title="Mais opções e ajustes"
-                >
-                  <div className="icon-circle" style={{ width: 36, height: 36, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
-                    <MoreHorizontal size={16} />
-                  </div>
-                  <span style={{ fontSize: '10px' }}>Mais</span>
-                </button>
-              ) : (
-                <>
-                  {/* Botão Ajustes (Desktop) */}
-                  <button
-                    type="button"
-                    className="control-btn"
-                    onClick={() => setShowSettingsModal(true)}
-                    style={{ padding: '6px 12px', gap: '4px' }}
-                    title="Ajustes de motor STT, modelo e parâmetros da reunião"
-                  >
-                    <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
-                      <Settings size={18} />
-                    </div>
-                    <span style={{ fontSize: '11px' }}>Ajustes</span>
-                  </button>
-
-                  {/* Botão Diagnóstico (Desktop) */}
-                  <button
-                    type="button"
-                    className="control-btn"
-                    onClick={() => setShowTechnicalDiagnostics(true)}
-                    style={{ padding: '6px 12px', gap: '4px' }}
-                    title="Abrir painel técnico desacoplado de diagnóstico"
-                  >
-                    <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
-                      <Activity size={18} />
-                    </div>
-                    <span style={{ fontSize: '11px' }}>Diagnóstico</span>
-                  </button>
-                </>
-              )}
-
-              {/* Botão Finalizar e Gerar Atas */}
-              <button
-                type="button"
-                className="control-btn control-btn-leave"
-                onClick={handleFinishAndAnalyze}
-                style={{ padding: isMobileScreen ? '4px 8px' : '6px 14px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
-                title="Encerrar reunião e sintetizar ata operacional e executiva com IA"
-              >
-                <div className="icon-circle leave-icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: '#ef4444', borderColor: '#ef4444' }}>
-                  <Square size={isMobileScreen ? 14 : 16} fill="#ffffff" color="#ffffff" />
-                </div>
-                <span style={{ fontSize: '10px', fontWeight: 700, color: '#f87171' }}>Sair</span>
-              </button>
-            </div>
-          </div>
-
-          {/* =========================================================================
-              SLIDE-OVER DRAWER DE TRANSCRIÇÃO (RETRÁTIL — RESPONSIVO NO CELULAR)
-              ========================================================================= */}
-          {showTranscriptDrawer && (
-            <div
-              className="transcript-slideover-drawer"
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                bottom: 0,
-                left: isMobileScreen ? 0 : 'auto',
-                width: isMobileScreen ? '100%' : '430px',
-                maxWidth: isMobileScreen ? '100vw' : '92vw',
-                background: '#0d1322',
-                borderLeft: isMobileScreen ? 'none' : '1px solid rgba(255, 255, 255, 0.12)',
-                boxShadow: '-12px 0 40px rgba(0,0,0,0.65)',
-                zIndex: isMobileScreen ? 50 : 35,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden'
-              }}
-            >
-              {/* Header do Drawer */}
-              <div style={{
-                padding: '14px 18px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: 'rgba(15, 23, 42, 0.7)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Sparkles size={16} color="var(--primary-color)" />
-                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-main)' }}>
-                    Transcrição da Reunião
-                  </h3>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    ({transcription.length} carac.)
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowTranscriptDrawer(false)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    borderRadius: '4px'
-                  }}
-                  title="Fechar painel de transcrição"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Subheader / Ações e Filtro */}
-              <div style={{
-                padding: '10px 16px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '8px',
-                background: 'rgba(0, 0, 0, 0.2)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
-                  {/* Alternador Normalizado / Bruto */}
-                  <div style={{ display: 'inline-flex', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-color)', fontSize: '10px' }}>
-                    <button
-                      type="button"
-                      onClick={() => setTranscriptViewMode('normalized')}
-                      style={{
-                        padding: '3px 8px',
-                        border: 'none',
-                        background: transcriptViewMode === 'normalized' ? 'var(--primary-color)' : 'transparent',
-                        color: transcriptViewMode === 'normalized' ? '#fff' : 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontWeight: 600
-                      }}
-                      title="Texto consolidado, deduplicado e limpo"
-                    >
-                      Normalizado
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTranscriptViewMode('raw')}
-                      style={{
-                        padding: '3px 8px',
-                        border: 'none',
-                        background: transcriptViewMode === 'raw' ? 'var(--primary-color)' : 'transparent',
-                        color: transcriptViewMode === 'raw' ? '#fff' : 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontWeight: 600
-                      }}
-                      title="Texto bruto original do Whisper para auditoria (sem correções)"
-                    >
-                      Bruto (Auditoria)
-                    </button>
-                  </div>
-
-                  {/* Refinamento e Status */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    {!isRecording && activeMeetingId && (
-                      <button
-                        type="button"
-                        onClick={handleReprocessTranscript}
-                        disabled={reprocessing}
-                        className="btn btn-secondary"
-                        style={{ fontSize: '10px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                        title="Executa reprocessamento de alta precisão com concatenação de áudio e beam search 5"
-                      >
-                        <RefreshCw size={10} className={reprocessing ? 'spin' : ''} />
-                        {reprocessing ? 'Refinando...' : 'Refinar'}
-                      </button>
-                    )}
-
-                    {reprocessSuccess && <span style={{ color: '#10b981', fontSize: '10.5px' }}>✨ {reprocessSuccess}</span>}
-                    {syncStatus === 'saving' && <span style={{ color: '#eab308', fontSize: '10.5px' }}>Salvando...</span>}
-                    {syncStatus === 'synced' && <span style={{ color: '#10b981', fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '2px' }}><Check size={11} /> Salvo</span>}
-                    {syncStatus === 'unsaved' && <span style={{ color: '#f87171', fontSize: '10.5px' }}>Rascunho local</span>}
-                  </div>
-                </div>
-
-                {/* Campo de Busca na Transcrição */}
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '6px',
-                  padding: '4px 8px',
-                  gap: '6px'
-                }}>
-                  <Search size={12} color="var(--text-muted)" />
-                  <input
-                    type="text"
-                    value={transcriptSearchQuery}
-                    onChange={(e) => setTranscriptSearchQuery(e.target.value)}
-                    placeholder="Pesquisar termos na transcrição..."
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-main)',
-                      fontSize: '11px',
-                      outline: 'none',
-                      width: '100%'
-                    }}
-                  />
-                  {transcriptSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setTranscriptSearchQuery('')}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '11px' }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Corpo da Transcrição */}
-              <div
-                ref={scrollRef}
-                style={{
-                  flex: 1,
-                  overflowY: 'auto',
-                  padding: '16px',
-                  fontSize: '13px',
-                  lineHeight: '1.65',
-                  background: 'rgba(0, 0, 0, 0.15)'
-                }}
-              >
-                {isManualEditMode ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', fontSize: '11px', color: '#38bdf8' }}>
-                      <span>Modo de Edição / Digitação Manual</span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Digite ou cole as notas da reunião</span>
-                    </div>
-                    <textarea
-                      value={transcription}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setTranscription(val);
-                        finalTranscriptRef.current = val;
-                        setSyncStatus('unsaved');
-                      }}
-                      placeholder="Digite aqui as notas ou a pauta da reunião..."
-                      style={{
-                        flex: 1,
-                        width: '100%',
-                        minHeight: '260px',
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: '6px',
-                        padding: '12px',
-                        color: 'var(--text-main)',
-                        fontSize: '13px',
-                        lineHeight: '1.6',
-                        resize: 'none',
-                        outline: 'none',
-                        fontFamily: 'inherit'
-                      }}
-                    />
-                  </div>
-                ) : (transcription.trim() || transcriptRaw.trim()) ? (
-                  <div>
-                    {transcriptViewMode === 'raw' ? (
-                      <div style={{ marginBottom: '8px', fontSize: '10.5px', color: '#94a3b8', fontStyle: 'italic' }}>
-                        🔍 Visualizando transcrição bruta do Whisper para auditoria (imutável)
-                      </div>
-                    ) : (
-                      backendChunkStats.glossaryCorrectionsCount > 0 && (
-                        <div style={{ marginBottom: '8px', fontSize: '10.5px', color: '#38bdf8' }}>
-                          ✨ {backendChunkStats.glossaryCorrectionsCount} ajuste(s) de termos corporativos aplicado(s) com evidência fonética.
-                        </div>
-                      )
-                    )}
-
-                    <div style={{ whiteSpace: 'pre-wrap', color: 'var(--text-main)' }}>
-                      {(() => {
-                        const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
-                        if (!transcriptSearchQuery.trim()) {
-                          return text;
-                        }
-                        const parts = text.split(new RegExp(`(${transcriptSearchQuery.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
-                        return parts.map((part, i) =>
-                          part.toLowerCase() === transcriptSearchQuery.toLowerCase() ? (
-                            <mark key={i} style={{ background: '#f59e0b', color: '#000', borderRadius: '2px', padding: '1px 3px' }}>
-                              {part}
-                            </mark>
-                          ) : (
-                            part
-                          )
-                        );
-                      })()}
-                    </div>
-                    {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
-                  </div>
-                ) : (
-                  <div style={{
+                    width: '100%',
+                    height: '100%',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    height: '100%',
-                    minHeight: '220px',
-                    textAlign: 'center',
-                    gap: '12px',
-                    padding: '24px',
-                    color: 'var(--text-muted)'
+                    background: 'radial-gradient(ellipse at center, var(--pf-surface-elevated) 0%, var(--pf-bg-base) 70%)',
+                    gap: '16px',
+                    padding: '20px',
+                    textAlign: 'center'
+                  }}
+                >
+                  {/* Avatar com Animação de Pulso de Áudio */}
+                  <div style={{
+                    position: 'relative',
+                    width: 100,
+                    height: 100,
+                    borderRadius: '50%',
+                    background: 'linear-gradient(135deg, var(--pf-surface) 0%, var(--pf-surface-elevated) 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '2.2rem',
+                    fontWeight: 800,
+                    color: 'var(--pf-accent)',
+                    border: '2px solid rgba(56, 189, 248, 0.4)',
+                    boxShadow: audioLevel > 10
+                      ? '0 0 0 8px rgba(16, 185, 129, 0.2), 0 0 35px rgba(16, 185, 129, 0.45)'
+                      : '0 8px 24px rgba(0, 0, 0, 0.4)',
+                    transition: 'box-shadow 0.15s ease'
                   }}>
+                    {(currentMeeting.DEPARTAMENTO || 'TOTVS').substring(0, 2).toUpperCase()}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--pf-text-primary)' }}>
+                      {isCamOff ? 'Câmera desligada' : videoStatus === 'denied' ? 'Permissão de câmera não concedida' : 'Câmera não detectada'}
+                    </span>
+                    <span style={{ fontSize: '12.5px', color: 'var(--pf-text-secondary)', maxWidth: '400px' }}>
+                      O áudio e a transcrição da reunião continuam ativos em segundo plano.
+                    </span>
+                  </div>
+
+                  {/* Indicador de Captação e Sinal */}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', marginTop: '4px' }}>
                     <div style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      background: getTranscriptionStatusInfo(transcriptionStatus).dotColor,
-                      boxShadow: `0 0 8px ${getTranscriptionStatusInfo(transcriptionStatus).dotColor}`
-                    }} />
-                    <p style={{ margin: 0, fontSize: '12.5px', maxWidth: '300px', lineHeight: 1.5 }}>
-                      {getEmptyMessage(transcriptionStatus, currentMeeting.TITULO_REUNIAO)}
-                    </p>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                      <button
-                        type="button"
-                        onClick={() => setIsManualEditMode(true)}
-                        className="btn btn-secondary"
-                        style={{ fontSize: '11px', padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
-                      >
-                        <FileText size={12} />
-                        Digitar Manualmente
-                      </button>
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      background: audioStatus === 'active' && !isMuted ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                      border: `1px solid ${audioStatus === 'active' && !isMuted ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: audioStatus === 'active' && !isMuted ? '#10b981' : '#f87171'
+                    }}>
+                      {audioStatus === 'active' && !isMuted ? <Mic size={12} /> : <MicOff size={12} />}
+                      <span>{audioStatus === 'active' && !isMuted ? `Captação ativa (${audioLevel}%)` : 'Microfone silenciado'}</span>
+                    </div>
+
+                    <div style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      background: signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.15)' :
+                                  signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.15)' :
+                                  'rgba(16, 185, 129, 0.15)',
+                      border: `1px solid ${
+                                  signalQuality === 'saturado' ? 'rgba(239, 68, 68, 0.35)' :
+                                  signalQuality === 'baixo' ? 'rgba(245, 158, 11, 0.35)' :
+                                  'rgba(16, 185, 129, 0.35)'}`,
+                      color: signalQuality === 'saturado' ? '#ef4444' :
+                             signalQuality === 'baixo' ? '#f59e0b' :
+                             '#10b981'
+                    }}>
+                      <span>
+                        {signalQuality === 'saturado' ? '⚠️ Áudio Saturado' :
+                         signalQuality === 'baixo' ? '⚠️ Sinal Baixo' :
+                         '🎙️ Sinal Adequado'}
+                      </span>
                     </div>
                   </div>
+
+                  {/* Card de autorização prévia de microfone no celular */}
+                  {audioStatus !== 'active' && (
+                    <div className="mobile-pre-permission-card" style={{
+                      marginTop: '10px',
+                      padding: '14px 18px',
+                      borderRadius: '12px',
+                      background: 'var(--pf-surface)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)',
+                      maxWidth: '360px',
+                      width: '92%',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
+                        <Mic size={20} color="#38bdf8" />
+                      </div>
+                      <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--pf-text-primary)', marginBottom: '4px' }}>
+                        Ative o microfone para registrar a reunião
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--pf-text-secondary)', marginBottom: '12px', lineHeight: 1.4 }}>
+                        Navegadores em celulares exigem um toque direto para autorizar a gravação e transcrever continuamente.
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => startMediaAndRecognition()}
+                          style={{ minHeight: '44px', width: '100%', justifyContent: 'center', fontWeight: 600, fontSize: '12.5px' }}
+                        >
+                          <Mic size={15} /> Ativar microfone agora
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => setShowPermissionHelpModal(true)}
+                          style={{ minHeight: '40px', width: '100%', justifyContent: 'center', fontSize: '11px', color: 'var(--pf-text-secondary)' }}
+                        >
+                          <HelpCircle size={13} /> Como liberar no Safari / Chrome
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* PÍLULA DISCRETA NO PALCO CENTRAL */}
+              <div style={{
+                position: 'absolute',
+                top: '18px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 20,
+                background: 'rgba(15, 23, 42, 0.88)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '30px',
+                padding: '6px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                boxShadow: '0 6px 24px rgba(0,0,0,0.4)',
+                fontSize: '11.5px',
+                color: 'var(--pf-text-primary)',
+                whiteSpace: 'nowrap',
+                maxWidth: '90vw'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    background: isMuted ? '#f59e0b' :
+                                transcriptionStatus === 'receiving_speech' ? '#10b981' :
+                                transcriptionStatus === 'processing_chunk' ? '#38bdf8' :
+                                isRecording ? '#10b981' : '#64748b',
+                    boxShadow: isRecording && !isMuted ? '0 0 8px #10b981' : 'none'
+                  }}></span>
+                  <span style={{ fontWeight: 600 }}>
+                    {isMuted
+                      ? 'Microfone silenciado • Transcrição pausada'
+                      : currentMeeting.STATUS_MEETING === 'pausada'
+                      ? 'Reunião pausada'
+                      : sttProvider === 'manual'
+                      ? 'Registro manual ativo'
+                      : 'Transcrição ativa • A reunião está sendo registrada para gerar a ata'}
+                  </span>
+                </div>
+
+                {!isMobileScreen && !showCollabPanel && (
+                  <button
+                    type="button"
+                    onClick={() => { setShowCollabPanel(true); setCollabTab('chat'); }}
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.12)',
+                      border: '1px solid rgba(56, 189, 248, 0.35)',
+                      color: '#38bdf8',
+                      borderRadius: '16px',
+                      padding: '3px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Abrir painel lateral de colaboração"
+                  >
+                    <MessageSquare size={12} />
+                    <span>Abrir Chat</span>
+                  </button>
+                )}
+
+                {!['listening', 'receiving_speech', 'capturing_audio', 'processing_chunk', 'transcription_active'].includes(transcriptionStatus) && isRecording && (
+                  <button
+                    type="button"
+                    onClick={handleActivateTranscription}
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.2)',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      color: '#10b981',
+                      borderRadius: '16px',
+                      padding: '3px 10px',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    title="Ativar reconhecimento de voz"
+                  >
+                    <Play size={10} fill="#10b981" />
+                    <span>Ativar</span>
+                  </button>
                 )}
               </div>
 
-              {/* Footer do Drawer */}
+              {/* Overlay com Nome do Participante (Canto Inferior Esquerdo) */}
               <div style={{
-                padding: '12px 16px',
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                display: 'flex',
+                position: 'absolute',
+                bottom: '18px',
+                left: '20px',
+                zIndex: 15,
+                background: 'rgba(0, 0, 0, 0.65)',
+                backdropFilter: 'blur(8px)',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontSize: '12px',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
                 gap: '8px',
-                background: 'rgba(15, 23, 42, 0.8)'
+                border: '1px solid rgba(255, 255, 255, 0.08)'
               }}>
+                <span>Você ({currentMeeting.DEPARTAMENTO || 'TOTVS'})</span>
+                {isMuted && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 5px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }} title="Microfone silenciado">
+                    <MicOff size={11} color="#f87171" />
+                  </span>
+                )}
+              </div>
+
+              {/* BARRA DE CONTROLES INFERIOR FLUTUANTE (TEAMS / MEET DOCK) */}
+              <div
+                className="meeting-controls-dock"
+                style={{
+                  position: 'absolute',
+                  bottom: isMobileScreen ? 'calc(10px + var(--sab, 0px))' : '18px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  zIndex: 25,
+                  background: 'rgba(15, 23, 42, 0.94)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '24px',
+                  padding: isMobileScreen ? '4px 10px' : '6px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: isMobileScreen ? '6px' : '12px',
+                  boxShadow: '0 12px 36px rgba(0,0,0,0.55)',
+                  maxWidth: '96vw',
+                  flexWrap: 'nowrap',
+                  justifyContent: 'center'
+                }}
+              >
+                {/* Microfone */}
                 <button
                   type="button"
-                  onClick={() => {
-                    const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
-                    if (navigator.clipboard && text) {
-                      navigator.clipboard.writeText(text);
-                    }
-                  }}
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '11px', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  className={`control-btn ${isMuted ? 'active' : ''}`}
+                  onClick={toggleMute}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title={isMuted ? 'Desmutar Microfone' : 'Mutar Microfone'}
                 >
-                  <Copy size={12} />
-                  Copiar Texto
+                  <div className="icon-circle" style={{
+                    width: isMobileScreen ? 36 : 40,
+                    height: isMobileScreen ? 36 : 40,
+                    background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: isMuted ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
+                  }}>
+                    {isMuted ? <MicOff size={isMobileScreen ? 16 : 18} color="#f87171" /> : <Mic size={isMobileScreen ? 16 : 18} />}
+                  </div>
+                  <span style={{ fontSize: '10px' }}>{isMuted ? 'Desmutar' : 'Mutar'}</span>
                 </button>
 
+                {/* Câmera */}
                 <button
                   type="button"
-                  onClick={() => setIsManualEditMode(!isManualEditMode)}
-                  className="btn btn-secondary"
-                  style={{ flex: 1, fontSize: '11px', padding: '7px 10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                  className={`control-btn ${isCamOff ? 'active' : ''}`}
+                  onClick={toggleCamera}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title={isCamOff ? 'Ligar Câmera' : 'Parar Câmera'}
                 >
-                  <FileText size={12} />
-                  {isManualEditMode ? 'Ver Texto Voz' : 'Editar Manual'}
+                  <div className="icon-circle" style={{
+                    width: isMobileScreen ? 36 : 40,
+                    height: isMobileScreen ? 36 : 40,
+                    background: isCamOff ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: isCamOff ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
+                  }}>
+                    {isCamOff ? <VideoOff size={isMobileScreen ? 16 : 18} color="#f87171" /> : <Video size={isMobileScreen ? 16 : 18} />}
+                  </div>
+                  <span style={{ fontSize: '10px' }}>{isCamOff ? 'Ligar' : 'Parar'}</span>
+                </button>
+
+                {/* Pausar / Retomar */}
+                {currentMeeting.STATUS_MEETING === 'ao_vivo' ? (
+                  <button
+                    type="button"
+                    className="control-btn"
+                    onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'pausar')}
+                    style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                    title="Pausar a reunião e a gravação"
+                  >
+                    <div className="icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308' }}>
+                      <Pause size={isMobileScreen ? 16 : 18} color="#eab308" />
+                    </div>
+                    <span style={{ fontSize: '10px' }}>Pausar</span>
+                  </button>
+                ) : currentMeeting.STATUS_MEETING === 'pausada' || currentMeeting.STATUS_MEETING === 'agendada' ? (
+                  <button
+                    type="button"
+                    className="control-btn"
+                    onClick={() => handleMeetingAction(currentMeeting.ID_MEETING, 'iniciar')}
+                    style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                    title="Iniciar ou Retomar Reunião"
+                  >
+                    <div className="icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: 'rgba(16, 185, 129, 0.15)', borderColor: '#10b981' }}>
+                      <Play size={isMobileScreen ? 16 : 18} color="#10b981" />
+                    </div>
+                    <span style={{ fontSize: '10px' }}>{currentMeeting.STATUS_MEETING === 'pausada' ? 'Retomar' : 'Iniciar'}</span>
+                  </button>
+                ) : null}
+
+                {/* Botão Chat */}
+                <button
+                  type="button"
+                  className={`control-btn ${(isMobileScreen ? mobileRoomTab === 'chat' : showCollabPanel && collabTab === 'chat') ? 'active' : ''}`}
+                  onClick={() => {
+                    if (isMobileScreen) {
+                      setMobileRoomTab('chat');
+                    } else {
+                      setShowCollabPanel(true);
+                      setCollabTab('chat');
+                    }
+                  }}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title="Abrir Chat da Reunião"
+                >
+                  <div className="icon-circle" style={{
+                    width: isMobileScreen ? 36 : 40,
+                    height: isMobileScreen ? 36 : 40,
+                    background: (isMobileScreen ? mobileRoomTab === 'chat' : showCollabPanel && collabTab === 'chat') ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: (isMobileScreen ? mobileRoomTab === 'chat' : showCollabPanel && collabTab === 'chat') ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)'
+                  }}>
+                    <MessageSquare size={isMobileScreen ? 16 : 18} color={(isMobileScreen ? mobileRoomTab === 'chat' : showCollabPanel && collabTab === 'chat') ? '#38bdf8' : 'var(--pf-text-primary)'} />
+                  </div>
+                  <span style={{ fontSize: '10px', color: (isMobileScreen ? mobileRoomTab === 'chat' : showCollabPanel && collabTab === 'chat') ? '#38bdf8' : 'var(--pf-text-primary)' }}>
+                    Chat
+                  </span>
+                </button>
+
+                {/* Botão Transcrição */}
+                <button
+                  type="button"
+                  className={`control-btn ${(isMobileScreen ? mobileRoomTab === 'transcript' : showCollabPanel && collabTab === 'transcript') ? 'active' : ''}`}
+                  onClick={() => {
+                    if (isMobileScreen) {
+                      setMobileRoomTab('transcript');
+                    } else {
+                      setShowCollabPanel(true);
+                      setCollabTab('transcript');
+                    }
+                  }}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title="Abrir Transcrição da Reunião"
+                >
+                  <div className="icon-circle" style={{
+                    width: isMobileScreen ? 36 : 40,
+                    height: isMobileScreen ? 36 : 40,
+                    background: (isMobileScreen ? mobileRoomTab === 'transcript' : showCollabPanel && collabTab === 'transcript') ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: (isMobileScreen ? mobileRoomTab === 'transcript' : showCollabPanel && collabTab === 'transcript') ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)'
+                  }}>
+                    <FileText size={isMobileScreen ? 16 : 18} color={(isMobileScreen ? mobileRoomTab === 'transcript' : showCollabPanel && collabTab === 'transcript') ? '#38bdf8' : 'var(--pf-text-primary)'} />
+                  </div>
+                  <span style={{ fontSize: '10px', color: (isMobileScreen ? mobileRoomTab === 'transcript' : showCollabPanel && collabTab === 'transcript') ? '#38bdf8' : 'var(--pf-text-primary)' }}>
+                    Texto
+                  </span>
+                </button>
+
+                {/* No celular: Botão Mais. No Desktop: Ajustes + Diagnóstico */}
+                {isMobileScreen ? (
+                  <button
+                    type="button"
+                    className="control-btn"
+                    onClick={() => setShowMobileActionSheet(true)}
+                    style={{ padding: '4px 6px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                    title="Mais opções e ajustes"
+                  >
+                    <div className="icon-circle" style={{ width: 36, height: 36, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                      <MoreHorizontal size={16} />
+                    </div>
+                    <span style={{ fontSize: '10px' }}>Mais</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="control-btn"
+                      onClick={() => setShowSettingsModal(true)}
+                      style={{ padding: '6px 12px', gap: '4px' }}
+                      title="Ajustes de motor STT, modelo e parâmetros da reunião"
+                    >
+                      <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                        <Settings size={18} />
+                      </div>
+                      <span style={{ fontSize: '11px' }}>Ajustes</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="control-btn"
+                      onClick={() => setShowTechnicalDiagnostics(true)}
+                      style={{ padding: '6px 12px', gap: '4px' }}
+                      title="Abrir painel técnico desacoplado de diagnóstico"
+                    >
+                      <div className="icon-circle" style={{ width: 40, height: 40, background: 'rgba(255, 255, 255, 0.08)', borderColor: 'rgba(255, 255, 255, 0.15)' }}>
+                        <Activity size={18} />
+                      </div>
+                      <span style={{ fontSize: '11px' }}>Diagnóstico</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Sair / Finalizar */}
+                <button
+                  type="button"
+                  className="control-btn control-btn-leave"
+                  onClick={handleFinishAndAnalyze}
+                  style={{ padding: isMobileScreen ? '4px 8px' : '6px 14px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title="Encerrar reunião e sintetizar ata operacional e executiva com IA"
+                >
+                  <div className="icon-circle leave-icon-circle" style={{ width: isMobileScreen ? 36 : 40, height: isMobileScreen ? 36 : 40, background: '#ef4444', borderColor: '#ef4444' }}>
+                    <Square size={isMobileScreen ? 14 : 16} fill="#ffffff" color="#ffffff" />
+                  </div>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: '#f87171' }}>Sair</span>
                 </button>
               </div>
             </div>
+          )}
+
+          {/* NO CELULAR: SE mobileRoomTab === 'chat', EXIBE O CHAT COMPLETO NA TELA */}
+          {isMobileScreen && mobileRoomTab === 'chat' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+              {renderChatView()}
+            </div>
+          )}
+
+          {/* NO CELULAR: SE mobileRoomTab === 'transcript', EXIBE A TRANSCRIÇÃO COMPLETA NA TELA */}
+          {isMobileScreen && mobileRoomTab === 'transcript' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+              {renderTranscriptView()}
+            </div>
+          )}
+
+          {/* NO DESKTOP: PAINEL LATERAL DE COLABORAÇÃO COM ABAS 'Chat' E 'Transcrição' */}
+          {!isMobileScreen && showCollabPanel && (
+            <aside className="meeting-collab-panel">
+              {/* Abas Superiores do Painel de Colaboração */}
+              <div className="collab-tabs-header">
+                <button
+                  type="button"
+                  className={`collab-tab-btn ${collabTab === 'chat' ? 'active' : ''}`}
+                  onClick={() => setCollabTab('chat')}
+                >
+                  <MessageSquare size={15} />
+                  <span>Chat</span>
+                  {chatMessages.length > 0 && (
+                    <span style={{
+                      fontSize: '10.5px',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      background: collabTab === 'chat' ? 'var(--pf-accent)' : 'rgba(255, 255, 255, 0.1)',
+                      color: '#ffffff',
+                      fontWeight: 700
+                    }}>
+                      {chatMessages.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className={`collab-tab-btn ${collabTab === 'transcript' ? 'active' : ''}`}
+                  onClick={() => setCollabTab('transcript')}
+                >
+                  <FileText size={15} />
+                  <span>Transcrição</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCollabPanel(false)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--pf-text-secondary)',
+                    cursor: 'pointer',
+                    padding: '8px',
+                    borderRadius: '6px'
+                  }}
+                  title="Recolher painel lateral"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Conteúdo da Aba Selecionada */}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {collabTab === 'chat' ? renderChatView() : renderTranscriptView()}
+              </div>
+            </aside>
           )}
         </div>
 

@@ -116,6 +116,10 @@ def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
     if "EVENTOS_SESSAO" not in item or not isinstance(item.get("EVENTOS_SESSAO"), list):
         item["EVENTOS_SESSAO"] = []
 
+    # Chat ao vivo independente da transcrição
+    if "CHAT_MESSAGES" not in item or not isinstance(item.get("CHAT_MESSAGES"), list):
+        item["CHAT_MESSAGES"] = []
+
     if not item.get("CREATED_AT"):
         item["CREATED_AT"] = item.get("DT_MEETING") or datetime.now().strftime("%Y-%m-%d")
 
@@ -541,6 +545,66 @@ class MeetingRepository:
 
             _atomic_write_json(self.dataset_path, data)
             return _normalize_live_fields(_apply_pdf_state(target_item))
+
+    def add_chat_message(
+        self,
+        meeting_id: str,
+        author: str,
+        text: str,
+        client_message_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Adiciona mensagem textual de chat enviada por participante na reunião ao vivo.
+        Mantém estrito isolamento por meeting_id e idempotência por client_message_id.
+        Mensagens de chat NÃO são computadas automaticamente como tarefas ou decisões.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            target_item = None
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    target_item = item
+                    break
+            if not target_item:
+                raise ValueError(f"Reunião {meeting_id} não encontrada.")
+
+            if "CHAT_MESSAGES" not in target_item or not isinstance(target_item["CHAT_MESSAGES"], list):
+                target_item["CHAT_MESSAGES"] = []
+
+            clean_author = (author or "Participante").strip()[:100] or "Participante"
+            clean_text = (text or "").strip()[:1500]
+            if not clean_text:
+                raise ValueError("Mensagem de chat não pode ser vazia.")
+
+            if client_message_id:
+                clean_cid = str(client_message_id).strip()
+                for existing in target_item["CHAT_MESSAGES"]:
+                    if existing.get("client_message_id") == clean_cid:
+                        return existing
+
+            msg_id = f"msg_{uuid.uuid4().hex[:12]}"
+            msg_obj = {
+                "id": msg_id,
+                "meeting_id": str(meeting_id),
+                "author": clean_author,
+                "text": clean_text,
+                "timestamp": datetime.now().isoformat(),
+                "client_message_id": str(client_message_id).strip() if client_message_id else None
+            }
+            target_item["CHAT_MESSAGES"].append(msg_obj)
+            _atomic_write_json(self.dataset_path, data)
+            return msg_obj
+
+    def get_chat_messages(self, meeting_id: str) -> List[Dict[str, Any]]:
+        """
+        Retorna as mensagens de chat da reunião ao vivo especificada.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    return list(item.get("CHAT_MESSAGES") or [])
+            raise ValueError(f"Reunião {meeting_id} não encontrada.")
 
     def record_live_audio_chunk(
         self,

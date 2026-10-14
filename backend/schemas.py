@@ -442,6 +442,27 @@ class LiveMeetingTranscriptUpdateRequest(BaseModel):
     session_id: Optional[str] = None
 
 
+class LiveChatMessageCreate(BaseModel):
+    author: str = Field("Participante", max_length=100, description="Nome do autor da mensagem")
+    text: str = Field(..., min_length=1, max_length=1500, description="Conteúdo textual da mensagem")
+    client_message_id: Optional[str] = Field(None, max_length=100, description="Identificador único para idempotência no cliente")
+
+
+class LiveChatMessageResponse(BaseModel):
+    id: str
+    meeting_id: str
+    author: str
+    text: str
+    timestamp: str
+    client_message_id: Optional[str] = None
+
+
+class LiveChatListResponse(BaseModel):
+    meeting_id: str
+    total: int
+    messages: List[LiveChatMessageResponse]
+
+
 class SuggestionActionRequest(BaseModel):
     action: str  # "confirm" | "edit" | "reject" | "mark_noise"
     value: Optional[Any] = None
