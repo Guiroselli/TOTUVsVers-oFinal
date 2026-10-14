@@ -687,6 +687,15 @@ class STTService:
                 self._model = old_model
                 raise RuntimeError(f"Falha ao carregar modelo '{clean_name}': {e}")
 
+    def _model_ref(self, download_root: Optional[str]) -> str:
+        """
+        O download grava os pesos soltos em `download_root` (model.bin, config.json...).
+        Nesse formato o WhisperModel só os encontra se receber o próprio diretório.
+        """
+        if download_root and os.path.isfile(os.path.join(download_root, "model.bin")):
+            return download_root
+        return self.model_size
+
     def _get_or_load_model(self):
         """
         Carregamento lazy e thread-safe do modelo WhisperModel com suporte a download_root
@@ -717,7 +726,7 @@ class STTService:
                             f"Tentando carregar faster-whisper em CUDA (model={self.model_size}, compute_type={target_compute}, download_root={download_root})..."
                         )
                         self._model = WhisperModel(
-                            self.model_size,
+                            self._model_ref(download_root),
                             device="cuda",
                             compute_type=target_compute,
                             download_root=download_root,
@@ -740,7 +749,7 @@ class STTService:
                     f"Carregando faster-whisper (model={self.model_size}, device={target_device}, compute_type={target_compute}, download_root={download_root})..."
                 )
                 self._model = WhisperModel(
-                    self.model_size,
+                    self._model_ref(download_root),
                     device=target_device,
                     compute_type=target_compute,
                     download_root=download_root,
