@@ -1,10 +1,14 @@
 import os
+import sys
+import time
+import contextlib
 import re
 import json
 import math
 import uuid
 import threading
 from datetime import datetime
+
 from typing import List, Dict, Any, Optional, Tuple
 
 from normalization import normalize_date_iso, normalize_client_code, normalize_urgency, normalize_pain_category, classify_client_identity
@@ -126,24 +130,75 @@ def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
     return item
 
 
-def _atomic_write_json(path: str, data: Any):
-    """Grava JSON de forma atômica usando arquivo temporário + replace."""
-    dir_name = os.path.dirname(os.path.abspath(path))
-    os.makedirs(dir_name, exist_ok=True)
-    temp_path = f"{path}.tmp.{uuid.uuid4().hex}"
+@contextlib.contextmanager
+def interprocess_file_lock(lock_path: str, timeout: float = 10.0, poll_interval: float = 0.05):
+    """
+    Bloqueio interprocessos multiplataforma sem dependências externas:
+    - Windows: msvcrt.locking sobre arquivo .lock dedicado
+    - Linux/macOS: fcntl.flock sobre arquivo .lock dedicado
+    Evita condições de corrida (lost updates) entre múltiplos processos/workers do Uvicorn ou scripts.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(lock_path)), exist_ok=True)
+    f = open(lock_path, "a+")
+    start_time = time.time()
+    locked = False
     try:
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, path)
-    except Exception:
-        if os.path.exists(temp_path):
+        while True:
             try:
-                os.remove(temp_path)
+                if sys.platform == "win32":
+                    import msvcrt
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except (BlockingIOError, OSError):
+                if time.time() - start_time > timeout:
+                    # Se atingir o timeout, prossegue com fallback para não travar o processo
+                    break
+                time.sleep(poll_interval)
+        yield
+    finally:
+        if locked:
+            try:
+                if sys.platform == "win32":
+                    import msvcrt
+                    f.seek(0)
+                    msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             except Exception:
                 pass
-        raise
+        try:
+            f.close()
+        except Exception:
+            pass
+
+
+def _atomic_write_json(path: str, data: Any):
+    """Grava JSON de forma atômica usando arquivo temporário + replace, protegido por lock interprocessos."""
+    dir_name = os.path.dirname(os.path.abspath(path))
+    os.makedirs(dir_name, exist_ok=True)
+    lock_file = f"{path}.lock"
+    with interprocess_file_lock(lock_file):
+        temp_path = f"{path}.tmp.{uuid.uuid4().hex}"
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, path)
+        except Exception:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            raise
+
 
 
 def _read_json(path: str, default: Any) -> Any:

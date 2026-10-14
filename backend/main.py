@@ -29,20 +29,31 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS configurável por ambiente
-cors_origins_env = os.getenv("CORS_ORIGINS", "*")
-if cors_origins_env == "*":
-    origins = ["*"]
-else:
+# CORS configurável por ambiente — sem wildcard (*) como padrão
+DEFAULT_LOCAL_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
+if cors_origins_env:
     origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    origins = DEFAULT_LOCAL_ORIGINS
+
+# Credenciais só são permitidas quando não há wildcard "*"
+allow_credentials = "*" not in origins and bool(origins)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
 
 # Diretório de PDFs (caminho absoluto: funciona rodando de qualquer CWD)
 os.makedirs(PDF_DIR, exist_ok=True)

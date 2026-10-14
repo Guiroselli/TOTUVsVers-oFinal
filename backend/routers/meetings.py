@@ -585,7 +585,24 @@ async def upload_live_meeting_audio_chunk(
             }
         )
 
-    audio_bytes = await audio.read()
+    # Leitura em streaming com limite progressivo de tamanho (evita estouro de RAM)
+    max_chunk_bytes = int(os.getenv("STT_MAX_CHUNK_BYTES", str(10 * 1024 * 1024)))  # 10 MB
+    chunks_list = []
+    total_chunk_bytes = 0
+    read_block_size = 64 * 1024
+    while True:
+        block = await audio.read(read_block_size)
+        if not block:
+            break
+        total_chunk_bytes += len(block)
+        if total_chunk_bytes > max_chunk_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Tamanho do chunk ({total_chunk_bytes} bytes) excede o limite máximo permitido de {max_chunk_bytes} bytes (10MB)."
+            )
+        chunks_list.append(block)
+
+    audio_bytes = b"".join(chunks_list)
     if not audio_bytes:
         return {
             "ok": True,
@@ -599,6 +616,7 @@ async def upload_live_meeting_audio_chunk(
             "processing_time_ms": 0.0,
             "already_processed": False
         }
+
 
     filename_hint = audio.filename or "chunk.webm"
     meeting_context = f"{meeting.get('TITULO', '')} {meeting.get('NOME_SEGMENTO', '')} {meeting.get('DEPARTAMENTO', '')}".strip()
@@ -860,20 +878,52 @@ def save_meeting(req: SaveMeetingRequest):
 
 @router.post("/upload_pdf")
 async def upload_pdf(meeting_id: str = Form(...), file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Arquivo deve ser do tipo PDF.")
-        
-    content = await file.read()
-    if len(content) > 30 * 1024 * 1024:  # 30MB
-        raise HTTPException(status_code=400, detail="O arquivo PDF excede o tamanho máximo de 30MB.")
-        
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Arquivo deve possuir extensão .pdf.")
+
+    max_pdf_bytes = int(os.getenv("PDF_MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))  # 30 MB
     os.makedirs(PDF_DIR, exist_ok=True)
+    temp_target = os.path.join(PDF_DIR, f"{meeting_id}.tmp.{uuid.uuid4().hex}")
     file_path = pdf_path_for(meeting_id)
-    with open(file_path, "wb") as f:
-        f.write(content)
+    total_bytes = 0
+    read_block_size = 64 * 1024
+    first_block = True
+
+    try:
+        with open(temp_target, "wb") as out_f:
+            while True:
+                block = await file.read(read_block_size)
+                if not block:
+                    break
+                if first_block:
+                    first_block = False
+                    if not block.startswith(b"%PDF-"):
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Arquivo inválido: assinatura mágica não corresponde a um documento PDF legítimo (%PDF-)."
+                        )
+                total_bytes += len(block)
+                if total_bytes > max_pdf_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"O arquivo PDF excede o tamanho máximo permitido de {max_pdf_bytes // (1024 * 1024)}MB."
+                    )
+                out_f.write(block)
+        if total_bytes < 10:
+            raise HTTPException(status_code=400, detail="Arquivo PDF vazio ou corrompido.")
+        os.replace(temp_target, file_path)
+    except Exception:
+        if os.path.exists(temp_target):
+            try:
+                os.remove(temp_target)
+            except OSError:
+                pass
+        raise
 
     repo.update_metadata(meeting_id, {"TEM_PDF": True}, author="system")
     return {"status": "success", "file_path": f"/pdfs/{meeting_id}.pdf"}
+
 
 
 # Endpoints de compatibilidade retroativa

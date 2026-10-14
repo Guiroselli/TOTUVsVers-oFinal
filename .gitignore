@@ -65,3 +65,6 @@ abrir_formulario_*.html
 
 # Gravações enviadas (áudio)
 backend/recordings/
+*.lock
+backend/*.lock
+
