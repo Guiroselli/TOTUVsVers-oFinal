@@ -2,11 +2,15 @@
  * Cliente HTTP centralizado para a API do Proton Flow.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const BASE_URL = import.meta.env.VITE_API_URL !== undefined
+  ? import.meta.env.VITE_API_URL
+  : '';
 
 async function request(endpoint, options = {}) {
   const url = `${BASE_URL}${endpoint}`;
-  const defaultHeaders = {};
+  const defaultHeaders = {
+    'ngrok-skip-browser-warning': 'true',
+  };
 
   if (!(options.body instanceof FormData)) {
     defaultHeaders['Content-Type'] = 'application/json';

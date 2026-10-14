@@ -81,7 +81,8 @@ export default function DocumentViewerModal({
     if (pdfBlobUrl) {
       window.open(pdfBlobUrl, '_blank');
     } else if (meeting.ID_MEETING && meeting.TEM_PDF) {
-      window.open(`http://localhost:8000/pdfs/${meeting.ID_MEETING}.pdf`, '_blank');
+      const pdfBase = import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : '';
+      window.open(`${pdfBase}/pdfs/${meeting.ID_MEETING}.pdf`, '_blank');
     }
   };
 
@@ -334,7 +335,7 @@ export default function DocumentViewerModal({
               ) : meeting.TEM_PDF && docType === 'operational' ? (
                 <iframe
                   id="pdf-preview-iframe"
-                  src={`http://localhost:8000/pdfs/${meeting.ID_MEETING}.pdf`}
+                  src={`${import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : ''}/pdfs/${meeting.ID_MEETING}.pdf`}
                   style={{
                     width: '100%',
                     height: '100%',
