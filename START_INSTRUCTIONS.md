@@ -79,7 +79,7 @@ O túnel direciona o tráfego de `https://protonflow.com.br` diretamente para o 
 Valide se o faster-whisper e o cache canônico estão operacionais acessando:
 
 - **Endpoint**: `GET http://127.0.0.1:8000/api/stt/status`
-- **Exemplo de Payload Esperado**:
+- **Exemplo de Payload Esperado (PC de Hospedagem com RTX 3060 e CUDA)**:
 ```json
 {
   "enabled": true,
@@ -87,16 +87,20 @@ Valide se o faster-whisper e o cache canônico estão operacionais acessando:
   "ready": true,
   "provider": "faster_whisper",
   "engine": "faster-whisper",
-  "model_size": "small",
-  "device": "cpu",
-  "compute_type": "int8",
-  "hardware_profile": "cpu_balanced",
+  "model_size": "medium",
+  "device": "cuda",
+  "compute_type": "float16",
+  "hardware_profile": "nvidia_compatible",
+  "model_state": "model_loaded",
   "cache_dir": "<raiz-do-projeto>\\models",
   "model_cached": true,
+  "fallback_occurred": false,
+  "fallback_reason": null,
   "unavailable_reason": null,
   "error_detail": null
 }
 ```
+*(Em máquinas sem GPU dedicada ou em modo CPU, `device="cpu"`, `model_size="small"` e `compute_type="int8"` são adotados automaticamente com `hardware_profile="cpu_balanced"`).*
 
 ---
 

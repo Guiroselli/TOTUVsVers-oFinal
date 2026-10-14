@@ -134,20 +134,37 @@ def ensure_model_cached(model_size: str, abs_cache_dir: str):
         sys.exit(1)
 
 
-def validate_model_loading(model_size: str, abs_cache_dir: str):
+def validate_model_loading(model_size: str, abs_cache_dir: str, target_device: str = "cpu", target_compute: str = "int8"):
     from faster_whisper import WhisperModel
 
-    print(f"[*] Validando carregamento do modelo '{model_size}' a partir de '{abs_cache_dir}'...")
+    print(f"[*] Validando carregamento do modelo '{model_size}' a partir de '{abs_cache_dir}' (dispositivo={target_device})...")
+    flat_layout = os.path.isfile(os.path.join(abs_cache_dir, "model.bin"))
+    model_ref = abs_cache_dir if flat_layout else model_size
+
+    if target_device == "cuda":
+        try:
+            model = WhisperModel(
+                model_ref,
+                device="cuda",
+                compute_type=target_compute if target_compute != "auto" else "float16",
+                download_root=abs_cache_dir,
+                local_files_only=True
+            )
+            print(f"[OK] Modelo '{model_size}' carregado com sucesso na GPU via CUDA ({target_compute}). Motor STT acelerado por hardware.")
+            del model
+            return
+        except Exception as cuda_err:
+            print(f"[!] Aviso: Falha ao inicializar com CUDA ({cuda_err}). Validando fallback em CPU...")
+
     try:
-        flat_layout = os.path.isfile(os.path.join(abs_cache_dir, "model.bin"))
         model = WhisperModel(
-            abs_cache_dir if flat_layout else model_size,
+            model_ref,
             device="cpu",
             compute_type="int8",
             download_root=abs_cache_dir,
             local_files_only=True
         )
-        print("[OK] Modelo carregado com sucesso na memória RAM (CPU int8). Motor STT operacional.")
+        print(f"[OK] Modelo '{model_size}' carregado com sucesso na memória RAM (CPU int8). Motor STT operacional.")
         del model
     except Exception as load_err:
         print(f"\n[ERRO CRÍTICO] Falha ao inicializar WhisperModel a partir do cache: {load_err}")
@@ -171,12 +188,42 @@ def main():
     except ImportError:
         pass
 
-    model_size = os.getenv("STT_MODEL_SIZE", "small")
+    raw_model = os.getenv("STT_MODEL_SIZE", "auto")
+    raw_device = os.getenv("STT_DEVICE", "auto")
+    raw_compute = os.getenv("STT_COMPUTE_TYPE", "auto")
+
+    target_device = "cpu"
+    target_compute = "int8"
+
+    try:
+        from hardware_detector import detect_hardware, select_hardware_profile
+    except ImportError:
+        try:
+            from backend.hardware_detector import detect_hardware, select_hardware_profile
+        except ImportError:
+            detect_hardware = None
+            select_hardware_profile = None
+
+    if select_hardware_profile and detect_hardware:
+        hw_info = detect_hardware()
+        profile = select_hardware_profile(
+            hw_info,
+            requested_device=raw_device,
+            requested_compute_type=raw_compute,
+            requested_model=raw_model
+        )
+        model_size = profile.get("model", "small")
+        target_device = profile.get("device", "cpu")
+        target_compute = profile.get("compute_type", "int8")
+        print(f"[*] Perfil de hardware detectado: [{profile.get('hardware_profile')}]. Modelo: '{model_size}', Dispositivo: '{target_device}' ({target_compute}).")
+    else:
+        model_size = "small" if raw_model in ("auto", "", None) else raw_model
+
     raw_cache_dir = os.getenv("STT_MODEL_CACHE_DIR", "./models")
     abs_cache_dir = resolve_model_cache_dir(raw_cache_dir)
 
     ensure_model_cached(model_size, abs_cache_dir)
-    validate_model_loading(model_size, abs_cache_dir)
+    validate_model_loading(model_size, abs_cache_dir, target_device=target_device, target_compute=target_compute)
 
     print("\n" + "=" * 65)
     print("  SETUP STT CONCLUÍDO COM SUCESSO! [READY]")

@@ -357,7 +357,7 @@ def select_hardware_profile(
     hw_info: Optional[Dict[str, Any]] = None,
     requested_device: str = "auto",
     requested_compute_type: str = "auto",
-    requested_model: str = "small",
+    requested_model: str = "auto",
     requested_workers: str = "auto"
 ) -> Dict[str, Any]:
     """
@@ -393,23 +393,24 @@ def select_hardware_profile(
             else:
                 device_reason = "Auto-detecção: Dispositivo padrão CPU selecionado"
 
-    # 2. Resolução do Perfil de Hardware
+    # 2. Resolução do Perfil de Hardware e Modelo
+    req_model_clean = (requested_model or "auto").strip().lower()
     if selected_device == "cuda":
         profile_name = "nvidia_compatible"
         default_compute = "float16" if "float16" in hw_info.get("cuda_supported_compute_types", []) else "int8_float16"
-        recommended_model = requested_model if requested_model not in ("", "auto") else "medium"
+        recommended_model = req_model_clean if req_model_clean not in ("", "auto") else "medium"
         default_workers = 2
     else:
         # Modo CPU: avalia capacidade da máquina
         if total_ram < 6.0 or cpu_threads <= 2:
             profile_name = "hardware_limited"
             default_compute = "int8"
-            recommended_model = "base" if requested_model == "auto" else requested_model
+            recommended_model = "base" if req_model_clean in ("", "auto") else req_model_clean
             default_workers = 1
         else:
             profile_name = "cpu_balanced"
             default_compute = "int8"
-            recommended_model = "small" if requested_model == "auto" else requested_model
+            recommended_model = "small" if req_model_clean in ("", "auto") else req_model_clean
             default_workers = 1
 
     # 3. Resolução de Compute Type
@@ -427,7 +428,7 @@ def select_hardware_profile(
         resolved_workers = default_workers
 
     # 5. Modelo final
-    model_name = requested_model if requested_model not in ("", "auto") else recommended_model
+    model_name = req_model_clean if req_model_clean not in ("", "auto") else recommended_model
 
     return {
         "hardware_profile": profile_name,

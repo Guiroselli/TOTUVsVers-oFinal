@@ -72,6 +72,17 @@ except ImportError:
         def collapse_repetitive_loops(text: str):
             return text, []
 
+try:
+    from repositories import interprocess_file_lock
+except ImportError:
+    try:
+        from backend.repositories import interprocess_file_lock
+    except ImportError:
+        import contextlib
+        @contextlib.contextmanager
+        def interprocess_file_lock(lock_path: str, timeout: float = 600.0, poll_interval: float = 0.05):
+            yield
+
 
 # Variáveis de ambiente configuráveis e portáteis (PARTE 1, 2, 3, 5)
 STT_PROVIDER = os.getenv("STT_PROVIDER", "faster_whisper")
@@ -450,7 +461,7 @@ class STTService:
                     hw_info=hw_info,
                     requested_device="auto" if self.device in ("auto", None, "") else self.device,
                     requested_compute_type="auto" if self.compute_type in ("auto", None, "") else self.compute_type,
-                    requested_model="small" if self.model_size in ("auto", None, "") else self.model_size,
+                    requested_model="auto" if self.model_size in ("auto", None, "") else self.model_size,
                     requested_workers="auto" if max_concurrent in ("auto", None, "") else str(max_concurrent),
                 )
                 self.hardware_profile = resolved_profile.get("hardware_profile", "cpu_balanced")
@@ -611,7 +622,10 @@ class STTService:
         if not self.check_dependency():
             return False
 
-        target = str(model_size or self.model_size).lower().strip()
+        raw_target = model_size if model_size is not None else self.model_size
+        target = str(raw_target or "small").lower().strip()
+        if target in ("auto", ""):
+            target = "small"
         cache_target = self.model_cache_dir
 
         try:
@@ -621,9 +635,16 @@ class STTService:
                     resolved_path = download_model(target, output_dir=cache_target, local_files_only=True)
                     if resolved_path and os.path.isdir(resolved_path):
                         bin_f = os.path.join(resolved_path, "model.bin")
-                        if os.path.isfile(bin_f) and os.path.getsize(bin_f) < 1000:
+                        cfg_f = os.path.join(resolved_path, "config.json")
+                        if not os.path.isfile(bin_f) or not os.path.isfile(cfg_f):
                             return False
-                    return True
+                        if os.path.getsize(bin_f) < 10 * 1024 * 1024:
+                            return False
+                        return True
+                    elif resolved_path and os.path.isfile(resolved_path):
+                        if os.path.getsize(resolved_path) < 10 * 1024 * 1024:
+                            return False
+                        return True
                 except Exception:
                     return False
             elif not cache_target:
@@ -642,8 +663,13 @@ class STTService:
         Se não estiver, efetua o download inicial único para o cache do backend no PC da RTX 3060.
         Nas próximas inicializações, o modelo é reutilizado do cache sem novo download.
         Valida espaço em disco e integridade dos arquivos (evita tratar download incompleto como válido).
+        Evita downloads repetidos com lock de thread e lock interprocessos.
         """
-        target_model = str(model_size or self.model_size).lower().strip()
+        raw_target = model_size if model_size is not None else self.model_size
+        target_model = str(raw_target or "small").lower().strip()
+        if target_model in ("auto", ""):
+            target_model = "small"
+
         if self._mock_model is not None:
             return True
 
@@ -655,7 +681,6 @@ class STTService:
             return True
 
         # Estimativa de espaço em disco (~1.5 GB para medium, ~480 MB para small, ~3.1 GB para large-v3)
-        # Valores aproximados documentados como estimativa
         model_space_estimates_mb = {
             "tiny": 75,
             "base": 145,
@@ -685,26 +710,32 @@ class STTService:
             f"(estimativa: ~{round(needed_mb / 1024, 2)} GB)..."
         )
 
+        lock_path = os.path.join(self.model_cache_dir, f".download_{target_model}.lock")
+        os.makedirs(self.model_cache_dir, exist_ok=True)
+
         with self._lock:
             if self.is_model_cached(target_model):
                 return True
 
-            self._is_downloading = True
-            try:
-                from faster_whisper.utils import download_model
-                os.makedirs(self.model_cache_dir, exist_ok=True)
-                download_path = download_model(target_model, output_dir=self.model_cache_dir)
-                if not self.is_model_cached(target_model):
-                    raise RuntimeError(f"Download concluído mas verificação de integridade falhou para '{target_model}'.")
-                logger.info(f"Modelo faster-whisper '{target_model}' baixado com sucesso no cache persistente: {download_path}")
-                self._load_error = None
-                return True
-            except Exception as err:
-                self._load_error = f"model_download_failed: Falha ao baixar modelo '{target_model}': {err}"
-                logger.error(self._load_error)
-                return False
-            finally:
-                self._is_downloading = False
+            with interprocess_file_lock(lock_path, timeout=600.0):
+                if self.is_model_cached(target_model):
+                    return True
+
+                self._is_downloading = True
+                try:
+                    from faster_whisper.utils import download_model
+                    download_path = download_model(target_model, output_dir=self.model_cache_dir)
+                    if not self.is_model_cached(target_model):
+                        raise RuntimeError(f"Download concluído mas verificação de integridade falhou para '{target_model}'.")
+                    logger.info(f"Modelo faster-whisper '{target_model}' baixado com sucesso no cache persistente: {download_path}")
+                    self._load_error = None
+                    return True
+                except Exception as err:
+                    self._load_error = f"model_download_failed: Falha ao baixar modelo '{target_model}': {err}"
+                    logger.error(self._load_error)
+                    return False
+                finally:
+                    self._is_downloading = False
 
     def is_available(self) -> bool:
         """Informa se o serviço está habilitado, a dependência está pronta e o modelo está disponível."""
@@ -724,6 +755,10 @@ class STTService:
         if not self.check_dependency():
             return "dependency_missing"
         if self._load_error:
+            if "insufficient_disk_space" in self._load_error.lower():
+                return "insufficient_disk_space"
+            if "download" in self._load_error.lower():
+                return "model_download_failed"
             return "model_load_error"
         if self._is_downloading:
             return "model_downloading"
@@ -794,9 +829,17 @@ class STTService:
         if self._mock_model is not None:
             return self._mock_model
 
-        if not self.is_available():
-            reason = self.get_unavailable_reason()
-            raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'modelo não disponível no cache local'})")
+        if not self.enabled:
+            reason = self.get_unavailable_reason() or "stt_disabled"
+            raise RuntimeError(f"STT indisponível: {reason}")
+
+        if not self.check_dependency():
+            reason = self.get_unavailable_reason() or "dependency_missing"
+            raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'dependências não encontradas'})")
+
+        if self._load_error and not self.auto_download:
+            reason = self.get_unavailable_reason() or "model_load_error"
+            raise RuntimeError(f"STT indisponível: {reason} ({self._load_error})")
 
         with self._lock:
             if self._model is not None:
@@ -807,11 +850,11 @@ class STTService:
                 if self.auto_download:
                     ok = self.download_model_if_needed()
                     if not ok:
-                        reason = self.get_unavailable_reason()
+                        reason = self.get_unavailable_reason() or "model_download_failed"
                         raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'falha no download do modelo'})")
                 else:
-                    reason = self.get_unavailable_reason()
-                    raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'modelo não disponível no cache local'})")
+                    reason = self.get_unavailable_reason() or "model_missing"
+                    raise RuntimeError(f"STT indisponível: {reason} (modelo '{self.model_size}' não encontrado no cache local e auto_download desativado)")
 
             try:
                 self._is_loading = True
@@ -922,8 +965,27 @@ class STTService:
         """Retorna metadados detalhados de status para diagnóstico e frontend."""
         is_avail = self.is_available()
         cached = self.is_model_cached()
-        is_ready = is_avail and (self._model is not None or self._mock_model is not None)
+        is_loaded = bool(self._model is not None or self._mock_model is not None)
+        is_ready = bool(is_loaded and not self._load_error)
         reason = self.get_unavailable_reason()
+
+        if is_loaded:
+            model_state = "model_loaded"
+        elif self._is_downloading:
+            model_state = "model_downloading"
+        elif self._is_loading:
+            model_state = "model_loading"
+        elif self._load_error:
+            if "insufficient_disk_space" in self._load_error.lower():
+                model_state = "insufficient_disk_space"
+            elif "download" in self._load_error.lower():
+                model_state = "download_error"
+            else:
+                model_state = "model_load_error"
+        elif not cached:
+            model_state = "model_missing"
+        else:
+            model_state = "model_cached"
 
         safe_cache_dir = self.model_cache_dir if self.model_cache_dir else "default_hf_cache"
         mem_usage = get_memory_usage_mb()
@@ -936,6 +998,7 @@ class STTService:
             "enabled": self.enabled,
             "available": is_avail,
             "ready": is_ready,
+            "model_state": model_state,
             "provider": "faster_whisper" if self.provider in ("faster_whisper", "faster-whisper") else self.provider,
             "engine": "faster-whisper",
             "model_name": f"faster-whisper-{self.model_size}",
@@ -999,7 +1062,10 @@ class STTService:
         métricas de confiança por segmento e cálculo de RTF em tempo real.
         """
         if not self.is_available():
-            raise RuntimeError(f"STT indisponível no servidor: {self.get_unavailable_reason()}")
+            if self.auto_download and not self._load_error and self.check_dependency() and self.enabled:
+                pass
+            else:
+                raise RuntimeError(f"STT indisponível no servidor: {self.get_unavailable_reason()}")
 
         if not audio_bytes or len(audio_bytes) == 0:
             return {

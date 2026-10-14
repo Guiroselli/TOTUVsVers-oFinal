@@ -578,6 +578,19 @@ async def upload_live_meeting_audio_chunk(
         )
 
     stt = get_stt_service()
+    if stt._is_downloading:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "ok": False,
+                "code": "model_downloading",
+                "status": "downloading",
+                "reason": "model_downloading",
+                "message": "Modelo STT está sendo baixado no servidor. Por favor, aguarde a conclusão.",
+                "retryable": True
+            }
+        )
+
     if not stt.is_available():
         reason = stt.get_unavailable_reason() or "stt_unavailable"
         return JSONResponse(
