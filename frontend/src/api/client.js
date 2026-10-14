@@ -118,6 +118,13 @@ export const api = {
 
   getSttStatus: () => request('/api/stt/status'),
 
+  getOllamaStatus: () => request('/api/ollama/status'),
+
+  startOllama: () =>
+    request('/api/ollama/start', {
+      method: 'POST',
+    }),
+
   switchSttModel: (model) =>
     request('/api/stt/model', {
       method: 'POST',

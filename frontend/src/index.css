@@ -1877,6 +1877,19 @@ h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', sans-serif; }
   100% { transform: scale(0.9); opacity: 0; }
 }
 
+.status-pulse-dot.offline {
+  background-color: var(--danger, #ef4444);
+}
+.status-pulse-dot.offline::after {
+  background-color: var(--danger, #ef4444);
+}
+.status-pulse-dot.loading {
+  background-color: var(--warning, #f59e0b);
+}
+.status-pulse-dot.loading::after {
+  background-color: var(--warning, #f59e0b);
+}
+
 /* ========================================================
    GRID DE KPIS EXECUTIVOS TOTVS (4 CARDS ALTA RESOLUÇÃO)
    ======================================================== */

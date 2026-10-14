@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   FileText,
   Radio,
@@ -8,8 +9,10 @@ import {
   ChevronRight,
   ChevronDown,
   Settings,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
+import { api } from '../api/client';
 
 export default function Sidebar({
   currentView,
@@ -22,6 +25,50 @@ export default function Sidebar({
   isMobileOpen = false,
   onCloseMobile
 }) {
+  const [ollamaStatus, setOllamaStatus] = useState({
+    connected: true,
+    target_model: 'llama3',
+    gpu_available: true
+  });
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchStatus = async () => {
+      try {
+        const res = await api.getOllamaStatus();
+        if (mounted && res && typeof res.connected === 'boolean') {
+          setOllamaStatus(res);
+        }
+      } catch (e) {
+        // Ignora silenciosamente se o backend ainda estiver subindo
+      }
+    };
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleReconnectOllama = async (e) => {
+    e.stopPropagation();
+    if (isReconnecting) return;
+    setIsReconnecting(true);
+    try {
+      const res = await api.startOllama();
+      if (res) {
+        setOllamaStatus(res);
+      }
+    } catch (err) {
+      console.warn('Erro ao conectar ao Ollama:', err);
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+
   const handleNavClick = (view) => {
     onSelectView(view);
     if (onCloseMobile) onCloseMobile();
@@ -223,15 +270,59 @@ export default function Sidebar({
 
         <div
           className="sidebar-status-card"
-          title="Ollama IA Ativo • Llama 3 • Conexão Local Estável"
+          title={
+            ollamaStatus.connected
+              ? `Ollama IA Conectado • ${ollamaStatus.target_model || 'Llama 3'} • ${ollamaStatus.gpu_available ? 'GPU Acelerada (RTX)' : 'Modo CPU'}`
+              : `Ollama Desconectado • Clique para tentar inicializar o serviço`
+          }
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isCollapsed ? 'center' : 'flex-start', gap: '7px', fontWeight: 600 }}>
-            <span className="status-pulse-dot" />
-            {!isCollapsed && <span>Ollama IA Ativo</span>}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: isCollapsed ? 'center' : 'space-between', gap: '7px', fontWeight: 600 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+              <span
+                className={`status-pulse-dot ${
+                  isReconnecting ? 'loading' : !ollamaStatus.connected ? 'offline' : ''
+                }`}
+              />
+              {!isCollapsed && (
+                <span>
+                  {isReconnecting
+                    ? 'Conectando...'
+                    : ollamaStatus.connected
+                    ? 'Ollama IA Ativo'
+                    : 'Ollama Desconectado'}
+                </span>
+              )}
+            </div>
+
+            {!isCollapsed && !ollamaStatus.connected && (
+              <button
+                onClick={handleReconnectOllama}
+                disabled={isReconnecting}
+                className="btn-reconnect-ollama"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '2px'
+                }}
+                title="Inicializar / Conectar ao Ollama"
+              >
+                <RefreshCw size={12} className={isReconnecting ? 'spin' : ''} />
+              </button>
+            )}
           </div>
           {!isCollapsed && (
             <div style={{ color: 'var(--text-muted)', fontSize: '10.5px', marginTop: '2px' }}>
-              Llama 3 • Conexão Local Estável
+              {isReconnecting
+                ? 'Iniciando processo local...'
+                : ollamaStatus.connected
+                ? `${(ollamaStatus.target_model || 'Llama 3').toUpperCase()} • ${
+                    ollamaStatus.gpu_available ? 'GPU Acelerada' : 'Modo CPU'
+                  }`
+                : 'Clique no ícone para iniciar'}
             </div>
           )}
         </div>

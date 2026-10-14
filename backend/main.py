@@ -64,15 +64,36 @@ app.include_router(analytics.router)
 app.include_router(meetings.router)
 app.include_router(integrations.router)
 
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok", "app": "Proton Flow", "version": "2.0.0"}
-
 meeting_repo = MeetingRepository()
 profile_repo = ProfileRepository()
 integrations_repo = IntegrationsRepository()
 analysis_service = AnalysisService()
 from stt_service import get_stt_service
+from ollama_service import get_ollama_service
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Garante a conexão e inicialização automática do Ollama em segundo plano no startup."""
+    ollama_service = get_ollama_service()
+    ollama_service.start_background_connector()
+
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok", "app": "Proton Flow", "version": "2.0.0"}
+
+
+@app.get("/api/ollama/status")
+def get_ollama_status_endpoint():
+    """Retorna o status em tempo real da conexão com o Ollama e modelos carregados."""
+    return get_ollama_service().get_status()
+
+
+@app.post("/api/ollama/start")
+def start_ollama_endpoint():
+    """Força inicialização/conexão sob demanda com o processo do Ollama."""
+    return get_ollama_service().ensure_running(auto_start=True, wait_seconds=8)
 
 
 @app.get("/health")

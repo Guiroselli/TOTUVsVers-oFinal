@@ -51,7 +51,21 @@ def main():
     else:
         print(f"    [OK] STT pronto (modelo '{status.get('model')}', cached={status.get('model_cached')})")
 
-    # 2. Verificação de portas
+    # 2. Checagem e inicialização automática do Ollama
+    from ollama_service import get_ollama_service
+    ollama_svc = get_ollama_service()
+    print("\n[*] Checagem do serviço Ollama (LLM):")
+    ollama_status = ollama_svc.ensure_running(auto_start=True, wait_seconds=6)
+    if ollama_status.get("connected"):
+        models_str = ", ".join(ollama_status.get("models", [])) or "nenhum modelo listado"
+        gpu_str = "GPU Dedicada Detectada" if ollama_status.get("gpu_available") else "Modo CPU"
+        print(f"    [OK] Ollama conectado ({ollama_status.get('url')}) — {gpu_str}")
+        print(f"    [OK] Modelos disponíveis: {models_str}")
+    else:
+        print(f"    [AVISO] {ollama_status.get('message')}")
+        print("    O sistema usará fallback determinístico até que o Ollama esteja acessível.")
+
+    # 3. Verificação de portas
     backend_busy = is_port_in_use(8000)
     frontend_busy = is_port_in_use(5173)
 
@@ -64,6 +78,8 @@ def main():
     print("    Backend  : http://127.0.0.1:8000")
     print("    Docs API : http://127.0.0.1:8000/docs")
     print("    STT Meta : http://127.0.0.1:8000/api/stt/status")
+    print("    Ollama   : http://localhost:11434")
+    print("    Ollama St: http://127.0.0.1:8000/api/ollama/status")
 
     if "--run" in sys.argv:
         if backend_busy:
