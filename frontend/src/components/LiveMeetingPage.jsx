@@ -36,6 +36,7 @@ import {
   Send
 } from 'lucide-react';
 import { api } from '../api/client';
+import CallRecorderModal, { JOB_STATUS_LABEL } from './CallRecorderModal';
 
 export default function LiveMeetingPage({
   onLeaveMeeting,
@@ -256,6 +257,37 @@ export default function LiveMeetingPage({
       setLoading(false);
     }
   }, []);
+
+  // Gravações de chamada em transcrição no servidor (acompanhamento em segundo plano)
+  const [showRecorderModal, setShowRecorderModal] = useState(false);
+  const [recordingJobs, setRecordingJobs] = useState([]);
+  const hadActiveJobsRef = useRef(false);
+
+  const refreshRecordingJobs = useCallback(async () => {
+    try {
+      const res = await api.getRecordingJobs();
+      setRecordingJobs(res?.jobs || []);
+      if (hadActiveJobsRef.current && !res?.has_active) {
+        loadLiveMeetings();
+      }
+      hadActiveJobsRef.current = !!res?.has_active;
+      return !!res?.has_active;
+    } catch {
+      return false;
+    }
+  }, [loadLiveMeetings]);
+
+  const [jobsPollTick, setJobsPollTick] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const tick = async () => {
+      const active = await refreshRecordingJobs();
+      if (!cancelled && active) timer = setTimeout(tick, 5000);
+    };
+    tick();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [refreshRecordingJobs, jobsPollTick]);
 
   // 3. Carrega status do serviço STT backend
   const loadSttStatus = useCallback(async () => {
@@ -4460,6 +4492,16 @@ RTF: ${backendChunkStats.rtf || 0}
 
           <button
             type="button"
+            onClick={() => setShowRecorderModal(true)}
+            className="btn btn-secondary"
+            title="Gravar uma chamada online (Teams, Meet, Zoom) e gerar a ata"
+          >
+            <Video size={14} style={{ color: '#dc2626' }} />
+            <span>Gravar chamada online</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setShowCreateModal(true)}
             className="btn btn-primary"
             title="Criar nova sala de reunião ao vivo"
@@ -4469,6 +4511,17 @@ RTF: ${backendChunkStats.rtf || 0}
           </button>
         </div>
       </div>
+
+      {recordingJobs.filter((j) => j.status !== 'concluido' || j.error).slice(0, 5).length > 0 && (
+        <div style={{ margin: '0 0 14px', padding: '10px 14px', borderRadius: '8px', background: 'var(--panel-hover)', fontSize: '12.5px', display: 'grid', gap: '6px' }}>
+          {recordingJobs.filter((j) => j.status !== 'concluido' || j.error).slice(0, 5).map((j) => (
+            <div key={j.job_id} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: j.status === 'erro' ? '#b91c1c' : 'var(--text-main)' }}>
+              <span>{j.filename} — {JOB_STATUS_LABEL[j.status] || j.status}{j.status === 'transcrevendo' && j.segments_total ? ` (${j.segments_done}/${j.segments_total})` : ''}</span>
+              {j.error && <span title={j.error} style={{ maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.error}</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Cards de Métricas e Status Rápido */}
       <div style={{
@@ -4934,6 +4987,13 @@ RTF: ${backendChunkStats.rtf || 0}
       )}
 
       {/* MODAL: CRIAR NOVA REUNIÃO AO VIVO */}
+      {showRecorderModal && (
+        <CallRecorderModal
+          onClose={() => setShowRecorderModal(false)}
+          onSent={() => { loadLiveMeetings(); setJobsPollTick((t) => t + 1); }}
+        />
+      )}
+
       {showCreateModal && (
         <div style={{
           position: 'fixed',

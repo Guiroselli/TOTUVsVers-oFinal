@@ -62,3 +62,6 @@ test_*prefill*.py
 make_launcher.py
 check_partial.py
 abrir_formulario_*.html
+
+# Gravações enviadas (áudio)
+backend/recordings/
