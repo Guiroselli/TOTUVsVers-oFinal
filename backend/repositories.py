@@ -491,6 +491,83 @@ class MeetingRepository:
             )
             return _normalize_live_fields(_apply_pdf_state(item))
 
+    def create_imported_meeting(self, meeting_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Cadastra uma reunião importada de transcrição externa com UUID único e estável.
+        Não aciona STT nem altera reuniões existentes.
+        """
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            new_id = str(meeting_data.get("ID_MEETING") or meeting_data.get("meeting_id") or uuid.uuid4())
+            now_iso = datetime.now().isoformat()
+
+            raw_titulo = meeting_data.get("titulo") or meeting_data.get("TITULO_REUNIAO") or "Reunião Importada"
+            titulo = str(raw_titulo).strip() or "Reunião Importada"
+
+            raw_dept = meeting_data.get("departamento") or meeting_data.get("DEPARTAMENTO") or "Geral"
+            depto = str(raw_dept).strip() or "Geral"
+
+            raw_date = meeting_data.get("data") or meeting_data.get("DT_MEETING")
+            norm_date = normalize_date_iso(raw_date) if raw_date else datetime.now().strftime("%Y-%m-%d")
+            date_str = norm_date.split(" ")[0].split("T")[0] if norm_date else datetime.now().strftime("%Y-%m-%d")
+
+            raw_parts = meeting_data.get("participantes") or meeting_data.get("PARTICIPANTES") or []
+            if isinstance(raw_parts, str):
+                participantes = [p.strip() for p in raw_parts.split(",") if p.strip()]
+            elif isinstance(raw_parts, list):
+                participantes = [str(p).strip() for p in raw_parts if str(p).strip()]
+            else:
+                participantes = []
+
+            transcript = str(meeting_data.get("transcript") or meeting_data.get("ANON_TRANSCRICAO") or "").strip()
+            content_hash = meeting_data.get("content_hash") or ""
+            filename = meeting_data.get("filename") or ""
+            file_format = meeting_data.get("format") or ""
+
+            item = {
+                "ID_MEETING": new_id,
+                "TITULO_REUNIAO": titulo,
+                "DEPARTAMENTO": depto,
+                "NOME_SEGMENTO": meeting_data.get("cliente") or meeting_data.get("segmento") or depto,
+                "DT_MEETING": date_str,
+                "HORARIO_AGENDADO": meeting_data.get("horario") or "",
+                "PARTICIPANTES": participantes,
+                "FONTE_AUDIO": "Arquivo Importado",
+                "ORIGEM": "importada",
+                "FORMATO_ORIGEM": file_format,
+                "ARQUIVO_ORIGEM": filename,
+                "CONTEUDO_HASH": content_hash,
+                "STATUS_MEETING": "concluida",
+                "STATUS_ANALISE": "aguardando_analise",
+                "STATUS_REVISAO": "revisao_pendente",
+                "ANON_TRANSCRICAO": transcript,
+                "TRANSCRIPT_RAW": transcript,
+                "TRANSCRIPT_NORMALIZED": transcript,
+                "TRANSCRIPT_FINAL": transcript,
+                "transcription": transcript,
+                "NIVEL_URGENCIA": "Não Definido",
+                "RESPONSAVEL_REUNIAO": participantes[0] if participantes else "",
+                "TEM_PDF": False,
+                "FORMATO_MEETING": "AUDIO",
+                "EVENTOS_SESSAO": [{"tipo": "importada", "timestamp": now_iso, "arquivo": filename}],
+                "CREATED_AT": now_iso,
+                "STARTED_AT": now_iso,
+                "FINISHED_AT": now_iso,
+                "RESUMO_IA": None,
+                "RESUMO_EXECUTIVO": None
+            }
+
+            data.insert(0, item)
+            _atomic_write_json(self.dataset_path, data)
+
+            self.log_audit_event(
+                meeting_id=new_id,
+                action="imported_meeting_created",
+                details={"titulo": titulo, "arquivo": filename, "formato": file_format},
+                author=meeting_data.get("author") or "user"
+            )
+            return _normalize_live_fields(_apply_pdf_state(item))
+
     create_meeting = create_live_meeting
 
     def update_live_meeting_status(self, meeting_id: str, action: str, author: str = "user") -> Optional[Dict[str, Any]]:
@@ -556,7 +633,15 @@ class MeetingRepository:
             )
             return _normalize_live_fields(_apply_pdf_state(target_item))
 
-    def update_live_transcript(self, meeting_id: str, transcript: str, is_incremental: bool = False, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def update_live_transcript(
+        self,
+        meeting_id: str,
+        transcript: str,
+        is_incremental: bool = False,
+        session_id: Optional[str] = None,
+        author: Optional[str] = "user",
+        is_manual_edit: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Atualiza ou anexa transcrição à reunião especificada, garantindo isolamento total por meeting_id.
         """
@@ -582,14 +667,14 @@ class MeetingRepository:
                 target_item["TRANSCRIPT_FINAL"] = target_item["TRANSCRIPT_NORMALIZED"]
                 target_item["ANON_TRANSCRICAO"] = target_item["TRANSCRIPT_NORMALIZED"]
             else:
-                # Substituição / Edição manual: registra no histórico de correções
-                if clean_text != prev_norm:
+                # Registra no histórico de correções apenas se for edição manual explícita
+                if is_manual_edit and clean_text != prev_norm:
                     corrections = target_item.setdefault("TRANSCRIPT_CORRECTIONS", [])
                     corrections.append({
                         "original_text": prev_norm,
                         "corrected_text": clean_text,
                         "timestamp": datetime.now().isoformat(),
-                        "author": "user"
+                        "author": author or "user"
                     })
                 target_item["TRANSCRIPT_FINAL"] = clean_text
                 target_item["TRANSCRIPT_NORMALIZED"] = clean_text
@@ -600,6 +685,7 @@ class MeetingRepository:
 
             _atomic_write_json(self.dataset_path, data)
             return _normalize_live_fields(_apply_pdf_state(target_item))
+
 
     def add_chat_message(
         self,
@@ -679,10 +765,12 @@ class MeetingRepository:
         low_confidence_count: int = 0,
         rtf: float = 0.0,
         is_delayed: bool = False,
+        speaker_name: Optional[str] = None,
+        speaker_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Registra um chunk de áudio transcrito com controle estrito de idempotência,
-        ordenação rigorosa por sequência e consolidação inteligente com deduplicação de borda.
+        ordenação rigorosa por sequência, atribuição de falante (quando disponível) e deduplicação de borda.
         """
         with self._lock:
             data = _read_json(self.dataset_path, [])
@@ -718,6 +806,8 @@ class MeetingRepository:
                     "segments": segments or [],
                     "model_name": model_name,
                     "low_confidence_count": low_confidence_count,
+                    "speaker_name": speaker_name,
+                    "speaker_id": speaker_id,
                     "processed_at": datetime.now().isoformat()
                 }
 
@@ -728,6 +818,7 @@ class MeetingRepository:
                     existing_corrections=target_item.get("TRANSCRIPT_CORRECTIONS", []),
                     meeting_context=effective_context
                 )
+
                 target_item["TRANSCRIPT_RAW"] = consolidation["transcript_raw"]
                 target_item["TRANSCRIPT_NORMALIZED"] = consolidation["transcript_normalized"]
                 target_item["TRANSCRIPT_FINAL"] = consolidation["transcript_final"]

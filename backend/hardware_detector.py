@@ -105,10 +105,101 @@ def get_ram_info() -> Dict[str, float]:
     }
 
 
-def detect_os_gpus() -> List[Dict[str, Any]]:
-    """Detecta adaptadores de vídeo registrados no sistema operacional."""
-    gpus = []
+def find_nvidia_smi() -> Optional[str]:
+    """Localiza o executavel nvidia-smi de forma confiavel no Windows e Linux."""
+    # 1. Verifica no PATH do sistema
+    path_bin = shutil.which("nvidia-smi")
+    if path_bin and os.path.isfile(path_bin):
+        return path_bin
 
+    if platform.system() == "Windows":
+        # 2. Locais padrao de instalacao no Windows
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
+        candidates = [
+            os.path.join(system_root, "System32", "nvidia-smi.exe"),
+            os.path.join(program_files, "NVIDIA Corporation", "NVSMI", "nvidia-smi.exe"),
+            r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+        # 3. FileRepository (DriverStore) caso driver esteja instalado sem CLI no PATH
+        driver_store = os.path.join(system_root, "System32", "DriverStore", "FileRepository")
+        if os.path.isdir(driver_store):
+            try:
+                for entry in os.scandir(driver_store):
+                    if entry.is_dir() and entry.name.lower().startswith("nv"):
+                        cand = os.path.join(entry.path, "nvidia-smi.exe")
+                        if os.path.isfile(cand):
+                            return cand
+            except Exception:
+                pass
+    return None
+
+
+def query_nvidia_smi() -> List[Dict[str, Any]]:
+    """
+    Consulta telemetria precisa de GPUs NVIDIA via nvidia-smi.
+    Supera o limite arquitetural de 4 GB do Win32_VideoController no Windows
+    e obtem VRAM real (8 GB / 12 GB na RTX 3060), VRAM livre, driver e temperatura.
+    """
+    smi_path = find_nvidia_smi()
+    if not smi_path:
+        return []
+    try:
+        proc = subprocess.run(
+            [smi_path, "--query-gpu=name,memory.total,memory.free,memory.used,driver_version,temperature.gpu,utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            results = []
+            for line in proc.stdout.strip().splitlines():
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 5:
+                    try:
+                        total_mb = float(parts[1])
+                        free_mb = float(parts[2])
+                        used_mb = float(parts[3])
+                        driver_ver = parts[4]
+                        temp_c = float(parts[5]) if len(parts) > 5 and parts[5].replace(".", "", 1).isdigit() else None
+                        util_pct = float(parts[6]) if len(parts) > 6 and parts[6].replace(".", "", 1).isdigit() else None
+                        results.append({
+                            "name": parts[0],
+                            "vram_gb": round(total_mb / 1024, 2),
+                            "total_vram_mb": total_mb,
+                            "free_vram_mb": free_mb,
+                            "free_vram_gb": round(free_mb / 1024, 2),
+                            "used_vram_mb": used_mb,
+                            "driver_version": driver_ver,
+                            "temperature_c": temp_c,
+                            "utilization_gpu_pct": util_pct,
+                            "source": "nvidia-smi"
+                        })
+                    except Exception:
+                        continue
+            return results
+    except Exception:
+        pass
+    return []
+
+
+def detect_os_gpus() -> List[Dict[str, Any]]:
+    """
+    Detecta adaptadores de video registrados no sistema operacional.
+    Prioriza nvidia-smi para placas NVIDIA (garantindo precisao de VRAM real)
+    e complementa com WMI / lspci para outros adaptadores (AMD, Intel).
+    """
+    gpus: List[Dict[str, Any]] = []
+
+    # 1. Consulta nvidia-smi prioritariamente (evita teto de 4GB do WMI)
+    nvidia_gpus = query_nvidia_smi()
+    if nvidia_gpus:
+        gpus.extend(nvidia_gpus)
+
+    nvidia_names = {g["name"].lower() for g in nvidia_gpus}
+
+    # 2. Windows: complementa com Win32_VideoController para GPUs AMD/Intel ou se nvidia-smi ausente
     if platform.system() == "Windows":
         try:
             cmd = 'powershell -NoProfile -Command "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM, DriverVersion | ConvertTo-Json"'
@@ -119,50 +210,36 @@ def detect_os_gpus() -> List[Dict[str, Any]]:
                 items = raw if isinstance(raw, list) else [raw]
                 for item in items:
                     name = item.get("Name") or "Desconhecido"
+                    # Nao duplica placa NVIDIA se ja capturada com precisao pelo nvidia-smi
+                    if any(nv_name in name.lower() or name.lower() in nv_name for nv_name in nvidia_names):
+                        continue
                     adapter_ram = item.get("AdapterRAM") or 0
                     driver_ver = item.get("DriverVersion") or "N/A"
                     vram_gb = round(adapter_ram / (1024 ** 3), 2) if adapter_ram > 0 else 0.0
                     gpus.append({
                         "name": name,
                         "vram_gb": vram_gb,
-                        "driver_version": driver_ver
+                        "driver_version": driver_ver,
+                        "source": "wmi"
                     })
         except Exception:
             pass
 
-    elif platform.system() == "Linux":
-        # Tenta nvidia-smi primeiro
+    # 3. Linux: se nvidia-smi nao achou, tenta lspci
+    elif platform.system() == "Linux" and not gpus:
         try:
-            proc = subprocess.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5
-            )
+            proc = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5)
             if proc.returncode == 0:
-                for line in proc.stdout.strip().splitlines():
-                    parts = [p.strip() for p in line.split(",")]
-                    if len(parts) >= 3:
+                for line in proc.stdout.splitlines():
+                    if "VGA" in line or "3D" in line:
                         gpus.append({
-                            "name": parts[0],
-                            "vram_gb": round(float(parts[1]) / 1024, 2),
-                            "driver_version": parts[2]
+                            "name": line.split(":", 2)[-1].strip(),
+                            "vram_gb": 0.0,
+                            "driver_version": "N/A",
+                            "source": "lspci"
                         })
         except Exception:
             pass
-
-        # Se não achou por nvidia-smi, tenta lspci
-        if not gpus:
-            try:
-                proc = subprocess.run(["lspci"], capture_output=True, text=True, timeout=5)
-                if proc.returncode == 0:
-                    for line in proc.stdout.splitlines():
-                        if "VGA" in line or "3D" in line:
-                            gpus.append({
-                                "name": line.split(":", 2)[-1].strip(),
-                                "vram_gb": 0.0,
-                                "driver_version": "N/A"
-                            })
-            except Exception:
-                pass
 
     return gpus
 
@@ -263,6 +340,7 @@ def detect_hardware(model_cache_dir: Optional[str] = None) -> Dict[str, Any]:
         "cpu": cpu_info,
         "ram": ram_info,
         "os_gpus": os_gpus,
+        "nvidia_telemetry": query_nvidia_smi(),
         "cuda_effective": cuda_effective,
         "cuda_device_count": cuda_count,
         "cuda_supported_compute_types": cuda_types,
@@ -319,7 +397,7 @@ def select_hardware_profile(
     if selected_device == "cuda":
         profile_name = "nvidia_compatible"
         default_compute = "float16" if "float16" in hw_info.get("cuda_supported_compute_types", []) else "int8_float16"
-        recommended_model = requested_model if requested_model != "auto" else "small"
+        recommended_model = requested_model if requested_model not in ("", "auto") else "medium"
         default_workers = 2
     else:
         # Modo CPU: avalia capacidade da máquina
@@ -382,9 +460,18 @@ def print_diagnostic_report():
     print("\n[GPU no Sistema Operacional]:")
     if hw['os_gpus']:
         for g in hw['os_gpus']:
-            print(f"  - {g['name']} (Driver: {g['driver_version']}, VRAM estimada: {g['vram_gb']} GB)")
+            src = f" ({g.get('source')})" if g.get("source") else ""
+            print(f"  - {g['name']}{src} (Driver: {g['driver_version']}, VRAM: {g['vram_gb']} GB)")
     else:
         print("  - Nenhuma GPU dedicada detectada pelo SO")
+
+    if hw.get("nvidia_telemetry"):
+        print("\n[Telemetria Detalhada NVIDIA]:")
+        for nv in hw["nvidia_telemetry"]:
+            free_info = f", VRAM Livre: {nv['free_vram_gb']} GB" if "free_vram_gb" in nv else ""
+            temp_info = f", Temp: {nv['temperature_c']}°C" if nv.get("temperature_c") is not None else ""
+            util_info = f", Uso: {nv['utilization_gpu_pct']}%" if nv.get("utilization_gpu_pct") is not None else ""
+            print(f"  - {nv['name']}: Total VRAM: {nv['vram_gb']} GB{free_info}{temp_info}{util_info}")
 
     print("\n[Suporte a Backends de Aceleração]:")
     print(f"  - CUDA no CTranslate2 : {'SIM (Operacional)' if hw['cuda_effective'] else 'NÃO DISPONÍVEL'}")

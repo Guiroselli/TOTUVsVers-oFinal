@@ -106,9 +106,37 @@ export default function LiveMeetingPage({
   const [switchingModel, setSwitchingModel] = useState(false);
   const [modelSwitchSuccess, setModelSwitchSuccess] = useState('');
   const [facingMode, setFacingMode] = useState('user'); // 'user' | 'environment'
-  const [showPermissionHelpModal, setShowPermissionHelpModal] = useState(false);
   const [showMobileActionSheet, setShowMobileActionSheet] = useState(false);
+  const [showPermissionHelpModal, setShowPermissionHelpModal] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 767);
+
+  // Identificação do participante na reunião (obrigatório antes de entrar)
+  const [participantName, setParticipantName] = useState(() => {
+    try { return sessionStorage.getItem('pf_participant_name') || ''; } catch { return ''; }
+  });
+  const [participantId] = useState(() => {
+    try {
+      let pid = sessionStorage.getItem('pf_participant_id');
+      if (!pid) {
+        pid = 'usr_' + Math.random().toString(36).substring(2, 9);
+        sessionStorage.setItem('pf_participant_id', pid);
+      }
+      return pid;
+    } catch {
+      return 'usr_local';
+    }
+  });
+  const [isMixedAudio, setIsMixedAudio] = useState(() => {
+    try { return sessionStorage.getItem('pf_is_mixed_audio') === 'true'; } catch { return false; }
+  });
+
+  // Modal de identificação pré-reunião
+  const [showParticipantModal, setShowParticipantModal] = useState(false);
+  const [pendingMeetingAction, setPendingMeetingAction] = useState(null);
+  const [participantInputName, setParticipantInputName] = useState('');
+  const [participantInputMixed, setParticipantInputMixed] = useState(false);
+  const [participantNameError, setParticipantNameError] = useState('');
+
   // Chat da Reunião Ao Vivo (Independente da transcrição)
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInputText, setChatInputText] = useState('');
@@ -193,6 +221,7 @@ export default function LiveMeetingPage({
   const isRequestingMediaRef = useRef(false);
   const finalTranscriptRef = useRef('');
   const audioContextRef = useRef(null);
+  const audioSourceNodeRef = useRef(null);
   const analyserRef = useRef(null);
   const animFrameRef = useRef(null);
   const startingTimeoutRef = useRef(null);
@@ -212,6 +241,26 @@ export default function LiveMeetingPage({
   const chunksCapturedCountRef = useRef(0);
   const chunksConfirmedCountRef = useRef(0);
   const sessionStartTimeRef = useRef(null);
+
+  // Rastreamento estrito de finalização e rascunho de fala (impede loop 'que é')
+  const finalizedIndexRef = useRef(0);
+  const interimDraftRef = useRef('');
+  const participantNameRef = useRef(participantName);
+  const participantIdRef = useRef(participantId);
+  const isMixedAudioRef = useRef(isMixedAudio);
+
+  useEffect(() => {
+    participantNameRef.current = participantName;
+  }, [participantName]);
+
+  useEffect(() => {
+    participantIdRef.current = participantId;
+  }, [participantId]);
+
+  useEffect(() => {
+    isMixedAudioRef.current = isMixedAudio;
+  }, [isMixedAudio]);
+
 
   // 1. Carrega lista de dispositivos de áudio e vídeo disponíveis
   const loadAudioDevices = useCallback(async () => {
@@ -321,6 +370,13 @@ export default function LiveMeetingPage({
         if (res.available) {
           setSttProvider('backend');
           sttProviderRef.current = 'backend';
+          // Garante exclusão mútua estrita: encerra qualquer reconhecimento local concorrente
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.abort();
+            } catch {}
+            recognitionRef.current = null;
+          }
         } else {
           setSttProvider('browser');
           sttProviderRef.current = 'browser';
@@ -478,7 +534,8 @@ export default function LiveMeetingPage({
 
     setChatSending(true);
     const clientMsgId = `cmsg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const myAuthor = currentMeeting?.DEPARTAMENTO ? `Você (${currentMeeting.DEPARTAMENTO})` : 'Você';
+    const effectiveName = participantNameRef.current || participantName || 'Você';
+    const myAuthor = currentMeeting?.DEPARTAMENTO ? `${effectiveName} (${currentMeeting.DEPARTAMENTO})` : effectiveName;
 
     const optimisticMsg = {
       id: clientMsgId,
@@ -686,12 +743,13 @@ RTF: ${backendChunkStats.rtf || 0}
 
   // Salvamento automático da transcrição no backend (com debounce e sessão)
   const saveTranscriptToBackend = useCallback(
-    async (text, isIncremental = false) => {
+    async (text, isIncremental = false, author = null, isManualEdit = false) => {
       const targetId = activeMeetingIdRef.current;
       if (!targetId || !text) return;
       setSyncStatus('saving');
       try {
-        await api.updateLiveTranscript(targetId, text, isIncremental, sessionTokenRef.current);
+        const effectiveAuthor = author || participantNameRef.current || 'user';
+        await api.updateLiveTranscript(targetId, text, isIncremental, sessionTokenRef.current, effectiveAuthor, isManualEdit);
         setSyncStatus('synced');
       } catch (e) {
         console.warn('Erro ao salvar transcrição incremental no backend:', e);
@@ -707,6 +765,12 @@ RTF: ${backendChunkStats.rtf || 0}
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
         animFrameRef.current = null;
+      }
+      if (audioSourceNodeRef.current) {
+        try {
+          audioSourceNodeRef.current.disconnect();
+        } catch {}
+        audioSourceNodeRef.current = null;
       }
       if (audioContextRef.current) {
         try {
@@ -728,30 +792,44 @@ RTF: ${backendChunkStats.rtf || 0}
 
       const audioCtx = new AudioCtx();
       audioContextRef.current = audioCtx;
+
+      // AudioContext criado após getUserMedia assíncrono inicia suspenso no Chromium/Edge
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch((err) => {
+          console.warn('[VU Meter] Falha ao retomar AudioContext suspenso:', err);
+        });
+      }
+
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       analyser.smoothingTimeConstant = 0.5;
       analyserRef.current = analyser;
 
+      // Mantém referência em áudioSourceNodeRef para impedir Garbage Collection no V8
       const source = audioCtx.createMediaStreamSource(stream);
-      // NUNCA conectar ao audioCtx.destination para evitar eco/microfonia local no alto-falante
+      audioSourceNodeRef.current = source;
       source.connect(analyser);
 
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const timeData = new Uint8Array(analyser.fftSize);
       const updateVolume = () => {
         if (!analyserRef.current || !isRecordingRef.current) {
           audioLevelRef.current = 0;
           setAudioLevel(0);
           return;
         }
-        analyserRef.current.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+
+        if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+          audioContextRef.current.resume().catch(() => {});
         }
-        const avg = sum / dataArray.length;
-        // Normaliza valor de 0 a 100
-        const level = Math.min(100, Math.round((avg / 128) * 100));
+
+        analyserRef.current.getByteTimeDomainData(timeData);
+        let sumSquares = 0;
+        for (let i = 0; i < timeData.length; i++) {
+          const deviation = (timeData[i] - 128) / 128;
+          sumSquares += deviation * deviation;
+        }
+        const rms = Math.sqrt(sumSquares / timeData.length);
+        const level = Math.min(100, Math.round(rms * 100 * 3.5));
         audioLevelRef.current = level;
         setAudioLevel(level);
         animFrameRef.current = requestAnimationFrame(updateVolume);
@@ -846,7 +924,9 @@ RTF: ${backendChunkStats.rtf || 0}
             sessionId: chunk.sessionId,
             sequence: chunk.sequence,
             mimeType: chunk.mimeType,
-            language: 'pt'
+            language: 'pt',
+            speakerName: isMixedAudioRef.current ? null : (participantNameRef.current || null),
+            speakerId: isMixedAudioRef.current ? null : (participantIdRef.current || null)
           });
         } catch (err) {
           uploadError = err;
@@ -903,6 +983,7 @@ RTF: ${backendChunkStats.rtf || 0}
         chunksConfirmedCountRef.current += 1;
 
         if (response) {
+          setSyncStatus('synced');
           if (response.signal_quality) {
             setSignalQuality(response.signal_quality);
           }
@@ -912,6 +993,7 @@ RTF: ${backendChunkStats.rtf || 0}
           if (response.transcript_normalized) {
             setTranscriptNormalized(response.transcript_normalized);
           }
+
 
           if (response.transcript) {
             setTranscription(response.transcript);
@@ -1288,10 +1370,13 @@ RTF: ${backendChunkStats.rtf || 0}
 
       let interim = '';
       let newlyFinal = '';
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
+      for (let i = 0; i < event.results.length; ++i) {
         const res = event.results[i];
         if (res.isFinal) {
-          newlyFinal += res[0].transcript + ' ';
+          if (i >= finalizedIndexRef.current) {
+            newlyFinal += res[0].transcript + ' ';
+            finalizedIndexRef.current = i + 1;
+          }
         } else {
           interim += res[0].transcript;
         }
@@ -1300,11 +1385,32 @@ RTF: ${backendChunkStats.rtf || 0}
       if (newlyFinal) {
         const cleanFinal = newlyFinal.trim();
         if (cleanFinal) {
-          finalTranscriptRef.current = (finalTranscriptRef.current ? finalTranscriptRef.current.trim() + ' ' : '') + cleanFinal + ' ';
+          const speaker = isMixedAudioRef.current
+            ? 'Falante não identificado'
+            : (participantNameRef.current ? participantNameRef.current.trim() : '');
+
+          let segmentToAdd = cleanFinal;
+          if (speaker) {
+            const speakerTag = `[${speaker}]:`;
+            const current = finalTranscriptRef.current ? finalTranscriptRef.current.trim() : '';
+            if (!current) {
+              segmentToAdd = `${speakerTag} ${cleanFinal}`;
+            } else {
+              const lastTagMatch = current.match(/\[([^\]]+)\]:\s*[^[]*$/);
+              if (lastTagMatch && lastTagMatch[1] === speaker) {
+                segmentToAdd = cleanFinal;
+              } else {
+                segmentToAdd = `\n\n${speakerTag} ${cleanFinal}`;
+              }
+            }
+          }
+
+          finalTranscriptRef.current = (finalTranscriptRef.current ? finalTranscriptRef.current.trim() + ' ' : '') + segmentToAdd + ' ';
         }
       }
 
-      const fullDisplay = (finalTranscriptRef.current + interim).trim();
+      interimDraftRef.current = interim;
+      const fullDisplay = (finalTranscriptRef.current.trim() + (interim ? ' ' + interim.trim() : '')).trim();
       setTranscription(fullDisplay);
       setTranscriptionStatus('receiving_speech');
       transcriptionStatusRef.current = 'receiving_speech';
@@ -1430,6 +1536,7 @@ RTF: ${backendChunkStats.rtf || 0}
 
     // PARTE 7: Reinício controlado com backoff após onend
     recognition.onend = () => {
+      finalizedIndexRef.current = 0;
       if (sessionTokenRef.current !== sessionToken || activeMeetingIdRef.current !== targetMeetingId) return;
       isListeningRef.current = false;
       if (startingTimeoutRef.current) {
@@ -1461,6 +1568,7 @@ RTF: ${backendChunkStats.rtf || 0}
           if (sessionTokenRef.current === sessionToken && isRecordingRef.current) {
             try {
               if (recognitionRef.current) {
+                finalizedIndexRef.current = 0;
                 recognitionRef.current.start();
               }
             } catch (e) {
@@ -1492,6 +1600,7 @@ RTF: ${backendChunkStats.rtf || 0}
     setEngineState('iniciando');
 
     try {
+      finalizedIndexRef.current = 0;
       recognition.start();
       setDiagnosticInfo((prev) => ({
         ...prev,
@@ -1505,6 +1614,7 @@ RTF: ${backendChunkStats.rtf || 0}
         setTimeout(() => {
           if (sessionTokenRef.current === sessionToken && activeMeetingIdRef.current === targetMeetingId) {
             try {
+              finalizedIndexRef.current = 0;
               recognition.start();
               setDiagnosticInfo((prev) => ({
                 ...prev,
@@ -1580,6 +1690,12 @@ RTF: ${backendChunkStats.rtf || 0}
     if (animFrameRef.current) {
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
+    }
+    if (audioSourceNodeRef.current) {
+      try {
+        audioSourceNodeRef.current.disconnect();
+      } catch {}
+      audioSourceNodeRef.current = null;
     }
     if (audioContextRef.current) {
       try {
@@ -1765,19 +1881,34 @@ RTF: ${backendChunkStats.rtf || 0}
 
     // Inicia reconhecimento de voz com base no provedor ativo
     if (sttProviderRef.current === 'backend' && backendSttStatus.available) {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+        recognitionRef.current = null;
+      }
       startBackendRecorder(stream);
     } else if (sttProviderRef.current === 'browser') {
+      stopBackendRecorder();
       startSpeechRecognition(false);
     } else if (sttProviderRef.current === 'manual') {
+      stopBackendRecorder();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch {}
+        recognitionRef.current = null;
+      }
       setIsManualEditMode(true);
     } else {
       if (backendSttStatus.available) {
+        if (recognitionRef.current) {
+          try { recognitionRef.current.abort(); } catch {}
+          recognitionRef.current = null;
+        }
         startBackendRecorder(stream);
       } else {
+        stopBackendRecorder();
         startSpeechRecognition(false);
       }
     }
-  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, backendSttStatus.available, handleMicrophoneTrackEnded, facingMode]);
+  }, [activeMeetingId, selectedAudioDeviceId, setupAudioAnalyser, startSpeechRecognition, startBackendRecorder, stopBackendRecorder, backendSttStatus.available, handleMicrophoneTrackEnded, facingMode]);
 
   // Controles de áudio e vídeo
   const toggleMute = () => {
@@ -1913,6 +2044,81 @@ RTF: ${backendChunkStats.rtf || 0}
     }
   };
 
+  // Solicitação de entrada na reunião com validação obrigatória de nome do participante
+  const requestEnterMeeting = useCallback(
+    (meetingId, action = null) => {
+      if (!meetingId) return;
+      const currentName = participantNameRef.current || '';
+      if (!currentName.trim()) {
+        setParticipantInputName(currentName);
+        setParticipantInputMixed(isMixedAudioRef.current);
+        setParticipantNameError('');
+        setPendingMeetingAction({ meetingId, action });
+        setShowParticipantModal(true);
+      } else {
+        if (action) {
+          handleMeetingAction(meetingId, action);
+        }
+        setActiveMeetingId(meetingId);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // Solicitação de abertura de criação de reunião com validação de participante
+  const handleOpenCreateModal = useCallback(() => {
+    const currentName = participantNameRef.current || '';
+    if (!currentName.trim()) {
+      setParticipantInputName(currentName);
+      setParticipantInputMixed(isMixedAudioRef.current);
+      setParticipantNameError('');
+      setPendingMeetingAction({ isCreating: true });
+      setShowParticipantModal(true);
+    } else {
+      setShowCreateModal(true);
+    }
+  }, []);
+
+  // Confirmação do nome de exibição no modal
+  const handleConfirmParticipant = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const cleanName = (participantInputName || '').trim();
+    if (!cleanName) {
+      setParticipantNameError('Por favor, informe seu nome de exibição para prosseguir.');
+      return;
+    }
+
+    setParticipantName(cleanName);
+    participantNameRef.current = cleanName;
+    try {
+      sessionStorage.setItem('pf_participant_name', cleanName);
+    } catch {}
+
+    setIsMixedAudio(Boolean(participantInputMixed));
+    isMixedAudioRef.current = Boolean(participantInputMixed);
+    try {
+      sessionStorage.setItem('pf_is_mixed_audio', participantInputMixed ? 'true' : 'false');
+    } catch {}
+
+    setParticipantNameError('');
+    setShowParticipantModal(false);
+
+    if (pendingMeetingAction) {
+      if (pendingMeetingAction.isCreating) {
+        setPendingMeetingAction(null);
+        setShowCreateModal(true);
+        return;
+      }
+      const { meetingId, action } = pendingMeetingAction;
+      setPendingMeetingAction(null);
+      if (action) {
+        await handleMeetingAction(meetingId, action);
+      }
+      setActiveMeetingId(meetingId);
+    }
+  };
+
   // Validação e criação de nova reunião (manual, sem criação automática)
   const handleCreateMeetingSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -1963,7 +2169,7 @@ RTF: ${backendChunkStats.rtf || 0}
         setNewMeetingForm(initialFormState);
         setFormErrors({});
         if (newMeetingForm.iniciar_agora) {
-          setActiveMeetingId(res.meeting.ID_MEETING);
+          requestEnterMeeting(res.meeting.ID_MEETING);
         }
       }
     } catch (err) {
@@ -2611,7 +2817,7 @@ RTF: ${backendChunkStats.rtf || 0}
               <button
                 key={om.ID_MEETING}
                 type="button"
-                onClick={() => setActiveMeetingId(om.ID_MEETING)}
+                onClick={() => requestEnterMeeting(om.ID_MEETING)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -3270,7 +3476,27 @@ RTF: ${backendChunkStats.rtf || 0}
                 gap: '8px',
                 border: '1px solid rgba(255, 255, 255, 0.08)'
               }}>
-                <span>Você ({currentMeeting.DEPARTAMENTO || 'TOTVS'})</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span>{participantName ? `${participantName} (${currentMeeting.DEPARTAMENTO || 'Participante'})` : `Você (${currentMeeting.DEPARTAMENTO || 'TOTVS'})`}</span>
+                  {isMixedAudio && (
+                    <span style={{ fontSize: '10px', background: 'rgba(234, 179, 8, 0.25)', color: '#facc15', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(234, 179, 8, 0.4)' }} title="Modo de áudio misto / canal compartilhado">
+                      Áudio misto
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setParticipantInputName(participantName);
+                      setParticipantInputMixed(isMixedAudio);
+                      setParticipantNameError('');
+                      setShowParticipantModal(true);
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '11px', cursor: 'pointer', padding: '0 4px', textDecoration: 'underline' }}
+                    title="Alterar identificação do participante"
+                  >
+                    Alterar
+                  </button>
+                </span>
                 {isMuted && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', padding: '2px 5px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.25)', border: '1px solid rgba(239, 68, 68, 0.4)' }} title="Microfone silenciado">
                     <MicOff size={11} color="#f87171" />
@@ -4525,7 +4751,7 @@ RTF: ${backendChunkStats.rtf || 0}
 
           <button
             type="button"
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleOpenCreateModal}
             className="btn btn-primary"
             title="Criar nova sala de reunião ao vivo"
           >
@@ -4798,7 +5024,7 @@ RTF: ${backendChunkStats.rtf || 0}
           </p>
           <button
             type="button"
-            onClick={() => setShowCreateModal(true)}
+            onClick={handleOpenCreateModal}
             className="btn btn-primary"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '13px', padding: '10px 18px', fontWeight: 600 }}
           >
@@ -4985,7 +5211,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     <>
                       <button
                         type="button"
-                        onClick={() => setActiveMeetingId(item.ID_MEETING)}
+                        onClick={() => requestEnterMeeting(item.ID_MEETING)}
                         className="btn btn-primary"
                         style={{ flex: 1, fontSize: '12px', padding: '6px 10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                       >
@@ -5015,7 +5241,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     <>
                       <button
                         type="button"
-                        onClick={() => setActiveMeetingId(item.ID_MEETING)}
+                        onClick={() => requestEnterMeeting(item.ID_MEETING, 'retomar')}
                         className="btn btn-primary"
                         style={{ flex: 1, fontSize: '12px', padding: '6px 10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                       >
@@ -5036,10 +5262,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     <>
                       <button
                         type="button"
-                        onClick={() => {
-                          handleMeetingAction(item.ID_MEETING, 'iniciar');
-                          setActiveMeetingId(item.ID_MEETING);
-                        }}
+                        onClick={() => requestEnterMeeting(item.ID_MEETING, 'iniciar')}
                         className="btn btn-primary"
                         style={{ flex: 1, fontSize: '12px', padding: '6px 10px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                       >
@@ -5336,6 +5559,190 @@ RTF: ${backendChunkStats.rtf || 0}
                   style={{ fontSize: '12.5px', fontWeight: 600, minWidth: '120px' }}
                 >
                   {creatingMeeting ? 'Criando...' : 'Confirmar Criação'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: IDENTIFICAÇÃO DO PARTICIPANTE (PRÉ-REUNIÃO) */}
+      {showParticipantModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '20px'
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--panel-bg)',
+              borderRadius: '14px',
+              border: '1px solid var(--border-color)',
+              width: '100%',
+              maxWidth: '480px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+              overflow: 'hidden'
+            }}
+          >
+            <div
+              style={{
+                padding: '18px 22px',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(2, 132, 199, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--primary-color)'
+                  }}
+                >
+                  <Users size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-main)' }}>
+                    Identificação do Participante
+                  </h3>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                    Informe como você deseja ser identificado na transcrição
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowParticipantModal(false);
+                  setPendingMeetingAction(null);
+                }}
+                className="btn-icon"
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+                title="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmParticipant} style={{ padding: '20px 22px' }}>
+              {/* Nome de Exibição */}
+              <div style={{ marginBottom: '18px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                  Seu Nome de Exibição <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  required
+                  placeholder="Ex: Lucas, Carlos Silva, Mariana..."
+                  value={participantInputName}
+                  onChange={(e) => {
+                    setParticipantInputName(e.target.value);
+                    if (participantNameError) setParticipantNameError('');
+                  }}
+                  className="form-input"
+                  style={{
+                    width: '100%',
+                    fontSize: '13px',
+                    padding: '8px 12px',
+                    borderColor: participantNameError ? '#ef4444' : undefined
+                  }}
+                />
+                {participantNameError && (
+                  <span style={{ color: '#ef4444', fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                    {participantNameError}
+                  </span>
+                )}
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '5px' }}>
+                  Este nome será vinculado à sua fala na ata, resumo e histórico da reunião.
+                </span>
+              </div>
+
+              {/* Fonte de Áudio / Cenário de Captação */}
+              <div style={{
+                marginBottom: '22px',
+                background: 'var(--panel-hover)',
+                padding: '14px 16px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color)'
+              }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                  Cenário de Captação de Áudio
+                </label>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-main)' }}>
+                    <input
+                      type="radio"
+                      name="audioSourceType"
+                      checked={!participantInputMixed}
+                      onChange={() => setParticipantInputMixed(false)}
+                      style={{ marginTop: '2px', accentColor: 'var(--primary-color)' }}
+                    />
+                    <div>
+                      <strong style={{ color: 'var(--text-main)' }}>Microfone Individual / Dispositivo Pessoal</strong>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4' }}>
+                        O microfone capta a sua fala e a atribui diretamente ao seu nome de exibição.
+                      </div>
+                    </div>
+                  </label>
+
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '12.5px', color: 'var(--text-main)' }}>
+                    <input
+                      type="radio"
+                      name="audioSourceType"
+                      checked={participantInputMixed}
+                      onChange={() => setParticipantInputMixed(true)}
+                      style={{ marginTop: '2px', accentColor: 'var(--primary-color)' }}
+                    />
+                    <div>
+                      <strong style={{ color: 'var(--text-main)' }}>Áudio Misto / Microfone Compartilhado na Sala</strong>
+                      <div style={{ fontSize: '11.5px', color: 'var(--text-muted)', marginTop: '2px', lineHeight: '1.4' }}>
+                        Várias pessoas no mesmo microfone (canal único). As falas serão registradas como "Falante não identificado" para evitar atribuição errônea.
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Botões de Ação */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowParticipantModal(false);
+                    setPendingMeetingAction(null);
+                  }}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12.5px', padding: '8px 16px' }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ fontSize: '12.5px', fontWeight: 600, padding: '8px 18px' }}
+                >
+                  {pendingMeetingAction?.isCreating ? 'Continuar para Criação' : 'Confirmar e Entrar'}
                 </button>
               </div>
             </form>

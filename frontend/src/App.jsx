@@ -5,7 +5,9 @@ import Sidebar from './components/Sidebar';
 import MeetingHistoryTable from './components/MeetingHistoryTable';
 import TotvsIntegrationModal from './components/TotvsIntegrationModal';
 import DocumentViewerModal from './components/DocumentViewerModal';
+import ImportTranscriptModal from './components/ImportTranscriptModal';
 import ExecutiveDashboardOverview from './components/ExecutiveDashboardOverview';
+import ErrorBoundary from './components/ErrorBoundary';
 import {
   Radio,
   Search,
@@ -18,7 +20,8 @@ import {
   Menu,
   Settings,
   Bell,
-  User
+  User,
+  Upload
 } from 'lucide-react';
 
 // Code Splitting / Lazy Loading de páginas pesadas
@@ -80,6 +83,7 @@ export default function MeetingApp() {
   const [sistemasTotvs, setSistemasTotvs] = useState({});
   const [enviosPorReuniao, setEnviosPorReuniao] = useState({});
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Loading indicator for PDF / Analysis
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -2297,6 +2301,18 @@ export default function MeetingApp() {
                     <span>Filtrar</span>
                   </button>
 
+                  {/* Botão Importar Transcrição */}
+                  <button
+                    type="button"
+                    className="btn-pf btn-pf-secondary btn-pf-sm"
+                    onClick={() => setShowImportModal(true)}
+                    title="Importar transcrições de reuniões externas (.txt, .md, .srt, .vtt, .docx)"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    <Upload size={13} />
+                    <span>Importar</span>
+                  </button>
+
                   {/* Botão Limpar Filtros Ativos */}
                   {(searchQuery || clientFilter || segmentFilter || onlyUnanalyzed) && (
                     <button
@@ -2369,6 +2385,7 @@ export default function MeetingApp() {
               onTaskStatusChange={handleTaskStatusChange}
               onEnviarIntegracao={handleEnviarIntegracao}
               onOpenConfig={() => setShowConfigModal(true)}
+              onOpenImportModal={() => setShowImportModal(true)}
               pagination={pagination}
               onPageChange={(p) => loadMeetings(p, pagination.page_size)}
               onPageSizeChange={(sz) => loadMeetings(1, sz)}
@@ -2384,12 +2401,17 @@ export default function MeetingApp() {
               Carregando Visão Executiva & Analytics...
             </div>
           }>
-            <QuarterlyAnalyticsPage
-              onOpenMeeting={(meetingId) => {
-                setExpandedMeetingId(meetingId);
-                setCurrentView('dashboard');
-              }}
-            />
+            <ErrorBoundary
+              title="Erro no Analytics"
+              description="Ocorreu uma falha inesperada ao renderizar a visão executiva. Clique abaixo para tentar novamente."
+            >
+              <QuarterlyAnalyticsPage
+                onOpenMeeting={(meetingId) => {
+                  setExpandedMeetingId(meetingId);
+                  setCurrentView('dashboard');
+                }}
+              />
+            </ErrorBoundary>
           </Suspense>
         </main>
       )}
@@ -2412,16 +2434,22 @@ export default function MeetingApp() {
               Iniciando módulo de gravação ao vivo...
             </div>
           }>
-            <LiveMeetingPage
-              initialMeetingId={initialLiveMeetingId}
-              onLeaveMeeting={handleLeaveLiveMeeting}
-              onOpenDocumentViewer={handleOpenDocumentViewer}
-              onAnalyzeMeeting={async (meetingId) => {
-                await handleAnalyzeMeeting(meetingId);
-                await loadMeetings(1, pagination.page_size);
-              }}
-              _onNavigateToDashboard={() => setCurrentView('dashboard')}
-            />
+            <ErrorBoundary
+              title="Erro na Sala de Reunião"
+              description="Ocorreu uma falha inesperada na interface da sala. Clique abaixo para retornar à Central de Reuniões."
+              onReset={handleLeaveLiveMeeting}
+            >
+              <LiveMeetingPage
+                initialMeetingId={initialLiveMeetingId}
+                onLeaveMeeting={handleLeaveLiveMeeting}
+                onOpenDocumentViewer={handleOpenDocumentViewer}
+                onAnalyzeMeeting={async (meetingId) => {
+                  await handleAnalyzeMeeting(meetingId);
+                  await loadMeetings(1, pagination.page_size);
+                }}
+                _onNavigateToDashboard={() => setCurrentView('dashboard')}
+              />
+            </ErrorBoundary>
           </Suspense>
         </main>
       )}
@@ -2450,6 +2478,15 @@ export default function MeetingApp() {
         onDownloadExecutiveDocx={(m) => generateExecutiveDocx(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
         onDownloadOperationalPdf={(m) => generatePDF(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
         onDownloadOperationalDocx={(m) => generateDocx(m.ANON_TRANSCRICAO, true, m.ID_MEETING, m.RESUMO_IA, true)}
+      />
+
+      {/* Modal de Importação de Transcrições de Reuniões Externas */}
+      <ImportTranscriptModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        onImportSuccess={() => {
+          loadMeetings(1, pagination.page_size);
+        }}
       />
     </div>
   );

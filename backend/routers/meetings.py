@@ -2,7 +2,7 @@ import os
 import shutil
 import uuid
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form, Depends, Body
 from fastapi.responses import JSONResponse
 
 import recording_jobs
@@ -31,6 +31,7 @@ from schemas import (
 )
 from normalization import normalize_client_code, normalize_urgency
 from analysis_service import AnalysisService
+from transcript_importer import parse_and_validate_transcript_file
 
 router = APIRouter(prefix="/api", tags=["Meetings"])
 repo = MeetingRepository()
@@ -465,11 +466,14 @@ def update_live_meeting_transcript(meeting_id: str, req: LiveMeetingTranscriptUp
         meeting_id=meeting_id,
         transcript=req.transcript,
         is_incremental=req.is_incremental,
-        session_id=req.session_id
+        session_id=req.session_id,
+        author=req.author,
+        is_manual_edit=bool(req.is_manual_edit)
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Reunião não encontrada.")
     return {"status": "success", "meeting": updated}
+
 
 
 @router.get("/live/meetings/{meeting_id}/chat/messages", response_model=LiveChatListResponse)
@@ -548,7 +552,10 @@ async def upload_live_meeting_audio_chunk(
     is_final: bool = Form(False),
     mime_type: Optional[str] = Form(None),
     language: Optional[str] = Form("pt"),
+    speaker_name: Optional[str] = Form(None),
+    speaker_id: Optional[str] = Form(None),
 ):
+
     """
     Ingestão assíncrona de chunk de áudio para transcrição via STT backend.
     - Valida existência e isolamento estrito da reunião live.
@@ -663,7 +670,9 @@ async def upload_live_meeting_audio_chunk(
         model_name=result.get("model_name"),
         low_confidence_count=result.get("low_confidence_count", 0),
         rtf=result.get("rtf", 0.0),
-        is_delayed=result.get("is_delayed", False)
+        is_delayed=result.get("is_delayed", False),
+        speaker_name=speaker_name,
+        speaker_id=speaker_id
     )
 
     accumulated = record_result.get("transcript", "") if record_result else ""
@@ -955,3 +964,148 @@ def update_task_status(req: TaskStatusRequest):
     if not updated:
         raise HTTPException(status_code=404, detail="Meeting or task not found")
     return {"status": "success", "message": "Task status updated"}
+
+
+@router.post("/meetings/import/preview")
+async def preview_imported_transcripts(files: List[UploadFile] = File(...)):
+    """
+    Recebe um ou mais arquivos de transcrição (.txt, .md, .srt, .vtt, .docx),
+    extrai o texto e metadados de forma individual, calcula hash e verifica possíveis duplicatas.
+    Não grava registros no banco nesta etapa (apenas pré-visualização).
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="Nenhum arquivo enviado para importação.")
+
+    existing_meetings = repo.get_all()
+    results = []
+    for f in files:
+        try:
+            content = await f.read()
+            parsed = parse_and_validate_transcript_file(
+                file_bytes=content,
+                filename=f.filename or "arquivo.txt",
+                existing_meetings=existing_meetings
+            )
+            # Normaliza campos para consumo amigável pelo frontend
+            if parsed.get("ok"):
+                parsed["file_name"] = parsed.get("filename")
+                parsed["file_type"] = f".{parsed.get('format', '')}"
+                parsed["character_count"] = parsed.get("char_count", 0)
+                parsed["line_count"] = len(parsed.get("transcript", "").splitlines())
+                parsed["transcript_raw"] = parsed.get("transcript", "")
+                parsed["transcript_normalized"] = parsed.get("transcript", "")
+                parsed["metadata"] = {
+                    "title": parsed.get("title", ""),
+                    "date": parsed.get("date", ""),
+                    "department": parsed.get("department", "Geral"),
+                    "participants": parsed.get("participants", [])
+                }
+                if parsed.get("is_duplicate") and parsed.get("conflicting_meeting"):
+                    c_title = parsed["conflicting_meeting"].get("title") or "Reunião existente"
+                    c_id = str(parsed["conflicting_meeting"].get("id", ""))[:8]
+                    parsed["duplicate_reason"] = f"Conteúdo idêntico à reunião '{c_title}' (ID: {c_id})"
+            results.append(parsed)
+        except Exception as e:
+            results.append({
+                "ok": False,
+                "filename": f.filename or "arquivo",
+                "error": f"Erro inesperado no processamento do arquivo: {str(e)}"
+            })
+
+    valid_items = [r for r in results if r.get("ok")]
+    err_items = [r for r in results if not r.get("ok")]
+
+    return {
+        "status": "success",
+        "total_files": len(files),
+        "total_processed": len(results),
+        "previews": results,
+        "items": valid_items,
+        "errors": err_items
+    }
+
+
+@router.post("/meetings/import/confirm")
+def confirm_imported_transcripts(payload: Any = Body(...)):
+    """
+    Confirma e persiste no repositório as reuniões validadas pelo usuário.
+    Não aciona STT e não envia automaticamente para Ollama.
+    Garante que falhas parciais não invalidem as demais importações.
+    """
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        items = payload.get("items", [])
+    else:
+        items = []
+
+    if not items or not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="Lista de reuniões a importar ('items') é obrigatória.")
+
+    from transcript_importer import compute_content_hash
+
+    created_meetings = []
+    errors = []
+
+    for idx, item in enumerate(items):
+        try:
+            transcript = (item.get("transcript") or item.get("transcript_normalized") or item.get("ANON_TRANSCRICAO") or "").strip()
+            if not transcript or len(transcript) < 10:
+                errors.append({
+                    "index": idx,
+                    "filename": item.get("filename") or item.get("original_file_name", ""),
+                    "error": "A transcrição da reunião está vazia ou possui menos de 10 caracteres."
+                })
+                continue
+
+            content_hash = item.get("content_hash") or compute_content_hash(transcript)
+            allow_duplicate = item.get("allow_duplicate", False)
+
+            # Verificação de duplicata contra reuniões existentes se allow_duplicate for False
+            if not allow_duplicate:
+                existing = repo.get_all()
+                is_dup = False
+                for em in existing:
+                    if em.get("CONTEUDO_HASH") == content_hash:
+                        is_dup = True
+                        break
+                    ex_text = em.get("ANON_TRANSCRICAO") or ""
+                    if ex_text and len(ex_text) > 20 and compute_content_hash(ex_text) == content_hash:
+                        is_dup = True
+                        break
+                if is_dup:
+                    errors.append({
+                        "index": idx,
+                        "filename": item.get("filename") or item.get("original_file_name", ""),
+                        "error": "Conteúdo duplicado detectado. Marque 'allow_duplicate' para importar como novo registro."
+                    })
+                    continue
+
+            meeting_payload = {
+                "titulo": item.get("title") or item.get("titulo") or item.get("TITULO_REUNIAO"),
+                "departamento": item.get("department") or item.get("departamento") or item.get("DEPARTAMENTO"),
+                "data": item.get("date") or item.get("data") or item.get("DT_MEETING"),
+                "participantes": item.get("participants") or item.get("participantes") or item.get("PARTICIPANTES"),
+                "transcript": transcript,
+                "content_hash": content_hash,
+                "filename": item.get("filename") or item.get("original_file_name", ""),
+                "format": item.get("format") or item.get("file_type", "")
+            }
+            created = repo.create_imported_meeting(meeting_payload)
+            created_meetings.append(created)
+        except Exception as err:
+            errors.append({
+                "index": idx,
+                "filename": item.get("filename") or item.get("original_file_name", ""),
+                "error": str(err)
+            })
+
+    return {
+        "status": "success",
+        "success": len(created_meetings) > 0 or len(errors) == 0,
+        "imported_count": len(created_meetings),
+        "imported_ids": [m["ID_MEETING"] for m in created_meetings if isinstance(m, dict) and "ID_MEETING" in m],
+        "meetings": created_meetings,
+        "errors": errors
+    }
+

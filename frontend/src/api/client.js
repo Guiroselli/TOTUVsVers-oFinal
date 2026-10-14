@@ -95,10 +95,16 @@ export const api = {
       body: JSON.stringify({ action }),
     }),
 
-  updateLiveTranscript: (meetingId, transcript, isIncremental = false, sessionId = null) =>
+  updateLiveTranscript: (meetingId, transcript, isIncremental = false, sessionId = null, author = 'user', isManualEdit = false) =>
     request(`/api/live/meetings/${meetingId}/transcript`, {
       method: 'POST',
-      body: JSON.stringify({ transcript, is_incremental: isIncremental, session_id: sessionId }),
+      body: JSON.stringify({
+        transcript,
+        is_incremental: isIncremental,
+        session_id: sessionId,
+        author,
+        is_manual_edit: isManualEdit
+      }),
     }),
 
   getLiveChatMessages: (meetingId) =>
@@ -123,6 +129,19 @@ export const api = {
       method: 'POST',
     }),
 
+  // Importação de transcrições externas (.txt, .md, .srt, .vtt, .docx)
+  previewImportedTranscripts: (formData) =>
+    request('/api/meetings/import/preview', {
+      method: 'POST',
+      body: formData,
+    }),
+
+  confirmImportedTranscripts: (items) =>
+    request('/api/meetings/import/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ items }),
+    }),
+
   get: (endpoint) => request(endpoint.startsWith('/api') ? endpoint : `/api${endpoint}`),
 
   post: (endpoint, body = {}) =>
@@ -137,7 +156,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  uploadAudioChunk: async (meetingId, audioBlob, { sessionId, sequence, isFinal = false, mimeType = null, language = 'pt' } = {}) => {
+  uploadAudioChunk: async (meetingId, audioBlob, { sessionId, sequence, isFinal = false, mimeType = null, language = 'pt', speakerName = null, speakerId = null } = {}) => {
     const formData = new FormData();
     formData.append('audio', audioBlob, `chunk_${sequence}.webm`);
     formData.append('session_id', String(sessionId));
@@ -145,6 +164,8 @@ export const api = {
     formData.append('is_final', String(Boolean(isFinal)));
     if (mimeType) formData.append('mime_type', mimeType);
     if (language) formData.append('language', language);
+    if (speakerName) formData.append('speaker_name', speakerName);
+    if (speakerId) formData.append('speaker_id', speakerId);
 
     const url = `${BASE_URL}/api/live/meetings/${meetingId}/transcript/audio`;
     const response = await fetch(url, {

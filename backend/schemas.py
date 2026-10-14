@@ -440,6 +440,9 @@ class LiveMeetingTranscriptUpdateRequest(BaseModel):
     transcript: str = Field(..., description="Texto da transcrição acumulada ou trecho incremental")
     is_incremental: Optional[bool] = Field(False, description="Se True, anexa ao texto existente; se False, substitui")
     session_id: Optional[str] = None
+    author: Optional[str] = Field("user", description="Identificação do autor da transcrição ou da sessão")
+    is_manual_edit: Optional[bool] = Field(False, description="Se True, indica edição manual intencional do usuário")
+
 
 
 class LiveChatMessageCreate(BaseModel):

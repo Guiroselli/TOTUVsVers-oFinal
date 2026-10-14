@@ -66,9 +66,13 @@ class ProtonSpeechController {
     this.lastException = null;
     this.eventsReceived = {};
     this.autoSavePayloads = [];
+    this.finalizedIndex = 0;
+    this.participantName = '';
+    this.isMixedAudio = false;
   }
 
   startRecognition(_isManualGesture = false) {
+    this.finalizedIndex = 0;
     if (this.currentInstance) {
       const old = this.currentInstance;
       old.onstart = null;
@@ -146,15 +150,40 @@ class ProtonSpeechController {
       if (this.sessionToken !== token) return;
       let newlyFinal = '';
       let interim = '';
-      for (let i = event.resultIndex || 0; i < event.results.length; i++) {
+      for (let i = 0; i < event.results.length; i++) {
         const item = event.results[i];
-        if (item.isFinal) newlyFinal += item[0].transcript + ' ';
-        else interim += item[0].transcript;
+        if (item.isFinal) {
+          if (i >= this.finalizedIndex) {
+            newlyFinal += item[0].transcript + ' ';
+            this.finalizedIndex = i + 1;
+          }
+        } else {
+          interim += item[0].transcript;
+        }
       }
       if (newlyFinal.trim()) {
-        this.finalTranscript = (this.finalTranscript ? this.finalTranscript.trim() + ' ' : '') + newlyFinal.trim() + ' ';
+        const clean = newlyFinal.trim();
+        const speaker = this.isMixedAudio
+          ? 'Falante não identificado'
+          : (this.participantName ? this.participantName.trim() : '');
+        let segment = clean;
+        if (speaker) {
+          const speakerTag = `[${speaker}]:`;
+          const cur = this.finalTranscript.trim();
+          if (!cur) {
+            segment = `${speakerTag} ${clean}`;
+          } else {
+            const match = cur.match(/\[([^\]]+)\]:\s*[^[]*$/);
+            if (match && match[1] === speaker) {
+              segment = clean;
+            } else {
+              segment = `\n\n${speakerTag} ${clean}`;
+            }
+          }
+        }
+        this.finalTranscript = (this.finalTranscript ? this.finalTranscript.trim() + ' ' : '') + segment + ' ';
       }
-      this.transcription = (this.finalTranscript + interim).trim();
+      this.transcription = (this.finalTranscript.trim() + (interim ? ' ' + interim.trim() : '')).trim();
       this.status = 'receiving_speech';
       this.eventsReceived.onresult = true;
       this.autoSavePayloads.push({
@@ -537,3 +566,92 @@ test('20. finalização interrompe reconhecimento e limpa sessão', () => {
   assert.equal(ctrl.sessionToken, null);
   assert.equal(ctrl.currentInstance, null);
 });
+
+test('21. re-emissão com resultIndex=0 não acumula repetições patológicas ("que é")', () => {
+  const ctrl = new ProtonSpeechController();
+  ctrl.startRecognition();
+  ctrl.currentInstance.onstart();
+
+  // 1º evento: palavra finalizada "que é" no índice 0
+  ctrl.currentInstance.onresult({
+    resultIndex: 0,
+    results: [{ 0: { transcript: 'que é' }, isFinal: true }]
+  });
+  assert.equal(ctrl.transcription, 'que é');
+
+  // 2º evento: Chromium reenvia lista completa com resultIndex=0 e interim adicional
+  ctrl.currentInstance.onresult({
+    resultIndex: 0,
+    results: [
+      { 0: { transcript: 'que é' }, isFinal: true },
+      { 0: { transcript: 'importante notar' }, isFinal: false }
+    ]
+  });
+  assert.equal(ctrl.transcription, 'que é importante notar');
+
+  // 3º evento: 2º segmento finalizado
+  ctrl.currentInstance.onresult({
+    resultIndex: 0,
+    results: [
+      { 0: { transcript: 'que é' }, isFinal: true },
+      { 0: { transcript: 'importante notar' }, isFinal: true }
+    ]
+  });
+  assert.equal(ctrl.transcription, 'que é importante notar');
+  // Garante que "que é" ocorreu exatamente 1 vez, sem crescer para repetição em loop
+  const countMatches = (ctrl.transcription.match(/que é/g) || []).length;
+  assert.equal(countMatches, 1);
+
+  ctrl.stop();
+});
+
+test('22. validação de identificação pré-reunião exige nome não-vazio e persiste', () => {
+  const validateParticipantName = (rawInput) => {
+    const trimmed = (rawInput || '').trim();
+    if (!trimmed) {
+      return { valid: false, error: 'Por favor, informe seu nome de exibição para prosseguir.' };
+    }
+    return { valid: true, name: trimmed };
+  };
+
+  assert.equal(validateParticipantName('').valid, false);
+  assert.equal(validateParticipantName('   ').valid, false);
+  assert.equal(validateParticipantName(null).valid, false);
+
+  const res = validateParticipantName('  Lucas  ');
+  assert.equal(res.valid, true);
+  assert.equal(res.name, 'Lucas');
+});
+
+test('23. identificação de falante: mic pessoal atribui ao nome e áudio misto registra não identificado', () => {
+  // Mic individual
+  const ctrlIndividual = new ProtonSpeechController();
+  ctrlIndividual.participantName = 'Lucas';
+  ctrlIndividual.isMixedAudio = false;
+  ctrlIndividual.startRecognition();
+  ctrlIndividual.currentInstance.onstart();
+
+  ctrlIndividual.currentInstance.onresult({
+    resultIndex: 0,
+    results: [{ 0: { transcript: 'Alinhamento da sprint' }, isFinal: true }]
+  });
+  assert.ok(ctrlIndividual.transcription.includes('[Lucas]: Alinhamento da sprint'));
+
+  // Áudio misto (canal compartilhado na sala)
+  const ctrlMixed = new ProtonSpeechController();
+  ctrlMixed.participantName = 'Lucas';
+  ctrlMixed.isMixedAudio = true;
+  ctrlMixed.startRecognition();
+  ctrlMixed.currentInstance.onstart();
+
+  ctrlMixed.currentInstance.onresult({
+    resultIndex: 0,
+    results: [{ 0: { transcript: 'Comentário da bancada presencial' }, isFinal: true }]
+  });
+  assert.ok(ctrlMixed.transcription.includes('[Falante não identificado]: Comentário da bancada presencial'));
+  assert.ok(!ctrlMixed.transcription.includes('[Lucas]:'));
+
+  ctrlIndividual.stop();
+  ctrlMixed.stop();
+});
+

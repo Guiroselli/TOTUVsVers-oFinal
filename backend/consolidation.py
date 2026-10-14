@@ -63,9 +63,39 @@ def detect_border_overlap(prev_text: str, next_chunk: str, max_words: int = 5) -
     return next_chunk.strip()
 
 
+def collapse_repetitive_loops(text: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Detecta e colapsa loops patológicos de repetição de 1 a 4 palavras repetidas
+    3 ou mais vezes consecutivamente (ex: 'que é que é que é que é' -> 'que é').
+    Preserva repetições conversacionais legítimas de até 2 repetições (ex: 'não, não pode').
+    """
+    if not text:
+        return "", []
+
+    audits = []
+    cleaned = text
+    # Expressão regular para sequências de 1 a 4 palavras repetidas 3+ vezes consecutivamente
+    pattern = r"\b([a-zA-Z0-9áéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ]+(?:\s+[a-zA-Z0-9áéíóúâêîôûãõçÁÉÍÓÚÂÊÎÔÛÃÕÇ]+){0,3})(?:[\s,]+\1){2,}\b"
+
+    for _ in range(3):  # até 3 passagens para loops aninhados
+        matches = list(re.finditer(pattern, cleaned, flags=re.IGNORECASE))
+        if not matches:
+            break
+        for m in matches:
+            audits.append({
+                "rule": "repeticao_patologica",
+                "matched_text": m.group(0),
+                "collapsed_to": m.group(1),
+                "position": m.start()
+            })
+        cleaned = re.sub(pattern, r"\1", cleaned, flags=re.IGNORECASE)
+
+    return cleaned, audits
+
+
 def filter_conversational_noise(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Filtra ruídos conversacionais evidentes sem destruir vocabulário de negócio.
+    Filtra ruídos conversacionais evidentes e loops de repetição patológica sem destruir vocabulário de negócio.
     Mantém registro auditável de cada filtro aplicado.
     """
     if not text:
@@ -74,7 +104,12 @@ def filter_conversational_noise(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     audit_filters = []
     clean = text
 
-    # Padrões explícitos de ruído conversacional / artefatos de microfone
+    # 1. Colapso de repetições patológicas (ex: loops de 'que é que é que é')
+    clean, rep_audits = collapse_repetitive_loops(clean)
+    if rep_audits:
+        audit_filters.extend(rep_audits)
+
+    # 2. Padrões explícitos de ruído conversacional / artefatos de microfone
     noise_patterns = [
         (r"\b(hum|humm|hmm|éé|ãh|ahn)\b", "interjeicao_hesitacao"),
         (r"\[(ru[íi]do|barulho|sil[êe]ncio|inaud[íi]vel)\]", "tag_marcador_ruido"),
@@ -95,6 +130,7 @@ def filter_conversational_noise(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     clean = re.sub(r"\s+", " ", clean).strip()
 
     return clean, audit_filters
+
 
 
 from controlled_glossary import ControlledGlossary
@@ -166,6 +202,8 @@ class ChunkConsolidator:
         current_normalized_acc = ""
         glossary = ControlledGlossary()
 
+        chunk_processed_records: List[Dict[str, Any]] = []
+
         for chunk_info in sorted_chunks:
             chunk_text = (chunk_info.get("text") or "").strip()
             seq = int(chunk_info.get("sequence", 0))
@@ -189,7 +227,7 @@ class ChunkConsolidator:
                 })
 
             if deduped_chunk:
-                # Aplica filtro de ruído auditável (sem apagar repetições legítimas como "não, não pode")
+                # Aplica filtro de ruído auditável e colapso de loops repetitivos
                 filtered_chunk, filters_applied = filter_conversational_noise(deduped_chunk)
                 if filters_applied:
                     all_noise_audits.extend(filters_applied)
@@ -205,18 +243,71 @@ class ChunkConsolidator:
                 if corrected_chunk:
                     normalized_parts.append(corrected_chunk)
                     current_normalized_acc = f"{current_normalized_acc} {corrected_chunk}".strip()
+                    chunk_processed_records.append({
+                        "chunk_info": chunk_info,
+                        "raw": chunk_text,
+                        "normalized": corrected_chunk
+                    })
 
-        transcript_raw = " ".join(raw_parts).strip()
-        transcript_normalized = " ".join(normalized_parts).strip()
+        # Atribuição de falantes: se houver falante especificado em algum chunk
+        has_any_speaker = any(bool((c.get("speaker_name") or "").strip()) for c in sorted_chunks)
+
+        if has_any_speaker and chunk_processed_records:
+            dialogue_raw: List[str] = []
+            dialogue_norm: List[str] = []
+            curr_spk = None
+            curr_raw_group: List[str] = []
+            curr_norm_group: List[str] = []
+
+            for rec in chunk_processed_records:
+                spk = (rec["chunk_info"].get("speaker_name") or "").strip() or "Falante não identificado"
+                raw_t = rec["raw"]
+                norm_t = rec["normalized"]
+
+                if spk != curr_spk:
+                    if curr_spk is not None:
+                        if curr_raw_group:
+                            dialogue_raw.append(f"[{curr_spk}]: " + " ".join(curr_raw_group))
+                        if curr_norm_group:
+                            dialogue_norm.append(f"[{curr_spk}]: " + " ".join(curr_norm_group))
+                    curr_spk = spk
+                    curr_raw_group = [raw_t]
+                    curr_norm_group = [norm_t]
+                else:
+                    curr_raw_group.append(raw_t)
+                    curr_norm_group.append(norm_t)
+
+            if curr_spk is not None:
+                if curr_raw_group:
+                    dialogue_raw.append(f"[{curr_spk}]: " + " ".join(curr_raw_group))
+                if curr_norm_group:
+                    dialogue_norm.append(f"[{curr_spk}]: " + " ".join(curr_norm_group))
+
+            transcript_raw = "\n\n".join(dialogue_raw).strip()
+            transcript_normalized = "\n\n".join(dialogue_norm).strip()
+        else:
+            transcript_raw = " ".join(raw_parts).strip()
+            transcript_normalized = " ".join(normalized_parts).strip()
 
         # transcript_final: aplica correções manuais se houver, ou reflete o normalizado
         corrections = existing_corrections or []
         transcript_final = transcript_normalized
         if corrections:
-            # A última correção manual confirmada tem precedência
             last_corr = corrections[-1]
-            if last_corr.get("corrected_text"):
+            last_corr_time = last_corr.get("timestamp") or ""
+            # Chunks recebidos estritamente após a última correção manual
+            new_chunks_after = [
+                c for c in sorted_chunks
+                if (c.get("processed_at") or "") > last_corr_time
+            ]
+            if not new_chunks_after and last_corr.get("corrected_text"):
                 transcript_final = last_corr["corrected_text"]
+            elif new_chunks_after and last_corr.get("corrected_text"):
+                new_texts = [c.get("text", "").strip() for c in new_chunks_after if c.get("text")]
+                if new_texts:
+                    transcript_final = f"{last_corr['corrected_text']} {' '.join(new_texts)}".strip()
+                else:
+                    transcript_final = last_corr["corrected_text"]
 
         return {
             "transcript_raw": transcript_raw,

@@ -13,7 +13,8 @@ import {
   User,
   Calendar,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Upload
 } from 'lucide-react';
 
 export default function MeetingHistoryTable({
@@ -38,6 +39,7 @@ export default function MeetingHistoryTable({
   onTaskStatusChange,
   onEnviarIntegracao,
   onOpenConfig,
+  onOpenImportModal,
   pagination,
   onPageChange,
   onPageSizeChange
@@ -113,26 +115,55 @@ export default function MeetingHistoryTable({
           )}
         </div>
 
-        {/* View Toggle (Cards Executivos vs Tabela) */}
-        <div className="view-toggle-bar">
-          <button
-            type="button"
-            className={`view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
-            onClick={() => setViewMode('cards')}
-            title="Visualizar reuniões no formato de Cards Executivos"
-          >
-            <LayoutGrid size={13} />
-            <span>Cards Executivos</span>
-          </button>
-          <button
-            type="button"
-            className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
-            onClick={() => setViewMode('table')}
-            title="Visualizar reuniões no formato de Tabela Estruturada"
-          >
-            <List size={13} />
-            <span>Tabela Estruturada</span>
-          </button>
+        {/* Ações do Topo e View Toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {onOpenImportModal && (
+            <button
+              type="button"
+              onClick={onOpenImportModal}
+              title="Importar transcrições de reuniões externas (.txt, .md, .srt, .vtt, .docx)"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                fontSize: '0.8rem',
+                padding: '0.4rem 0.85rem',
+                borderRadius: '8px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: 'var(--primary-color, #0284c7)',
+                color: '#ffffff',
+                border: 'none',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <Upload size={13} />
+              <span>Importar Transcrição</span>
+            </button>
+          )}
+
+          {/* View Toggle (Cards Executivos vs Tabela) */}
+          <div className="view-toggle-bar">
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              title="Visualizar reuniões no formato de Cards Executivos"
+            >
+              <LayoutGrid size={13} />
+              <span>Cards Executivos</span>
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Visualizar reuniões no formato de Tabela Estruturada"
+            >
+              <List size={13} />
+              <span>Tabela Estruturada</span>
+            </button>
+          </div>
         </div>
       </div>
 

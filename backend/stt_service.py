@@ -13,6 +13,7 @@ import tempfile
 import logging
 import threading
 import asyncio
+import shutil
 from typing import Dict, Any, Optional, List, Tuple
 
 # Garante carregamento automático do .env local se presente
@@ -37,13 +38,14 @@ except Exception:
     CTRANSLATE2_VERSION = "unavailable"
 
 try:
-    from hardware_detector import detect_hardware, select_hardware_profile
+    from hardware_detector import detect_hardware, select_hardware_profile, query_nvidia_smi
 except ImportError:
     try:
-        from backend.hardware_detector import detect_hardware, select_hardware_profile
+        from backend.hardware_detector import detect_hardware, select_hardware_profile, query_nvidia_smi
     except ImportError:
         detect_hardware = None
         select_hardware_profile = None
+        query_nvidia_smi = None
 
 try:
     from path_utils import resolve_model_cache_dir, get_project_root
@@ -61,12 +63,23 @@ except ImportError:
                 return os.path.abspath(os.path.normpath(expanded))
             return os.path.abspath(os.path.normpath(os.path.join(get_project_root(), expanded)))
 
+try:
+    from consolidation import collapse_repetitive_loops
+except ImportError:
+    try:
+        from backend.consolidation import collapse_repetitive_loops
+    except ImportError:
+        def collapse_repetitive_loops(text: str):
+            return text, []
+
+
 # Variáveis de ambiente configuráveis e portáteis (PARTE 1, 2, 3, 5)
 STT_PROVIDER = os.getenv("STT_PROVIDER", "faster_whisper")
 STT_ENGINE = os.getenv("STT_ENGINE", "faster-whisper")
-STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "small")
+STT_MODEL_SIZE = os.getenv("STT_MODEL_SIZE", "auto")
 STT_DEVICE = os.getenv("STT_DEVICE", "auto")
 STT_COMPUTE_TYPE = os.getenv("STT_COMPUTE_TYPE", "auto")
+STT_AUTO_DOWNLOAD_MODEL = os.getenv("STT_AUTO_DOWNLOAD_MODEL", "true").lower() in ("true", "1", "yes")
 STT_LANGUAGE = os.getenv("STT_LANGUAGE", "pt")
 STT_TASK = os.getenv("STT_TASK", "transcribe")
 STT_BEAM_SIZE = int(os.getenv("STT_BEAM_SIZE", "3"))
@@ -395,6 +408,7 @@ class STTService:
         max_concurrent: Any = STT_MAX_CONCURRENT_TRANSCRIBES,
         model_cache_dir: Optional[str] = STT_MODEL_CACHE_DIR,
         max_pending_chunks: int = STT_MAX_PENDING_CHUNKS,
+        auto_download: bool = STT_AUTO_DOWNLOAD_MODEL,
     ):
         self.provider = provider if provider != STT_PROVIDER else os.getenv("STT_PROVIDER", STT_PROVIDER)
         self.raw_requested_model = model_size if model_size != STT_MODEL_SIZE else os.getenv("STT_MODEL_SIZE", STT_MODEL_SIZE)
@@ -456,14 +470,12 @@ class STTService:
                 if self.model_size in ("auto", None, ""):
                     self.model_size = "small"
                 self.hardware_profile = "cpu_balanced"
-        else:
-            if self.device in ("auto", None, ""):
-                self.device = "cpu"
-            if self.compute_type in ("auto", None, ""):
-                self.compute_type = "int8"
-            if self.model_size in ("auto", None, ""):
-                self.model_size = "small"
-            self.hardware_profile = "cpu_balanced"
+
+        self.fallback_occurred = False
+        self.fallback_reason: Optional[str] = None
+        if str(self.raw_requested_device).strip().lower() == "cuda" and self.device == "cpu":
+            self.fallback_occurred = True
+            self.fallback_reason = self.device_reason
 
         # Concorrência e Workers (1 para CPU, 2 para CUDA)
         req_conc = max_concurrent if max_concurrent != STT_MAX_CONCURRENT_TRANSCRIBES else os.getenv("STT_MAX_CONCURRENT_TRANSCRIBES", os.getenv("STT_MAX_WORKERS", "auto"))
@@ -507,6 +519,7 @@ class STTService:
         self._load_error = None
         self._is_loading = False
         self._is_downloading = False
+        self.auto_download = auto_download
         self._session_headers: Dict[str, bytes] = {}
         self._session_headers_lock = threading.Lock()
         self._session_contexts: Dict[str, str] = {}
@@ -591,30 +604,107 @@ class STTService:
             self._dependency_checked = True
         return self._dependency_available
 
-    def is_model_cached(self) -> bool:
+    def is_model_cached(self, model_size: Optional[str] = None) -> bool:
         """Verifica se os pesos do modelo estão presentes no cache local sem chamadas de rede."""
         if self._mock_model is not None:
             return True
         if not self.check_dependency():
             return False
+
+        target = str(model_size or self.model_size).lower().strip()
+        cache_target = self.model_cache_dir
+
         try:
             from faster_whisper.utils import download_model
-            cache_target = self.model_cache_dir
             if cache_target and os.path.exists(cache_target):
                 try:
-                    download_model(self.model_size, output_dir=cache_target, local_files_only=True)
+                    resolved_path = download_model(target, output_dir=cache_target, local_files_only=True)
+                    if resolved_path and os.path.isdir(resolved_path):
+                        bin_f = os.path.join(resolved_path, "model.bin")
+                        if os.path.isfile(bin_f) and os.path.getsize(bin_f) < 1000:
+                            return False
                     return True
                 except Exception:
                     return False
             elif not cache_target:
                 try:
-                    download_model(self.model_size, local_files_only=True)
+                    download_model(target, local_files_only=True)
                     return True
                 except Exception:
                     return False
             return False
         except Exception:
             return False
+
+    def download_model_if_needed(self, model_size: Optional[str] = None) -> bool:
+        """
+        Verifica se o modelo está completo no cache local persistente.
+        Se não estiver, efetua o download inicial único para o cache do backend no PC da RTX 3060.
+        Nas próximas inicializações, o modelo é reutilizado do cache sem novo download.
+        Valida espaço em disco e integridade dos arquivos (evita tratar download incompleto como válido).
+        """
+        target_model = str(model_size or self.model_size).lower().strip()
+        if self._mock_model is not None:
+            return True
+
+        if self.is_model_cached(target_model):
+            logger.info(
+                f"Modelo faster-whisper '{target_model}' verificado e completo no cache local ({self.model_cache_dir}). "
+                f"Reutilizando sem novo download."
+            )
+            return True
+
+        # Estimativa de espaço em disco (~1.5 GB para medium, ~480 MB para small, ~3.1 GB para large-v3)
+        # Valores aproximados documentados como estimativa
+        model_space_estimates_mb = {
+            "tiny": 75,
+            "base": 145,
+            "small": 480,
+            "medium": 1500,
+            "large-v3": 3100
+        }
+        needed_mb = model_space_estimates_mb.get(target_model, 1500)
+        cache_dir = self.model_cache_dir or os.path.expanduser("~")
+
+        try:
+            usage = shutil.disk_usage(cache_dir)
+            free_mb = usage.free / (1024 * 1024)
+            if free_mb < (needed_mb + 200):
+                self._load_error = (
+                    f"insufficient_disk_space: Espaço livre ({round(free_mb / 1024, 2)} GB) insuficiente "
+                    f"para baixar o modelo '{target_model}' (~{round(needed_mb / 1024, 2)} GB estimados)."
+                )
+                logger.error(self._load_error)
+                return False
+        except Exception as disk_err:
+            logger.warning(f"Não foi possível verificar espaço em disco: {disk_err}")
+
+        logger.info(
+            f"Modelo faster-whisper '{target_model}' não encontrado no cache local. "
+            f"Iniciando download inicial único para cache persistente em '{self.model_cache_dir}' "
+            f"(estimativa: ~{round(needed_mb / 1024, 2)} GB)..."
+        )
+
+        with self._lock:
+            if self.is_model_cached(target_model):
+                return True
+
+            self._is_downloading = True
+            try:
+                from faster_whisper.utils import download_model
+                os.makedirs(self.model_cache_dir, exist_ok=True)
+                download_path = download_model(target_model, output_dir=self.model_cache_dir)
+                if not self.is_model_cached(target_model):
+                    raise RuntimeError(f"Download concluído mas verificação de integridade falhou para '{target_model}'.")
+                logger.info(f"Modelo faster-whisper '{target_model}' baixado com sucesso no cache persistente: {download_path}")
+                self._load_error = None
+                return True
+            except Exception as err:
+                self._load_error = f"model_download_failed: Falha ao baixar modelo '{target_model}': {err}"
+                logger.error(self._load_error)
+                return False
+            finally:
+                self._is_downloading = False
 
     def is_available(self) -> bool:
         """Informa se o serviço está habilitado, a dependência está pronta e o modelo está disponível."""
@@ -712,6 +802,17 @@ class STTService:
             if self._model is not None:
                 return self._model
 
+            # Assegura que o modelo esteja baixado e completo no cache persistente
+            if not self.is_model_cached():
+                if self.auto_download:
+                    ok = self.download_model_if_needed()
+                    if not ok:
+                        reason = self.get_unavailable_reason()
+                        raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'falha no download do modelo'})")
+                else:
+                    reason = self.get_unavailable_reason()
+                    raise RuntimeError(f"STT indisponível: {reason} ({self._load_error or 'modelo não disponível no cache local'})")
+
             try:
                 self._is_loading = True
                 from faster_whisper import WhisperModel
@@ -739,6 +840,8 @@ class STTService:
                             f"Falha ao carregar faster-whisper com CUDA ({cuda_err}). "
                             f"Acionando fallback automático e seguro para CPU int8."
                         )
+                        self.fallback_occurred = True
+                        self.fallback_reason = str(cuda_err)
                         self.device = "cpu"
                         self.compute_type = "int8"
                         self.hardware_profile = "cpu_balanced_fallback"
@@ -765,7 +868,7 @@ class STTService:
                 self._is_loading = False
 
     def get_session_prompt(self, session_id: Optional[str] = None, meeting_context: Optional[str] = None) -> str:
-        """Gera prompt contextual inicial enriquecido com vocabulário corporativo e histórico recente."""
+        """Gera prompt contextual inicial enriquecido com vocabulário corporativo e histórico recente sanitizado."""
         base_prompt = self.initial_prompt or ""
         if meeting_context:
             base_prompt = f"{base_prompt} Contexto: {meeting_context}".strip()
@@ -775,19 +878,27 @@ class STTService:
         with self._session_contexts_lock:
             ctx = self._session_contexts.get(session_id, "").strip()
             if ctx:
-                # Mantém as últimas 15 palavras do contexto anterior
-                words = ctx.split()
-                tail = " ".join(words[-15:])
-                return f"{base_prompt} {tail}".strip()
+                clean_ctx, _ = collapse_repetitive_loops(ctx)
+                words = clean_ctx.split()
+                tail_words = words[-15:]
+                clean_tail, _ = collapse_repetitive_loops(" ".join(tail_words))
+                if clean_tail and len(clean_tail.split()) >= 2:
+                    return f"{base_prompt} {clean_tail}".strip()
         return base_prompt
 
     def update_session_context(self, session_id: str, new_text: str):
-        """Atualiza histórico textual recente da sessão para coerência entre chunks."""
+        """Atualiza histórico textual recente da sessão para coerência entre chunks, impedindo loops."""
         if not session_id or not new_text:
+            return
+        clean_new, _ = collapse_repetitive_loops(new_text)
+        if not clean_new:
             return
         with self._session_contexts_lock:
             prev = self._session_contexts.get(session_id, "")
-            self._session_contexts[session_id] = f"{prev} {new_text}".strip()[-300:]
+            combined = f"{prev} {clean_new}".strip()
+            clean_combined, _ = collapse_repetitive_loops(combined)
+            self._session_contexts[session_id] = clean_combined[-300:]
+
 
     def warmup(self) -> Dict[str, Any]:
         """Pré-carrega o modelo e valida inferência básica para warm-up."""
@@ -857,6 +968,12 @@ class STTService:
             "last_processing_time_ms": self.last_processing_time_ms,
             "memory_rss_mb": mem_usage,
             "cpu_mode_warning": bool(self.device == "cpu" and self.model_size in ("small", "medium", "large")),
+            "fallback_occurred": self.fallback_occurred,
+            "fallback_reason": self.fallback_reason,
+            "gpu_telemetry": query_nvidia_smi() if query_nvidia_smi is not None else [],
+            "device_reason": self.device_reason,
+            "auto_download": self.auto_download,
+            "is_downloading": self._is_downloading,
             "unavailable_reason": reason,
             "error_detail": self._load_error,
             "reason": reason if not is_avail else (reason if not is_ready else None)
@@ -980,6 +1097,48 @@ class STTService:
         try:
             # Serializa chunks da mesma reunião para evitar inversão ou concorrência desordenada
             with meeting_lock:
+                # Se não for mock e o chunk estiver silencioso / sem fala comprovada,
+                # não aciona inferência do Whisper para evitar alucinações ("que é" ou repetições no silêncio).
+                if self._mock_model is None and (
+                    audio_metrics.get("signal_quality") == "sem_fala" or
+                    audio_metrics.get("audio_level", 0) <= 1 or
+                    not audio_metrics.get("speech_detected", True)
+                ):
+                    elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
+                    self.last_processing_time_ms = elapsed_ms
+                    remaining_queue = max(0, self.get_meeting_pending_count(m_id) - 1)
+                    return {
+                        "text": "",
+                        "text_corrected": "",
+                        "glossary_corrections": [],
+                        "language": session_lang,
+                        "language_probability": 0.0,
+                        "task": self.task,
+                        "duration": audio_metrics.get("duration", 0.0),
+                        "segments": [],
+                        "low_confidence_count": 0,
+                        "processing_time_ms": elapsed_ms,
+                        "rtf": 0.0,
+                        "queue_size": remaining_queue,
+                        "is_delayed": is_delayed,
+                        "hardware_profile": self.hardware_profile,
+                        "device": self.device,
+                        "compute_type": self.compute_type,
+                        "workers": self.max_workers,
+                        "audio_level": audio_metrics.get("audio_level", 0),
+                        "signal_quality": "sem_fala",
+                        "audio_metrics": audio_metrics,
+                        "no_speech_prob": 1.0,
+                        "words_count": 0,
+                        "provider": self.provider,
+                        "model_name": f"faster-whisper-{self.model_size}",
+                        "model": self.model_size,
+                        "meeting_id": meeting_id,
+                        "session_id": session_id,
+                        "sequence": sequence,
+                        "is_final": False,
+                    }
+
                 acquired_semaphore = self._semaphore.acquire(timeout=30.0)
                 if not acquired_semaphore:
                     raise TimeoutError("Servidor ocupado: limite de workers concorrentes atingido. Tente novamente.")
@@ -1004,11 +1163,12 @@ class STTService:
                     "best_of": self.best_of,
                     "vad_filter": self.vad_filter,
                     "temperature": self.temperature,
-                    "condition_on_previous_text": self.condition_on_previous_text,
+                    "condition_on_previous_text": False,
                     "word_timestamps": self.word_timestamps,
-                    "no_speech_threshold": 0.6,
+                    "no_speech_threshold": 0.60,
                     "log_prob_threshold": -1.0,
                     "compression_ratio_threshold": 2.4,
+                    "repetition_penalty": 1.15,
                 }
                 if self.vad_filter:
                     transcribe_kwargs["vad_parameters"] = self.vad_parameters
@@ -1045,9 +1205,18 @@ class STTService:
 
                     no_speech_probs.append(nsp_val)
                     if seg_text:
+                        # Descarta alucinações patológicas de repetição (taxa de compressão excessiva)
+                        if comp_val > 2.4:
+                            continue
+                        # Descarta ruídos / silêncio onde no_speech_prob é alto
+                        if nsp_val > 0.65:
+                            continue
+
                         clean = seg_text.strip()
+                        clean, _ = collapse_repetitive_loops(clean)
                         if clean:
                             text_parts.append(clean)
+
 
                             conf_level, conf_score = self.classify_segment_confidence(seg)
                             needs_review = (conf_level in ("baixa_confianca", "revisao_necessaria"))
