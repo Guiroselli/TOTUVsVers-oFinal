@@ -82,6 +82,13 @@ export const api = {
   getRecordingJobs: (meetingId) =>
     request(`/api/live/recordings/jobs${meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : ''}`),
 
+  dismissRecordingJob: (jobId) =>
+    request(`/api/live/recordings/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' }),
+
+  retryRecordingJob: (jobId) =>
+    request(`/api/live/recordings/jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' }),
+
+
   updateLiveMeetingStatus: (meetingId, action) =>
     request(`/api/live/meetings/${meetingId}/status`, {
       method: 'PATCH',

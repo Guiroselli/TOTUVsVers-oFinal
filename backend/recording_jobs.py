@@ -1,10 +1,11 @@
 """
 Fila de transcrição de gravações completas (chamadas online gravadas no navegador
 ou arquivos enviados). Processa uma gravação por vez, em segundo plano:
-ffmpeg divide o áudio em trechos -> STT transcreve cada trecho -> a transcrição é
-consolidada na reunião -> a reunião é finalizada e a ata é gerada.
+divide o áudio em trechos (usando PyAV nativo ou ffmpeg) -> STT transcreve cada trecho ->
+a transcrição é consolidada na reunião -> a reunião é finalizada e a ata é gerada.
 """
 import glob
+import json
 import logging
 import os
 import queue
@@ -39,11 +40,7 @@ def find_ffmpeg() -> Optional[str]:
     return os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg")
 
 
-def split_audio(src_path: str, out_dir: str, segment_seconds: int = SEGMENT_SECONDS) -> List[str]:
-    """Converte para WAV 16 kHz mono e divide em trechos de `segment_seconds`."""
-    ffmpeg = find_ffmpeg()
-    if not ffmpeg:
-        raise RuntimeError("ffmpeg não encontrado no servidor. Instale o ffmpeg ou defina FFMPEG_PATH.")
+def _split_audio_ffmpeg(ffmpeg: str, src_path: str, out_dir: str, segment_seconds: int = SEGMENT_SECONDS) -> List[str]:
     os.makedirs(out_dir, exist_ok=True)
     pattern = os.path.join(out_dir, "seg_%05d.wav")
     cmd = [
@@ -61,6 +58,101 @@ def split_audio(src_path: str, out_dir: str, segment_seconds: int = SEGMENT_SECO
     return segments
 
 
+def _split_audio_pyav(src_path: str, out_dir: str, segment_seconds: int = SEGMENT_SECONDS) -> List[str]:
+    """Decodifica e divide qualquer formato suportado pelo PyAV em WAVs 16 kHz mono."""
+    import wave
+    try:
+        import av
+    except ImportError as exc:
+        raise RuntimeError(
+            "Nem ffmpeg nem biblioteca 'av' (PyAV) estão disponíveis no servidor. "
+            "Instale ffmpeg ou pyav para processar gravações."
+        ) from exc
+
+    os.makedirs(out_dir, exist_ok=True)
+    try:
+        container = av.open(src_path, mode="r")
+    except Exception as exc:
+        raise RuntimeError(f"Não foi possível abrir o arquivo de áudio: {exc}") from exc
+
+    audio_streams = [s for s in container.streams if s.type == "audio"]
+    if not audio_streams:
+        container.close()
+        raise RuntimeError("O arquivo não contém fluxo de áudio utilizável.")
+
+    resampler = av.AudioResampler(format="s16", layout="mono", rate=16000)
+    samples_per_seg = segment_seconds * 16000
+    seg_idx = 0
+    current_samples = 0
+    current_wave: Optional[wave.Wave_write] = None
+    segments: List[str] = []
+
+    def _open_next():
+        nonlocal seg_idx, current_samples, current_wave
+        seg_file = os.path.join(out_dir, f"seg_{seg_idx:05d}.wav")
+        w = wave.open(seg_file, "wb")
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        segments.append(seg_file)
+        seg_idx += 1
+        current_samples = 0
+        current_wave = w
+
+    def _write_frame(r_frame):
+        nonlocal current_wave, current_samples
+        pcm_bytes = bytes(r_frame.planes[0])
+        samples = r_frame.samples
+        offset = 0
+        while samples > 0:
+            if current_wave is None:
+                _open_next()
+            space = samples_per_seg - current_samples
+            take = min(samples, space)
+            current_wave.writeframes(pcm_bytes[offset * 2 : (offset + take) * 2])
+            current_samples += take
+            offset += take
+            samples -= take
+            if current_samples >= samples_per_seg:
+                current_wave.close()
+                current_wave = None
+
+    try:
+        for frame in container.decode(audio_streams[0]):
+            for r_frame in resampler.resample(frame):
+                _write_frame(r_frame)
+        for r_frame in resampler.resample(None):
+            _write_frame(r_frame)
+    except Exception as exc:
+        if not segments:
+            raise RuntimeError(f"Falha ao decodificar áudio com PyAV: {exc}") from exc
+        logger.warning("Aviso durante decodificação de áudio: %s", exc)
+    finally:
+        if current_wave:
+            current_wave.close()
+        container.close()
+
+    if not segments:
+        raise RuntimeError("O arquivo não contém áudio utilizável.")
+    return segments
+
+
+def split_audio(src_path: str, out_dir: str, segment_seconds: int = SEGMENT_SECONDS) -> List[str]:
+    """
+    Converte para WAV 16 kHz mono e divide em trechos de `segment_seconds`.
+    Prioriza ffmpeg do sistema se presente; usa PyAV nativo de forma transparente
+    caso ffmpeg não esteja instalado ou falhe.
+    """
+    ffmpeg = find_ffmpeg()
+    if ffmpeg:
+        try:
+            return _split_audio_ffmpeg(ffmpeg, src_path, out_dir, segment_seconds)
+        except Exception as exc:
+            logger.warning("Falha com ffmpeg externo (%s), tentando PyAV...", exc)
+
+    return _split_audio_pyav(src_path, out_dir, segment_seconds)
+
+
 class RecordingJobQueue:
     """Fila sequencial: uma transcrição por vez, em thread de segundo plano."""
 
@@ -70,11 +162,13 @@ class RecordingJobQueue:
         self._queue: "queue.Queue[str]" = queue.Queue()
         self._worker: Optional[threading.Thread] = None
         self._process_fn = process_fn or self._process
+        self._load_persisted_jobs()
 
     # ---------- API pública ----------
     def enqueue(self, meeting_id: str, audio_path: str, original_name: str, size_bytes: int) -> Dict[str, Any]:
+        job_id = os.path.basename(os.path.dirname(audio_path)) or meeting_id
         job = {
-            "job_id": os.path.basename(os.path.dirname(audio_path)) or meeting_id,
+            "job_id": job_id,
             "meeting_id": str(meeting_id),
             "filename": original_name,
             "audio_path": audio_path,
@@ -89,6 +183,7 @@ class RecordingJobQueue:
         }
         with self._lock:
             self._jobs[job["job_id"]] = job
+        self._save_job_meta(job)
         self._queue.put(job["job_id"])
         self._ensure_worker()
         return self._public(job)
@@ -108,14 +203,98 @@ class RecordingJobQueue:
         with self._lock:
             return any(j["status"] in ACTIVE_STATUSES for j in self._jobs.values())
 
+    def dismiss_job(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.pop(job_id, None)
+        if not job:
+            return False
+        audio_path = job.get("audio_path")
+        if audio_path:
+            meta_path = os.path.join(os.path.dirname(audio_path), "job.json")
+            if os.path.exists(meta_path):
+                try:
+                    os.remove(meta_path)
+                except OSError:
+                    pass
+        return True
+
+    def retry_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+            audio_path = job.get("audio_path")
+            if not audio_path or not os.path.exists(audio_path):
+                raise RuntimeError("Arquivo de áudio original não encontrado para repetição.")
+            job["status"] = STATUS_QUEUED
+            job["progress"] = 0.0
+            job["segments_total"] = 0
+            job["segments_done"] = 0
+            job["error"] = None
+            job["finished_at"] = None
+            public_copy = self._public(job)
+        self._save_job_meta(job)
+        self._queue.put(job_id)
+        self._ensure_worker()
+        return public_copy
+
     # ---------- internos ----------
     @staticmethod
     def _public(job: Dict[str, Any]) -> Dict[str, Any]:
         return {k: v for k, v in job.items() if k != "audio_path"}
 
+    def _save_job_meta(self, job: Dict[str, Any]):
+        audio_path = job.get("audio_path")
+        if not audio_path:
+            return
+        job_dir = os.path.dirname(audio_path)
+        if os.path.isdir(job_dir):
+            try:
+                meta_path = os.path.join(job_dir, "job.json")
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(job, f, ensure_ascii=False, indent=2)
+            except Exception as exc:
+                logger.warning("Falha ao salvar job.json em %s: %s", job_dir, exc)
+
+    def _load_persisted_jobs(self):
+        if not os.path.isdir(RECORDINGS_DIR):
+            return
+        for root, dirs, files in os.walk(RECORDINGS_DIR):
+            if "job.json" in files:
+                try:
+                    meta_path = os.path.join(root, "job.json")
+                    with open(meta_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    job_id = data.get("job_id")
+                    if job_id and job_id not in self._jobs:
+                        self._jobs[job_id] = data
+                except Exception:
+                    pass
+            elif any(f.startswith("gravacao.") for f in files):
+                job_id = os.path.basename(root)
+                meeting_id = os.path.basename(os.path.dirname(root))
+                grav_file = next(f for f in files if f.startswith("gravacao."))
+                audio_path = os.path.join(root, grav_file)
+                if job_id and job_id not in self._jobs:
+                    self._jobs[job_id] = {
+                        "job_id": job_id,
+                        "meeting_id": meeting_id,
+                        "filename": "chamada.webm",
+                        "audio_path": audio_path,
+                        "size_bytes": os.path.getsize(audio_path),
+                        "status": STATUS_ERROR,
+                        "progress": 0.0,
+                        "segments_total": 0,
+                        "segments_done": 0,
+                        "error": "ffmpeg não encontrado no servidor. Instale o ffmpeg ou defina FFMPEG_PATH.",
+                        "created_at": datetime.now().isoformat(),
+                        "finished_at": datetime.now().isoformat(),
+                    }
+
     def _update(self, job: Dict[str, Any], **fields):
         with self._lock:
             job.update(fields)
+        self._save_job_meta(job)
 
     def _ensure_worker(self):
         with self._lock:
@@ -158,7 +337,19 @@ class RecordingJobQueue:
             raise RuntimeError(f"Transcrição indisponível no servidor: {stt.get_unavailable_reason()}")
         meeting = repo.get_by_id(meeting_id)
         if not meeting:
-            raise RuntimeError("Reunião não encontrada.")
+            try:
+                meeting = repo.create_live_meeting({
+                    "ID_MEETING": str(meeting_id),
+                    "titulo": f"Gravação {job.get('filename', 'online')}",
+                    "departamento": "Geral",
+                    "horario": datetime.now().strftime("%H:%M"),
+                    "data": datetime.now().strftime("%Y-%m-%d"),
+                    "origem": "live",
+                })
+            except Exception as exc:
+                logger.warning("Falha ao restaurar reunião para gravação %s: %s", meeting_id, exc)
+                raise RuntimeError(f"Reunião {meeting_id} não encontrada.") from exc
+
 
         self._update(job, status=STATUS_SPLITTING)
         work_dir = tempfile.mkdtemp(prefix="rec_")

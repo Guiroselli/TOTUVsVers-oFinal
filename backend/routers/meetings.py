@@ -741,6 +741,30 @@ def list_recording_jobs(meeting_id: Optional[str] = Query(None)):
     return {"jobs": q.list_jobs(meeting_id), "has_active": q.has_active()}
 
 
+@router.delete("/live/recordings/jobs/{job_id}")
+def dismiss_recording_job(job_id: str):
+    """Descarta ou remove um job da lista (ex: jobs concluídos ou com erro)."""
+    q = recording_jobs.get_job_queue()
+    removed = q.dismiss_job(job_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Job de gravação não encontrado.")
+    return {"status": "dismissed", "job_id": job_id}
+
+
+@router.post("/live/recordings/jobs/{job_id}/retry")
+def retry_recording_job(job_id: str):
+    """Reexecuta o processamento de uma gravação que falhou."""
+    q = recording_jobs.get_job_queue()
+    try:
+        job = q.retry_job(job_id)
+    except RuntimeError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    if not job:
+        raise HTTPException(status_code=404, detail="Job de gravação não encontrado.")
+    return {"status": "retried", "job": job}
+
+
+
 @router.post("/live/meetings/{meeting_id}/reprocess")
 def reprocess_meeting_transcript(
     meeting_id: str,

@@ -289,6 +289,29 @@ export default function LiveMeetingPage({
     return () => { cancelled = true; clearTimeout(timer); };
   }, [refreshRecordingJobs, jobsPollTick]);
 
+  const handleDismissJob = useCallback(async (jobId, e) => {
+    e?.stopPropagation?.();
+    try {
+      await api.dismissRecordingJob(jobId);
+      setRecordingJobs((prev) => prev.filter((j) => j.job_id !== jobId));
+    } catch (err) {
+      console.error('Falha ao descartar job:', err);
+    }
+  }, []);
+
+  const handleRetryJob = useCallback(async (jobId, e) => {
+    e?.stopPropagation?.();
+    try {
+      await api.retryRecordingJob(jobId);
+      refreshRecordingJobs();
+      setJobsPollTick((t) => t + 1);
+    } catch (err) {
+      console.error('Falha ao reprocessar gravação:', err);
+      alert(`Falha ao reiniciar: ${err.message || err}`);
+    }
+  }, [refreshRecordingJobs]);
+
+
   // 3. Carrega status do serviço STT backend
   const loadSttStatus = useCallback(async () => {
     try {
@@ -4513,15 +4536,117 @@ RTF: ${backendChunkStats.rtf || 0}
       </div>
 
       {recordingJobs.filter((j) => j.status !== 'concluido' || j.error).slice(0, 5).length > 0 && (
-        <div style={{ margin: '0 0 14px', padding: '10px 14px', borderRadius: '8px', background: 'var(--panel-hover)', fontSize: '12.5px', display: 'grid', gap: '6px' }}>
-          {recordingJobs.filter((j) => j.status !== 'concluido' || j.error).slice(0, 5).map((j) => (
-            <div key={j.job_id} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', color: j.status === 'erro' ? '#b91c1c' : 'var(--text-main)' }}>
-              <span>{j.filename} — {JOB_STATUS_LABEL[j.status] || j.status}{j.status === 'transcrevendo' && j.segments_total ? ` (${j.segments_done}/${j.segments_total})` : ''}</span>
-              {j.error && <span title={j.error} style={{ maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.error}</span>}
-            </div>
-          ))}
+        <div style={{
+          margin: '0 0 16px',
+          padding: '12px 16px',
+          borderRadius: '10px',
+          background: 'var(--panel-hover)',
+          border: '1px solid var(--border-color)',
+          fontSize: '13px',
+          display: 'grid',
+          gap: '8px'
+        }}>
+          {recordingJobs.filter((j) => j.status !== 'concluido' || j.error).slice(0, 5).map((j) => {
+            const isError = j.status === 'erro';
+            const isRunning = j.status === 'preparando_audio' || j.status === 'transcrevendo' || j.status === 'gerando_ata' || j.status === 'na_fila';
+            return (
+              <div
+                key={j.job_id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  background: isError ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                  border: isError ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid transparent'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+                  {isError ? (
+                    <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0 }} />
+                  ) : isRunning ? (
+                    <RefreshCw size={14} className="spin" color="var(--primary-color, #0284c7)" style={{ flexShrink: 0 }} />
+                  ) : (
+                    <CheckCircle2 size={16} color="#22c55e" style={{ flexShrink: 0 }} />
+                  )}
+                  <span style={{ fontWeight: 600, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
+                    {j.filename || 'Gravação'}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>—</span>
+                  <span style={{ color: isError ? '#ef4444' : 'var(--text-muted)', fontSize: '12px', whiteSpace: 'nowrap' }}>
+                    {JOB_STATUS_LABEL[j.status] || j.status}
+                    {j.status === 'transcrevendo' && j.segments_total ? ` (${j.segments_done}/${j.segments_total})` : ''}
+                  </span>
+                  {j.error && (
+                    <span
+                      title={j.error}
+                      style={{
+                        color: '#ef4444',
+                        fontSize: '12px',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: '450px'
+                      }}
+                    >
+                      {j.error}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  {isError && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleRetryJob(j.job_id, e)}
+                      className="btn"
+                      style={{
+                        padding: '4px 10px',
+                        fontSize: '11.5px',
+                        fontWeight: 600,
+                        background: '#0284c7',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '5px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Reprocessar gravação agora"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Reprocessar</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => handleDismissJob(j.job_id, e)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-muted)',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                    title="Fechar notificação"
+                    aria-label="Fechar notificação"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
+
 
       {/* Cards de Métricas e Status Rápido */}
       <div style={{
