@@ -72,16 +72,6 @@ export const api = {
 
   getLiveMeeting: (meetingId) => request(`/api/live/meetings/${meetingId}`),
 
-  // Gravação completa (chamada online / arquivo enviado) -> fila de transcrição no servidor
-  uploadMeetingRecording: (meetingId, blob, filename = 'chamada.webm') => {
-    const form = new FormData();
-    form.append('audio', blob, filename);
-    return request(`/api/live/meetings/${meetingId}/recording`, { method: 'POST', body: form });
-  },
-
-  getRecordingJobs: (meetingId) =>
-    request(`/api/live/recordings/jobs${meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : ''}`),
-
   updateLiveMeetingStatus: (meetingId, action) =>
     request(`/api/live/meetings/${meetingId}/status`, {
       method: 'PATCH',
