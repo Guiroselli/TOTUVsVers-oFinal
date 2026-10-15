@@ -5699,5 +5699,155 @@ input[type="text"].command-search-input::placeholder,
   }
 }
 
+/* =========================================================================
+   ESTILOS DE TURNOS DE FALA ESTILO TEAMS E CONTRASTE MODO ESCURO
+   ========================================================================= */
+
+/* Menu lateral e títulos no tema escuro: alto contraste WCAG AA */
+[data-theme="dark"] .sidebar-section-title {
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .nav-btn {
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .nav-btn:hover {
+  color: #ffffff;
+}
+
+/* Dock de Controles da Reunião com Contraste Perfeito */
+.meeting-controls-dock {
+  background: var(--pf-surface-elevated, #1e293b);
+  border: 1px solid var(--pf-border, rgba(255, 255, 255, 0.12));
+}
+
+.meeting-controls-dock .control-btn {
+  color: var(--pf-text-primary, #f8fafc);
+}
+
+.meeting-controls-dock .control-btn span {
+  color: var(--pf-text-primary, #f8fafc) !important;
+}
+
+[data-theme="light"] .meeting-controls-dock {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12) !important;
+}
+
+[data-theme="light"] .meeting-controls-dock .control-btn span {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .meeting-controls-dock .icon-circle {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+[data-theme="dark"] .meeting-controls-dock {
+  background: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+[data-theme="dark"] .meeting-controls-dock .control-btn span {
+  color: #f8fafc !important;
+}
+
+[data-theme="dark"] .meeting-controls-dock .icon-circle {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  color: #f8fafc !important;
+}
+
+/* Container e Cards de Turno de Fala da Transcrição (Estilo Microsoft Teams) */
+.transcript-turns-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.transcript-turn-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--pf-surface-elevated, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--pf-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.transcript-turn-card:hover {
+  border-color: rgba(2, 132, 199, 0.35);
+}
+
+.transcript-turn-card.is-local {
+  border-left: 3px solid #0284c7;
+  background: rgba(2, 132, 199, 0.05);
+}
+
+.turn-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.turn-speaker-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.turn-avatar-mini {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.turn-speaker-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--pf-text-primary, #f8fafc);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turn-local-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #38bdf8;
+  margin-left: 4px;
+}
+
+.turn-timestamp {
+  font-size: 11px;
+  color: var(--pf-text-secondary, #94a3b8);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.turn-text-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--pf-text-primary, #f8fafc);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 
 

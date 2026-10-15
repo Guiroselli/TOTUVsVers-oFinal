@@ -180,6 +180,7 @@ export default function LiveMeetingPage({
   const [signalQuality, setSignalQuality] = useState('suficiente'); // 'suficiente' | 'baixo' | 'sem_fala' | 'saturado'
   const [transcriptRaw, setTranscriptRaw] = useState('');
   const [transcriptNormalized, setTranscriptNormalized] = useState('');
+  const [transcriptTurns, setTranscriptTurns] = useState([]);
   const [transcriptViewMode, setTranscriptViewMode] = useState('normalized'); // 'normalized' | 'raw'
   const [diagnosticInfo, setDiagnosticInfo] = useState({
     engine: 'Não inicializado',
@@ -612,9 +613,17 @@ export default function LiveMeetingPage({
       const initialText = currentMeeting.ANON_TRANSCRICAO || '';
       setTranscription(initialText);
       finalTranscriptRef.current = initialText;
+      setTranscriptRaw(currentMeeting.TRANSCRIPT_RAW || '');
+      setTranscriptNormalized(currentMeeting.TRANSCRIPT_NORMALIZED || initialText);
+      if (Array.isArray(currentMeeting.TRANSCRIPT_TURNS)) {
+        setTranscriptTurns(currentMeeting.TRANSCRIPT_TURNS);
+      }
     } else {
       setTranscription('');
       finalTranscriptRef.current = '';
+      setTranscriptRaw('');
+      setTranscriptNormalized('');
+      setTranscriptTurns([]);
     }
   }, [activeMeetingId, currentMeeting]);
 
@@ -1078,7 +1087,7 @@ RTF: ${backendChunkStats.rtf || 0}
           console.warn(`[STT Backend] Erro no envio do chunk seq=${chunk.sequence}:`, uploadError);
           const httpStatus = uploadError.status || uploadError.statusCode || 500;
 
-          // Se 503 (serviço STT indisponível), suspende fila e notifica usuário com segurança
+          // Se 503 (serviço STT indisponível temporariamente), registra falha auditada do chunk, mas NUNCA interrompe a gravação contínua
           if (httpStatus === 503) {
             setTranscriptionStatus('service_unavailable');
             transcriptionStatusRef.current = 'service_unavailable';
@@ -1087,35 +1096,32 @@ RTF: ${backendChunkStats.rtf || 0}
               available: false,
               reason: uploadError.reason || 'stt_unavailable'
             }));
-            setError('O serviço de transcrição backend (faster-whisper) está indisponível. Alterne para o reconhecimento do navegador ou modo manual.');
-            const droppedChunks = [...chunkQueueRef.current];
-            chunkQueueRef.current = [];
-            chunksFailedCountRef.current += droppedChunks.length;
-            stopBackendCapture('stt_unavailable');
+            setError('Serviço de transcrição backend temporariamente ocupado. Captura de áudio continua ativa.');
+            chunkQueueRef.current.shift();
+            chunksFailedCountRef.current += 1;
             setBackendChunkStats((prev) => ({
               ...prev,
-              chunksPending: 0,
+              chunksPending: chunkQueueRef.current.length,
               chunksFailed: chunksFailedCountRef.current,
               lastHttpStatus: 503,
-              lastError: 'HTTP 503: STT Indisponível'
+              lastError: 'HTTP 503: STT Temporariamente Ocupado'
             }));
-            for (const dc of droppedChunks) {
-              api.reportChunkFailure(targetMeetingId, {
-                sessionId: dc.sessionId,
-                sequence: dc.sequence,
-                errorCode: 'stt_503',
-                errorMessage: 'Serviço STT indisponível',
-                speakerId: isMixedAudioRef.current ? null : participantIdRef.current
-              }).catch(() => {});
-            }
-            break;
+            api.reportChunkFailure(targetMeetingId, {
+              sessionId: chunk.sessionId,
+              sequence: chunk.sequence,
+              errorCode: 'stt_503',
+              errorMessage: uploadError.message || 'Serviço STT ocupado',
+              speakerId: isMixedAudioRef.current ? null : participantIdRef.current
+            }).catch(() => {});
+            await new Promise((r) => setTimeout(r, 600));
+            continue;
           }
 
           // Falhas transitórias (timeout, erro de rede passageiro)
           chunk.attempts = (chunk.attempts || 0) + 1;
-          if (chunk.attempts < 3) {
-            console.warn(`[STT Backend] Retentando chunk seq=${chunk.sequence} (tentativa ${chunk.attempts}/3)...`);
-            const backoffMs = Math.min(2500, 350 * Math.pow(2, chunk.attempts) + Math.random() * 200);
+          if (chunk.attempts < 2) {
+            console.warn(`[STT Backend] Retentando chunk seq=${chunk.sequence} (tentativa ${chunk.attempts}/2)...`);
+            const backoffMs = Math.min(1200, 300 * Math.pow(2, chunk.attempts));
             await new Promise((r) => setTimeout(r, backoffMs));
             continue;
           } else {
@@ -1127,7 +1133,7 @@ RTF: ${backendChunkStats.rtf || 0}
               chunksPending: chunkQueueRef.current.length,
               chunksFailed: chunksFailedCountRef.current,
               lastHttpStatus: httpStatus,
-              lastError: `Falha persistente no chunk seq=${chunk.sequence}`
+              lastError: `Falha no chunk seq=${chunk.sequence}`
             }));
             api.reportChunkFailure(targetMeetingId, {
               sessionId: chunk.sessionId,
@@ -1154,6 +1160,9 @@ RTF: ${backendChunkStats.rtf || 0}
           }
           if (response.transcript_normalized) {
             setTranscriptNormalized(response.transcript_normalized);
+          }
+          if (response.turns || response.transcript_turns) {
+            setTranscriptTurns(response.turns || response.transcript_turns);
           }
 
 
@@ -3136,13 +3145,14 @@ RTF: ${backendChunkStats.rtf || 0}
                 )
               )}
 
-              <div style={{ whiteSpace: 'pre-wrap', color: 'var(--pf-text-primary)' }}>
-                {(() => {
-                  const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
-                  if (!transcriptSearchQuery.trim()) {
-                    return text;
-                  }
-                  const parts = text.split(new RegExp(`(${transcriptSearchQuery.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
+              {(() => {
+                const text = transcriptViewMode === 'raw' ? (transcriptRaw || transcription) : (transcriptNormalized || transcription);
+
+                // Helper de realce de busca
+                const renderHighlightedText = (t) => {
+                  if (!t) return null;
+                  if (!transcriptSearchQuery.trim()) return t;
+                  const parts = t.split(new RegExp(`(${transcriptSearchQuery.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
                   return parts.map((part, i) =>
                     part.toLowerCase() === transcriptSearchQuery.toLowerCase() ? (
                       <mark key={i} style={{ background: '#f59e0b', color: '#000', borderRadius: '2px', padding: '1px 3px' }}>
@@ -3152,8 +3162,92 @@ RTF: ${backendChunkStats.rtf || 0}
                       part
                     )
                   );
-                })()}
-              </div>
+                };
+
+                // 1. Se houver structured turns e o modo for normalizado, usa os turnos
+                if (transcriptViewMode === 'normalized' && transcriptTurns && transcriptTurns.length > 0) {
+                  return (
+                    <div className="transcript-turns-container">
+                      {transcriptTurns.map((turn, idx) => {
+                        const isLocal = turn.speaker_name && participantName && turn.speaker_name.trim().toLowerCase() === participantName.trim().toLowerCase();
+                        return (
+                          <div key={idx} className={`transcript-turn-card ${isLocal ? 'is-local' : ''}`}>
+                            <div className="turn-header">
+                              <div className="turn-speaker-info">
+                                <div
+                                  className="turn-avatar-mini"
+                                  style={{ background: getAvatarGradient(turn.speaker_name || 'Participante') }}
+                                >
+                                  {getInitials(turn.speaker_name || 'Participante')}
+                                </div>
+                                <span className="turn-speaker-name">
+                                  {turn.speaker_name || 'Participante'}
+                                  {isLocal && <span className="turn-local-badge">(Você)</span>}
+                                </span>
+                              </div>
+                              {turn.timestamp && (
+                                <span className="turn-timestamp">{turn.timestamp}</span>
+                              )}
+                            </div>
+                            <div className="turn-text-content">
+                              {renderHighlightedText(turn.text_normalized || turn.text_raw || '')}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
+                // 2. Parser por Regex de Blocos de Turno "[Nome]: ..." caso venha como texto único
+                const turnBlockRegex = /\[([^\]]+)\]:\s*([^[]+)/g;
+                const parsedBlocks = [];
+                let match;
+                while ((match = turnBlockRegex.exec(text)) !== null) {
+                  parsedBlocks.push({
+                    speaker: match[1].trim(),
+                    content: match[2].trim()
+                  });
+                }
+
+                if (parsedBlocks.length > 0) {
+                  return (
+                    <div className="transcript-turns-container">
+                      {parsedBlocks.map((blk, idx) => {
+                        const isLocal = blk.speaker && participantName && blk.speaker.toLowerCase() === participantName.trim().toLowerCase();
+                        return (
+                          <div key={idx} className={`transcript-turn-card ${isLocal ? 'is-local' : ''}`}>
+                            <div className="turn-header">
+                              <div className="turn-speaker-info">
+                                <div
+                                  className="turn-avatar-mini"
+                                  style={{ background: getAvatarGradient(blk.speaker) }}
+                                >
+                                  {getInitials(blk.speaker)}
+                                </div>
+                                <span className="turn-speaker-name">
+                                  {blk.speaker}
+                                  {isLocal && <span className="turn-local-badge">(Você)</span>}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="turn-text-content">
+                              {renderHighlightedText(blk.content)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+
+                // 3. Fallback para parágrafo limpo contínuo
+                return (
+                  <div style={{ whiteSpace: 'pre-wrap', color: 'var(--pf-text-primary)' }}>
+                    {renderHighlightedText(text)}
+                  </div>
+                );
+              })()}
               {isRecording && <span className="typing-indicator" style={{ display: 'inline-block', marginLeft: '6px' }} />}
             </div>
           ) : (
@@ -3857,15 +3951,15 @@ RTF: ${backendChunkStats.rtf || 0}
                   left: '50%',
                   transform: 'translateX(-50%)',
                   zIndex: 25,
-                  background: 'rgba(15, 23, 42, 0.94)',
+                  background: 'var(--pf-surface-elevated, #1e293b)',
                   backdropFilter: 'blur(16px)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  border: '1px solid var(--pf-border, rgba(255, 255, 255, 0.12))',
                   borderRadius: '24px',
                   padding: isMobileScreen ? '4px 10px' : '6px 16px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: isMobileScreen ? '6px' : '12px',
-                  boxShadow: '0 12px 36px rgba(0,0,0,0.55)',
+                  boxShadow: '0 12px 36px rgba(0,0,0,0.4)',
                   maxWidth: '96vw',
                   flexWrap: 'nowrap',
                   justifyContent: 'center'

@@ -187,11 +187,21 @@ class ChunkConsolidator:
         else:
             chunks_list = list(processed_chunks.values())
 
-        # Ordena chunks por sequence (se presente) ou timestamp
-        sorted_chunks = sorted(
-            chunks_list,
-            key=lambda c: (c.get("session_id", ""), int(c.get("sequence", 0)))
-        )
+        # Ordena chunks rigorosamente por timestamp cronológico e sequência
+        def _get_chunk_time(c: Dict[str, Any]):
+            raw_t = c.get("processed_at") if c.get("processed_at") is not None else (
+                c.get("captured_at") if c.get("captured_at") is not None else (
+                    c.get("timestamp") if c.get("timestamp") is not None else ""
+                )
+            )
+            time_key = ""
+            if isinstance(raw_t, (int, float)):
+                time_key = f"{raw_t:015.4f}"
+            elif isinstance(raw_t, str):
+                time_key = raw_t
+            return (time_key, int(c.get("sequence", 0)))
+
+        sorted_chunks = sorted(chunks_list, key=_get_chunk_time)
 
         raw_parts: List[str] = []
         normalized_parts: List[str] = []
@@ -200,8 +210,11 @@ class ChunkConsolidator:
         all_noise_audits: List[Dict[str, Any]] = []
 
         current_normalized_acc = ""
-        glossary = ControlledGlossary()
+        last_speaker_acc = ""
+        last_session_id = None
+        last_speaker_id = None
 
+        glossary = ControlledGlossary()
         chunk_processed_records: List[Dict[str, Any]] = []
 
         for chunk_info in sorted_chunks:
@@ -214,17 +227,36 @@ class ChunkConsolidator:
             raw_parts.append(chunk_text)
 
             # 2. Versão normalizada: detecta e remove sobreposição de borda
-            deduped_chunk = detect_border_overlap(current_normalized_acc, chunk_text)
-            if len(deduped_chunk) < len(chunk_text):
-                overlaps_removed_count += 1
-                trimmed_diff = chunk_text[:len(chunk_text) - len(deduped_chunk)].strip()
-                border_overlaps_audit.append({
-                    "sequence": seq,
-                    "session_id": chunk_info.get("session_id", ""),
-                    "removed_overlap": trimmed_diff,
-                    "original_chunk": chunk_text,
-                    "deduped_chunk": deduped_chunk
-                })
+            # Regra de ouro: deduplicação de borda ocorre estritamente entre chunks consecutivos
+            # do MESMO participante/sessão. Na alternância de falantes (Turn Taking A -> B -> A),
+            # o áudio do novo falante é 100% preservado sem risco de podar palavras idênticas.
+            curr_sess = str(chunk_info.get("session_id") or "")
+            curr_spk_id = str(chunk_info.get("speaker_id") or chunk_info.get("speaker_name") or "")
+
+            if last_session_id is None and last_speaker_id is None:
+                is_same_speaker = True
+                deduped_chunk = chunk_text
+            else:
+                is_different_speaker = bool(
+                    (curr_spk_id and last_speaker_id and curr_spk_id != last_speaker_id)
+                    or (curr_sess and last_session_id and curr_sess != last_session_id)
+                )
+                is_same_speaker = not is_different_speaker
+
+                if is_same_speaker and last_speaker_acc:
+                    deduped_chunk = detect_border_overlap(last_speaker_acc, chunk_text)
+                    if len(deduped_chunk) < len(chunk_text):
+                        overlaps_removed_count += 1
+                        trimmed_diff = chunk_text[:len(chunk_text) - len(deduped_chunk)].strip()
+                        border_overlaps_audit.append({
+                            "sequence": seq,
+                            "session_id": curr_sess,
+                            "removed_overlap": trimmed_diff,
+                            "original_chunk": chunk_text,
+                            "deduped_chunk": deduped_chunk
+                        })
+                else:
+                    deduped_chunk = chunk_text
 
             if deduped_chunk:
                 # Aplica filtro de ruído auditável e colapso de loops repetitivos
@@ -243,26 +275,80 @@ class ChunkConsolidator:
                 if corrected_chunk:
                     normalized_parts.append(corrected_chunk)
                     current_normalized_acc = f"{current_normalized_acc} {corrected_chunk}".strip()
+                    if is_same_speaker and last_session_id is not None:
+                        last_speaker_acc = f"{last_speaker_acc} {corrected_chunk}".strip()
+                    else:
+                        last_speaker_acc = corrected_chunk
+                        last_session_id = curr_sess
+                        last_speaker_id = curr_spk_id
+
                     chunk_processed_records.append({
                         "chunk_info": chunk_info,
                         "raw": chunk_text,
                         "normalized": corrected_chunk
                     })
 
-        # Atribuição de falantes: se houver falante especificado em algum chunk
-        has_any_speaker = any(bool((c.get("speaker_name") or "").strip()) for c in sorted_chunks)
+        # Mapeamento e identificação de falantes para organização cronológica por turnos
+        all_sessions = sorted(list(set(str(c.get("session_id") or "") for c in sorted_chunks if c.get("session_id"))))
+
+        def resolve_speaker_display(c_info: Dict[str, Any]) -> str:
+            spk_name = (c_info.get("speaker_name") or "").strip()
+            if spk_name:
+                return spk_name
+            spk_id = (c_info.get("speaker_id") or "").strip()
+            if spk_id:
+                clean_id = spk_id.replace("usr_", "").strip()[:6]
+                return f"Participante ({clean_id})"
+            sess = str(c_info.get("session_id") or "")
+            if sess and len(all_sessions) > 1:
+                idx = all_sessions.index(sess) + 1
+                return f"Participante {idx}"
+            return "Falante não identificado"
+
+        has_any_speaker = any(
+            bool((c.get("speaker_name") or "").strip() or (c.get("speaker_id") or "").strip())
+            for c in sorted_chunks
+        ) or len(all_sessions) > 1
+
+        turns: List[Dict[str, Any]] = []
 
         if has_any_speaker and chunk_processed_records:
             dialogue_raw: List[str] = []
             dialogue_norm: List[str] = []
-            curr_spk = None
+            curr_spk: Optional[str] = None
+            curr_spk_id: Optional[str] = None
+            curr_sess_id: Optional[str] = None
+            curr_timestamp: Optional[str] = None
             curr_raw_group: List[str] = []
             curr_norm_group: List[str] = []
+            curr_seq_start: int = 0
+            curr_seq_end: int = 0
 
             for rec in chunk_processed_records:
-                spk = (rec["chunk_info"].get("speaker_name") or "").strip() or "Falante não identificado"
+                c_info = rec["chunk_info"]
+                spk = resolve_speaker_display(c_info)
+                s_id = (c_info.get("speaker_id") or "").strip()
+                sess = str(c_info.get("session_id") or "")
                 raw_t = rec["raw"]
                 norm_t = rec["normalized"]
+                seq = int(c_info.get("sequence", 0))
+
+                # Extrai timestamp legível (HH:MM:SS ou MM:SS) se disponível
+                raw_time = c_info.get("processed_at") or c_info.get("captured_at") or c_info.get("timestamp") or ""
+                time_str = ""
+                if isinstance(raw_time, str) and "T" in raw_time:
+                    try:
+                        time_part = raw_time.split("T")[1].split(".")[0]
+                        time_str = time_part[:8]
+                    except Exception:
+                        pass
+                elif isinstance(raw_time, (int, float)) and raw_time > 0:
+                    try:
+                        mins = int(raw_time // 60)
+                        secs = int(raw_time % 60)
+                        time_str = f"{mins:02d}:{secs:02d}"
+                    except Exception:
+                        pass
 
                 if spk != curr_spk:
                     if curr_spk is not None:
@@ -270,18 +356,48 @@ class ChunkConsolidator:
                             dialogue_raw.append(f"[{curr_spk}]: " + " ".join(curr_raw_group))
                         if curr_norm_group:
                             dialogue_norm.append(f"[{curr_spk}]: " + " ".join(curr_norm_group))
+                        turns.append({
+                            "speaker_name": curr_spk,
+                            "speaker_id": curr_spk_id,
+                            "session_id": curr_sess_id,
+                            "timestamp": curr_timestamp or "",
+                            "text_raw": " ".join(curr_raw_group).strip(),
+                            "text_normalized": " ".join(curr_norm_group).strip(),
+                            "sequence_start": curr_seq_start,
+                            "sequence_end": curr_seq_end,
+                            "chunk_count": len(curr_raw_group)
+                        })
                     curr_spk = spk
+                    curr_spk_id = s_id
+                    curr_sess_id = sess
+                    curr_timestamp = time_str
+                    curr_seq_start = seq
+                    curr_seq_end = seq
                     curr_raw_group = [raw_t]
                     curr_norm_group = [norm_t]
                 else:
                     curr_raw_group.append(raw_t)
                     curr_norm_group.append(norm_t)
+                    curr_seq_end = seq
+                    if not curr_timestamp and time_str:
+                        curr_timestamp = time_str
 
             if curr_spk is not None:
                 if curr_raw_group:
                     dialogue_raw.append(f"[{curr_spk}]: " + " ".join(curr_raw_group))
                 if curr_norm_group:
                     dialogue_norm.append(f"[{curr_spk}]: " + " ".join(curr_norm_group))
+                turns.append({
+                    "speaker_name": curr_spk,
+                    "speaker_id": curr_spk_id,
+                    "session_id": curr_sess_id,
+                    "timestamp": curr_timestamp or "",
+                    "text_raw": " ".join(curr_raw_group).strip(),
+                    "text_normalized": " ".join(curr_norm_group).strip(),
+                    "sequence_start": curr_seq_start,
+                    "sequence_end": curr_seq_end,
+                    "chunk_count": len(curr_raw_group)
+                })
 
             transcript_raw = "\n\n".join(dialogue_raw).strip()
             transcript_normalized = "\n\n".join(dialogue_norm).strip()
@@ -294,11 +410,11 @@ class ChunkConsolidator:
         transcript_final = transcript_normalized
         if corrections:
             last_corr = corrections[-1]
-            last_corr_time = last_corr.get("timestamp") or ""
+            last_corr_time = str(last_corr.get("timestamp") or "")
             # Chunks recebidos estritamente após a última correção manual
             new_chunks_after = [
                 c for c in sorted_chunks
-                if (c.get("processed_at") or "") > last_corr_time
+                if str(c.get("processed_at") or "") > last_corr_time
             ]
             if not new_chunks_after and last_corr.get("corrected_text"):
                 transcript_final = last_corr["corrected_text"]
@@ -314,6 +430,7 @@ class ChunkConsolidator:
             "transcript_normalized": transcript_normalized,
             "transcript_final": transcript_final,
             "transcript_corrections": corrections,
+            "turns": turns,
             "chunks_count": len(sorted_chunks),
             "noise_filters_audit": all_noise_audits,
             "border_overlaps_removed": overlaps_removed_count,

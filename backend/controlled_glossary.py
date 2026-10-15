@@ -267,37 +267,31 @@ class ControlledGlossary:
                 if variant.lower() == canonical.lower():
                     continue
 
+                def _make_replacer(var, canon, ent, ctx_flag):
+                    def _repl(match):
+                        matched_str = match.group(0)
+                        is_distorted_term = (var in ["ó neo neo", "o neo neo", "neo neo"])
+                        if is_distorted_term and not ctx_flag:
+                            return matched_str
+                        corr_id = f"corr_{uuid.uuid4().hex[:8]}"
+                        corr_record = {
+                            "id": corr_id,
+                            "original_term": matched_str,
+                            "corrected_term": canon,
+                            "matched_variant": var,
+                            "category": ent.get("category", "corporativo"),
+                            "has_context_support": ctx_flag,
+                            "position": (match.start(), match.end()),
+                            "can_undo": True,
+                            "applied": True
+                        }
+                        corrections_applied.append(corr_record)
+                        return canon
+                    return _repl
+
                 pattern = re.compile(rf"\b{re.escape(variant)}\b", flags=re.IGNORECASE)
-                matches = list(pattern.finditer(current_text))
-
-                for m in matches:
-                    matched_str = m.group(0)
-
-                    # Regra de segurança: substituição exige proximidade ou contexto comprovado
-                    # Termos graves (ex: "ó neo neo") só são corrigidos se houver contexto corporativo
-                    is_distorted_term = (variant in ["ó neo neo", "o neo neo", "neo neo"])
-                    if is_distorted_term and not has_context:
-                        # Sem contexto de reunião/corporativo, não substitui cegamente
-                        continue
-
-                    corr_id = f"corr_{uuid.uuid4().hex[:8]}"
-                    corr_record = {
-                        "id": corr_id,
-                        "original_term": matched_str,
-                        "corrected_term": canonical,
-                        "matched_variant": variant,
-                        "category": entry.get("category", "corporativo"),
-                        "has_context_support": has_context,
-                        "position": (m.start(), m.end()),
-                        "can_undo": True,
-                        "applied": True
-                    }
-                    corrections_applied.append(corr_record)
-
-                    # Substituição segura
-                    current_text = (
-                        current_text[:m.start()] + canonical + current_text[m.end():]
-                    )
+                replacer = _make_replacer(variant, canonical, entry, has_context)
+                current_text = pattern.sub(replacer, current_text)
 
         return current_text, corrections_applied
 

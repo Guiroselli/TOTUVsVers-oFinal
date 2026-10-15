@@ -179,4 +179,41 @@ describe('Live Meeting Room WebRTC Audio, Participant Grid, Diagnostics & Mobile
     assert.ok(py.includes('record_live_audio_chunk_failure'), 'Must record chunk failures');
     assert.ok(py.includes('reconciliation_ok'), 'Diagnostics must return reconciliation_ok');
   });
+
+  // 16. Speaker Turn Separation & Teams-Style Cards in LiveMeetingPage
+  test('16. LiveMeetingPage renders speaker turns as Teams-style message cards with speaker avatar, name, and timestamp', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+
+    assert.ok(code.includes('transcript-turns-container'), 'Must render transcript-turns-container');
+    assert.ok(code.includes('transcript-turn-card'), 'Must render transcript-turn-card');
+    assert.ok(code.includes('turn-speaker-name'), 'Must render turn-speaker-name');
+    assert.ok(code.includes('turn-avatar-mini'), 'Must render turn-avatar-mini');
+    assert.ok(code.includes('transcriptTurns'), 'Must manage transcriptTurns state');
+  });
+
+  // 17. Uninterrupted Continuous Capture on 503
+  test('17. LiveMeetingPage does NOT stop audio recording on HTTP 503, preserving continuous capture', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+
+    // On 503, processChunkQueue must NOT call stopBackendCapture
+    const startIdx = code.indexOf('httpStatus === 503');
+    assert.ok(startIdx !== -1, 'Must handle httpStatus === 503');
+    const snippet503 = code.substring(startIdx, startIdx + 800);
+    assert.ok(!snippet503.includes("stopBackendCapture('stt_unavailable')"), 'Must NOT terminate MediaRecorder on 503');
+    assert.ok(snippet503.includes('chunkQueueRef.current.shift()'), 'Must shift failed chunk and continue queue');
+  });
+
+  // 18. High-Contrast Styles for Meeting Controls Dock & Dark Theme Legibility
+  test('18. index.css defines high-contrast styles for meeting-controls-dock and turn cards in light/dark themes', () => {
+    const cssPath = path.join(projectRoot, 'frontend/src/index.css');
+    const css = fs.readFileSync(cssPath, 'utf-8');
+
+    assert.ok(css.includes('.meeting-controls-dock'), 'Must style .meeting-controls-dock');
+    assert.ok(css.includes('.transcript-turn-card'), 'Must style .transcript-turn-card');
+    assert.ok(css.includes('.turn-speaker-name'), 'Must style .turn-speaker-name');
+    assert.ok(css.includes('[data-theme="dark"] .meeting-controls-dock'), 'Must define dark theme dock styling');
+    assert.ok(css.includes('[data-theme="light"] .meeting-controls-dock'), 'Must define light theme dock styling');
+  });
 });

@@ -705,28 +705,33 @@ async def upload_live_meeting_audio_chunk(
     transcribed_text = result.get("text", "")
     chunk_duration = result.get("duration", 0.0)
 
-    record_result = repo.record_live_audio_chunk(
-        meeting_id=meeting_id,
-        session_id=session_id,
-        sequence=sequence,
-        text=transcribed_text,
-        duration=chunk_duration,
-        audio_level=result.get("audio_level", 0),
-        signal_quality=result.get("signal_quality", "suficiente"),
-        no_speech_prob=result.get("no_speech_prob", 0.0),
-        processing_time_ms=result.get("processing_time_ms", 0.0),
-        segments=result.get("segments", []),
-        meeting_context=meeting_context,
-        model_name=result.get("model_name"),
-        low_confidence_count=result.get("low_confidence_count", 0),
-        rtf=result.get("rtf", 0.0),
-        is_delayed=result.get("is_delayed", False),
-        speaker_name=speaker_name,
-        speaker_id=speaker_id
-    )
+    try:
+        record_result = repo.record_live_audio_chunk(
+            meeting_id=meeting_id,
+            session_id=session_id,
+            sequence=sequence,
+            text=transcribed_text,
+            duration=chunk_duration,
+            audio_level=result.get("audio_level", 0),
+            signal_quality=result.get("signal_quality", "suficiente"),
+            no_speech_prob=result.get("no_speech_prob", 0.0),
+            processing_time_ms=result.get("processing_time_ms", 0.0),
+            segments=result.get("segments", []),
+            meeting_context=meeting_context,
+            model_name=result.get("model_name"),
+            low_confidence_count=result.get("low_confidence_count", 0),
+            rtf=result.get("rtf", 0.0),
+            is_delayed=result.get("is_delayed", False),
+            speaker_name=speaker_name,
+            speaker_id=speaker_id
+        )
+    except Exception as rec_err:
+        logger.warning(f"Erro ao persistir/consolidar chunk seq={sequence} na reunião {meeting_id}: {rec_err}")
+        record_result = None
 
-    accumulated = record_result.get("transcript", "") if record_result else ""
-    meeting_obj = record_result.get("meeting", {}) if record_result else {}
+    accumulated = record_result.get("transcript", "") if record_result else meeting.get("ANON_TRANSCRICAO", "")
+    meeting_obj = record_result.get("meeting", {}) if record_result else meeting
+    turns = record_result.get("turns", []) if record_result else meeting_obj.get("TRANSCRIPT_TURNS", [])
 
     if is_final:
         stt.clear_session(session_id, meeting_id=meeting_id)
@@ -742,6 +747,8 @@ async def upload_live_meeting_audio_chunk(
         "transcript": accumulated,
         "transcript_raw": meeting_obj.get("TRANSCRIPT_RAW", ""),
         "transcript_normalized": meeting_obj.get("TRANSCRIPT_NORMALIZED", ""),
+        "transcript_turns": meeting_obj.get("TRANSCRIPT_TURNS", turns),
+        "turns": meeting_obj.get("TRANSCRIPT_TURNS", turns),
         "segments": result.get("segments", []),
         "low_confidence_count": result.get("low_confidence_count", 0),
         "model_name": result.get("model_name", "faster-whisper-small"),

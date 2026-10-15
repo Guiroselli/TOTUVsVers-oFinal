@@ -124,6 +124,10 @@ def _normalize_live_fields(item: Dict[str, Any]) -> Dict[str, Any]:
     if "CHAT_MESSAGES" not in item or not isinstance(item.get("CHAT_MESSAGES"), list):
         item["CHAT_MESSAGES"] = []
 
+    # Turnos estruturados de fala por participante
+    if "TRANSCRIPT_TURNS" not in item or not isinstance(item.get("TRANSCRIPT_TURNS"), list):
+        item["TRANSCRIPT_TURNS"] = []
+
     if not item.get("CREATED_AT"):
         item["CREATED_AT"] = item.get("DT_MEETING") or datetime.now().strftime("%Y-%m-%d")
 
@@ -203,8 +207,15 @@ def _atomic_write_json(path: str, data: Any):
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
                 f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_path, path)
+            # No Windows, os.replace pode disparar PermissionError/OSError se outro processo estiver lendo temporariamente
+            for attempt in range(5):
+                try:
+                    os.replace(temp_path, path)
+                    break
+                except (PermissionError, OSError):
+                    if attempt == 4:
+                        raise
+                    time.sleep(0.04 * (2 ** attempt))
         except Exception:
             if os.path.exists(temp_path):
                 try:
@@ -851,6 +862,7 @@ class MeetingRepository:
                 target_item["TRANSCRIPT_FINAL"] = consolidation["transcript_final"]
                 target_item["ANON_TRANSCRICAO"] = consolidation["transcript_final"]
                 target_item["transcription"] = consolidation["transcript_final"]
+                target_item["TRANSCRIPT_TURNS"] = consolidation.get("turns", [])
                 if "border_overlaps_audit" in consolidation:
                     target_item["BORDER_OVERLAPS_AUDIT"] = consolidation["border_overlaps_audit"]
 
@@ -887,6 +899,7 @@ class MeetingRepository:
                 "already_processed": already_processed,
                 "text": clean_text,
                 "transcript": target_item.get("ANON_TRANSCRICAO", ""),
+                "turns": target_item.get("TRANSCRIPT_TURNS", []),
                 "chunk_key": chunk_key
             }
 
