@@ -543,6 +543,35 @@ def switch_stt_model(payload: Dict[str, Any]):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/live/meetings/{meeting_id}/webrtc_config")
+def get_live_meeting_webrtc_config(meeting_id: str):
+    """
+    Retorna configuração de servidores ICE (STUN/TURN) para conexão WebRTC entre participantes.
+    Configurável via variáveis de ambiente WEBRTC_STUN_SERVER e WEBRTC_TURN_SERVER sem credenciais hardcoded.
+    """
+    stun_raw = os.getenv("WEBRTC_STUN_SERVER", "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302")
+    stun_urls = [s.strip() for s in stun_raw.split(",") if s.strip()]
+    ice_servers = [{"urls": stun_urls}]
+
+    turn_url = os.getenv("WEBRTC_TURN_SERVER", "").strip()
+    if turn_url:
+        turn_cfg: Dict[str, Any] = {"urls": turn_url}
+        u = os.getenv("WEBRTC_TURN_USERNAME", "").strip()
+        p = os.getenv("WEBRTC_TURN_PASSWORD", "").strip()
+        if u:
+            turn_cfg["username"] = u
+        if p:
+            turn_cfg["credential"] = p
+        ice_servers.append(turn_cfg)
+
+    return {
+        "status": "ok",
+        "meeting_id": meeting_id,
+        "ice_servers": ice_servers,
+        "iceServers": ice_servers
+    }
+
+
 @router.post("/live/meetings/{meeting_id}/transcript/audio")
 async def upload_live_meeting_audio_chunk(
     meeting_id: str,
@@ -651,6 +680,14 @@ async def upload_live_meeting_audio_chunk(
             meeting_id=meeting_id
         )
     except Exception as err:
+        repo.record_live_audio_chunk_failure(
+            meeting_id=meeting_id,
+            session_id=session_id,
+            sequence=sequence,
+            error_code="transcription_error",
+            error_message=str(err),
+            speaker_id=speaker_id
+        )
         return JSONResponse(
             status_code=500,
             content={
@@ -727,6 +764,29 @@ async def upload_live_meeting_audio_chunk(
         "no_speech_prob": result.get("no_speech_prob", 0.0),
         "already_processed": record_result.get("already_processed", False) if record_result else False
     }
+
+
+@router.post("/live/meetings/{meeting_id}/transcript/chunk_failure")
+def report_live_chunk_failure(
+    meeting_id: str,
+    session_id: str = Form(...),
+    sequence: int = Form(...),
+    error_code: str = Form("client_failure"),
+    error_message: str = Form(""),
+    speaker_id: Optional[str] = Form(None)
+):
+    """
+    Registra falha final de chunk notificada pelo cliente para reconciliação do diagnóstico.
+    """
+    repo.record_live_audio_chunk_failure(
+        meeting_id=meeting_id,
+        session_id=session_id,
+        sequence=sequence,
+        error_code=error_code,
+        error_message=error_message,
+        speaker_id=speaker_id
+    )
+    return {"ok": True, "meeting_id": meeting_id, "session_id": session_id, "sequence": sequence}
 
 
 @router.post("/live/meetings/{meeting_id}/recording")

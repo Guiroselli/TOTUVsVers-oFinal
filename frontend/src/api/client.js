@@ -189,6 +189,26 @@ export const api = {
     return await response.json();
   },
 
+  getWebRtcConfig: (meetingId) => request(`/api/live/meetings/${meetingId}/webrtc_config`),
+
+  reportChunkFailure: async (meetingId, { sessionId, sequence, errorCode = 'client_failure', errorMessage = '', speakerId = null } = {}) => {
+    const formData = new FormData();
+    formData.append('session_id', String(sessionId));
+    formData.append('sequence', String(sequence));
+    formData.append('error_code', String(errorCode));
+    formData.append('error_message', String(errorMessage));
+    if (speakerId) formData.append('speaker_id', String(speakerId));
+    try {
+      const response = await fetch(`${BASE_URL}/api/live/meetings/${meetingId}/transcript/chunk_failure`, {
+        method: 'POST',
+        body: formData,
+      });
+      return await response.json();
+    } catch {
+      return null;
+    }
+  },
+
   deleteLiveMeeting: (meetingId) =>
     request(`/api/live/meetings/${meetingId}`, {
       method: 'DELETE',

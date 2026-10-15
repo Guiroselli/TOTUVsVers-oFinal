@@ -227,14 +227,11 @@ def analyze_audio_signal(audio_bytes: bytes, filename_hint: str = "chunk.webm") 
                     signal_quality = "saturado"
                 else:
                     signal_quality = "suficiente"
-    except Exception:
-        # Se for fragmento bruto sem container header, estima heurística não invasiva
-        if audio_bytes_len < 1024:
-            audio_level = 0
-            signal_quality = "sem_fala"
-        else:
-            audio_level = min(80, max(15, int(audio_bytes_len / 500)))
-            signal_quality = "suficiente"
+    except Exception as exc:
+        # Se for fragmento onde a decodificação de áudio falhou, marca como sem fala para evitar crash no Whisper
+        audio_level = 0
+        signal_quality = "sem_fala"
+        logger.debug(f"Falha na análise acústica do container de áudio ({filename_hint}): {exc}")
 
     return {
         "bytes": audio_bytes_len,
@@ -381,10 +378,10 @@ def preprocess_and_analyze_audio(
             "snr_db_estimate": snr_db,
             "preprocessed": True
         }
-
-    except Exception:
+    except Exception as exc:
         audio_metrics = analyze_audio_signal(audio_bytes, filename_hint)
         audio_metrics["preprocessed"] = False
+        audio_metrics["decode_error"] = str(exc)
         return audio_bytes, audio_metrics
 
 
@@ -532,6 +529,7 @@ class STTService:
         self._is_downloading = False
         self.auto_download = auto_download
         self._session_headers: Dict[str, bytes] = {}
+        self._meeting_headers: Dict[str, bytes] = {}
         self._session_headers_lock = threading.Lock()
         self._session_contexts: Dict[str, str] = {}
         self._session_contexts_lock = threading.Lock()
@@ -1111,19 +1109,26 @@ class STTService:
         CLUSTER_MAGIC = b"\x1f\x43\xb6\x75"
         working_bytes = audio_bytes
 
-        if session_id:
-            with self._session_headers_lock:
-                if audio_bytes.startswith(EBML_MAGIC):
-                    cluster_idx = audio_bytes.find(CLUSTER_MAGIC)
-                    if cluster_idx > 0:
-                        self._session_headers[session_id] = audio_bytes[:cluster_idx]
-                        if len(self._session_headers) > 200:
-                            oldest = next(iter(self._session_headers))
-                            del self._session_headers[oldest]
-                elif session_id in self._session_headers:
-                    # Se o chunk não possui cabeçalho EBML e não é WAV/MP3, prefixa com o cabeçalho salvo da sessão
-                    if not (audio_bytes.startswith(b"RIFF") or audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb")):
-                        working_bytes = self._session_headers[session_id] + audio_bytes
+        with self._session_headers_lock:
+            if audio_bytes.startswith(EBML_MAGIC):
+                cluster_idx = audio_bytes.find(CLUSTER_MAGIC)
+                hdr = audio_bytes[:cluster_idx] if cluster_idx > 0 else audio_bytes[:min(len(audio_bytes), 4096)]
+                if session_id:
+                    self._session_headers[session_id] = hdr
+                    if len(self._session_headers) > 200:
+                        oldest = next(iter(self._session_headers))
+                        del self._session_headers[oldest]
+                if meeting_id:
+                    self._meeting_headers[str(meeting_id)] = hdr
+                    if len(self._meeting_headers) > 100:
+                        oldest_m = next(iter(self._meeting_headers))
+                        del self._meeting_headers[oldest_m]
+            else:
+                # Se o chunk não possui cabeçalho EBML e não é WAV/MP3, prefixa com o cabeçalho salvo da sessão ou da reunião
+                if not (audio_bytes.startswith(b"RIFF") or audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb")):
+                    saved_hdr = (self._session_headers.get(session_id) if session_id else None) or (self._meeting_headers.get(str(meeting_id)) if meeting_id else None)
+                    if saved_hdr:
+                        working_bytes = saved_hdr + audio_bytes
 
         # 2. Pré-processamento e medição acústica de sinal sobre o áudio remontado
         preprocessed_bytes, audio_metrics = preprocess_and_analyze_audio(working_bytes, filename_hint)
@@ -1171,12 +1176,13 @@ class STTService:
         try:
             # Serializa chunks da mesma reunião para evitar inversão ou concorrência desordenada
             with meeting_lock:
-                # Se não for mock e o chunk estiver silencioso / sem fala comprovada,
-                # não aciona inferência do Whisper para evitar alucinações ("que é" ou repetições no silêncio).
+                # Se não for mock e o chunk estiver silencioso / sem fala comprovada ou com erro de decodificação,
+                # não aciona inferência do Whisper para evitar alucinações ("que é" ou repetições no silêncio) ou crash.
                 if self._mock_model is None and (
                     audio_metrics.get("signal_quality") == "sem_fala" or
                     audio_metrics.get("audio_level", 0) <= 1 or
-                    not audio_metrics.get("speech_detected", True)
+                    not audio_metrics.get("speech_detected", True) or
+                    audio_metrics.get("decode_error") is not None
                 ):
                     elapsed_ms = round((time.perf_counter() - t_start) * 1000, 2)
                     self.last_processing_time_ms = elapsed_ms

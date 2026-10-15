@@ -170,18 +170,120 @@ async def analyze_text(request: TranscriptionRequest):
 
 
 from collections import defaultdict
-from typing import Set
+from typing import Set, List, Tuple
 
 class MeetingConnectionManager:
-    """Gerencia conexões WebSocket isoladas estritamente por meeting_id."""
+    """Gerencia conexões WebSocket, pares WebRTC e sinalização isolados estritamente por meeting_id."""
     def __init__(self):
         self._connections: Dict[str, Set[WebSocket]] = defaultdict(set)
+        # meeting_id -> { participant_id: { "ws": ws, "name": name, "is_muted": bool, "is_cam_off": bool, "joined_at": str } }
+        self._peers: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
+        # websocket -> (meeting_id, participant_id)
+        self._ws_to_peer: Dict[WebSocket, Tuple[str, str]] = {}
         self._lock = asyncio.Lock()
 
     async def connect(self, meeting_id: str, websocket: WebSocket):
         await websocket.accept()
         async with self._lock:
             self._connections[meeting_id].add(websocket)
+
+    async def register_peer(
+        self,
+        meeting_id: str,
+        participant_id: str,
+        name: str,
+        is_muted: bool,
+        is_cam_off: bool,
+        websocket: WebSocket
+    ):
+        async with self._lock:
+            self._peers[meeting_id][participant_id] = {
+                "ws": websocket,
+                "participant_id": participant_id,
+                "name": name,
+                "is_muted": is_muted,
+                "is_cam_off": is_cam_off,
+                "joined_at": datetime.now().isoformat()
+            }
+            self._ws_to_peer[websocket] = (meeting_id, participant_id)
+
+    async def update_peer_state(
+        self,
+        meeting_id: str,
+        participant_id: str,
+        is_muted: Optional[bool] = None,
+        is_cam_off: Optional[bool] = None,
+        name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        async with self._lock:
+            if meeting_id in self._peers and participant_id in self._peers[meeting_id]:
+                peer = self._peers[meeting_id][participant_id]
+                if is_muted is not None:
+                    peer["is_muted"] = is_muted
+                if is_cam_off is not None:
+                    peer["is_cam_off"] = is_cam_off
+                if name is not None and name.strip():
+                    peer["name"] = name.strip()
+                return {
+                    "participant_id": participant_id,
+                    "name": peer["name"],
+                    "is_muted": peer["is_muted"],
+                    "is_cam_off": peer["is_cam_off"]
+                }
+            return None
+
+    async def unregister_peer(self, websocket: WebSocket) -> Optional[Tuple[str, str, str]]:
+        """Remove o peer associado a este websocket e retorna (meeting_id, participant_id, name) se existia."""
+        async with self._lock:
+            info = self._ws_to_peer.pop(websocket, None)
+            if not info:
+                return None
+            meeting_id, participant_id = info
+            name = ""
+            if meeting_id in self._peers and participant_id in self._peers[meeting_id]:
+                pdata = self._peers[meeting_id].pop(participant_id)
+                name = pdata.get("name", "")
+                if not self._peers[meeting_id]:
+                    del self._peers[meeting_id]
+            return meeting_id, participant_id, name
+
+    async def get_peers_in_room(self, meeting_id: str, exclude_participant_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        async with self._lock:
+            peers_dict = self._peers.get(meeting_id, {})
+            result = []
+            for pid, pdata in peers_dict.items():
+                if pid != exclude_participant_id:
+                    result.append({
+                        "participant_id": pid,
+                        "name": pdata.get("name", "Participante"),
+                        "is_muted": pdata.get("is_muted", False),
+                        "is_cam_off": pdata.get("is_cam_off", False),
+                        "joined_at": pdata.get("joined_at")
+                    })
+            return result
+
+    async def send_to_peer(self, meeting_id: str, target_participant_id: str, message: dict):
+        ws = None
+        async with self._lock:
+            peer = self._peers.get(meeting_id, {}).get(target_participant_id)
+            if peer:
+                ws = peer.get("ws")
+        if ws:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                pass
+
+    async def broadcast_to_meeting(self, meeting_id: str, message: dict, exclude_socket: Optional[WebSocket] = None):
+        async with self._lock:
+            sockets = list(self._connections.get(meeting_id, set()))
+        for ws in sockets:
+            if ws is exclude_socket:
+                continue
+            try:
+                await ws.send_json(message)
+            except Exception:
+                pass
 
     async def disconnect(self, meeting_id: str, websocket: WebSocket):
         async with self._lock:
@@ -190,20 +292,11 @@ class MeetingConnectionManager:
                 if not self._connections[meeting_id]:
                     del self._connections[meeting_id]
 
-    async def broadcast_to_meeting(self, meeting_id: str, message: dict):
-        async with self._lock:
-            sockets = list(self._connections.get(meeting_id, set()))
-        for ws in sockets:
-            try:
-                await ws.send_json(message)
-            except Exception:
-                pass
-
 ws_manager = MeetingConnectionManager()
 
 
 async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, session_id: Optional[str] = None):
-    """Lógica central de WebSocket com isolamento estrito por reunião."""
+    """Lógica central de WebSocket com isolamento estrito por reunião e sinalização WebRTC."""
     await ws_manager.connect(meeting_id, websocket)
     await websocket.send_json({
         "type": "connected",
@@ -246,7 +339,72 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
                 try:
                     payload = json.loads(message["text"])
                     p_type = payload.get("type")
-                    if p_type == "transcript":
+
+                    if p_type == "join":
+                        # Identificação do participante e sinalização de presença na sala
+                        pid = str(payload.get("participant_id") or uuid.uuid4())
+                        pname = str(payload.get("name") or "Participante").strip() or "Participante"
+                        is_muted = bool(payload.get("is_muted", False))
+                        is_cam_off = bool(payload.get("is_cam_off", False))
+
+                        await ws_manager.register_peer(meeting_id, pid, pname, is_muted, is_cam_off, websocket)
+                        other_peers = await ws_manager.get_peers_in_room(meeting_id, exclude_participant_id=pid)
+
+                        # Envia estado da sala para o participante recém-conectado
+                        await websocket.send_json({
+                            "type": "room_state",
+                            "meeting_id": meeting_id,
+                            "participant_id": pid,
+                            "peers": other_peers
+                        })
+
+                        # Notifica os demais participantes sobre a entrada deste peer
+                        await ws_manager.broadcast_to_meeting(meeting_id, {
+                            "type": "peer_joined",
+                            "meeting_id": meeting_id,
+                            "peer": {
+                                "participant_id": pid,
+                                "name": pname,
+                                "is_muted": is_muted,
+                                "is_cam_off": is_cam_off
+                            }
+                        }, exclude_socket=websocket)
+
+                    elif p_type == "webrtc_signal":
+                        # Roteamento seguro de oferta, resposta SDP ou candidato ICE entre peers
+                        target_id = payload.get("target_id")
+                        sender_id = payload.get("sender_id")
+                        signal = payload.get("signal")
+                        if target_id and signal:
+                            await ws_manager.send_to_peer(meeting_id, target_id, {
+                                "type": "webrtc_signal",
+                                "meeting_id": meeting_id,
+                                "sender_id": sender_id,
+                                "signal": signal
+                            })
+
+                    elif p_type == "peer_state":
+                        # Atualização de estado do participante (mute, câmera, nome)
+                        pid = payload.get("participant_id")
+                        if pid:
+                            updated = await ws_manager.update_peer_state(
+                                meeting_id,
+                                pid,
+                                is_muted=payload.get("is_muted"),
+                                is_cam_off=payload.get("is_cam_off"),
+                                name=payload.get("name")
+                            )
+                            if updated:
+                                await ws_manager.broadcast_to_meeting(meeting_id, {
+                                    "type": "peer_state_updated",
+                                    "meeting_id": meeting_id,
+                                    "participant_id": pid,
+                                    "is_muted": updated["is_muted"],
+                                    "is_cam_off": updated["is_cam_off"],
+                                    "name": updated["name"]
+                                }, exclude_socket=websocket)
+
+                    elif p_type == "transcript":
                         txt = payload.get("text", "")
                         is_inc = payload.get("is_incremental", False)
                         meeting_repo.update_live_transcript(meeting_id, txt, is_incremental=is_inc)
@@ -271,6 +429,15 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
     except Exception as e:
         print(f"Erro na conexão WebSocket da reunião {meeting_id}: {e}")
     finally:
+        peer_info = await ws_manager.unregister_peer(websocket)
+        if peer_info:
+            m_id, pid, pname = peer_info
+            await ws_manager.broadcast_to_meeting(m_id, {
+                "type": "peer_left",
+                "meeting_id": m_id,
+                "participant_id": pid,
+                "name": pname
+            })
         await ws_manager.disconnect(meeting_id, websocket)
 
 

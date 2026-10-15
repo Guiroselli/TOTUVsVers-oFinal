@@ -812,7 +812,7 @@ class MeetingRepository:
                 return None
 
             processed_chunks = target_item.setdefault("CHUNKS_PROCESSADOS", {})
-            chunk_key = f"{session_id}:{sequence}"
+            chunk_key = f"{session_id}:{speaker_id}:{sequence}" if speaker_id else f"{session_id}:{sequence}"
 
             clean_text = (text or "").strip()
             already_processed = chunk_key in processed_chunks
@@ -886,8 +886,38 @@ class MeetingRepository:
                 "meeting": _normalize_live_fields(_apply_pdf_state(target_item)),
                 "already_processed": already_processed,
                 "text": clean_text,
-                "transcript": target_item.get("ANON_TRANSCRICAO", "")
+                "transcript": target_item.get("ANON_TRANSCRICAO", ""),
+                "chunk_key": chunk_key
             }
+
+    def record_live_audio_chunk_failure(
+        self,
+        meeting_id: str,
+        session_id: str,
+        sequence: int,
+        error_code: str = "generic_error",
+        error_message: str = "",
+        speaker_id: Optional[str] = None
+    ) -> None:
+        """Registra falha definitiva de chunk para auditoria e reconciliação exata no diagnóstico."""
+        with self._lock:
+            data = _read_json(self.dataset_path, [])
+            for item in data:
+                if str(item.get("ID_MEETING")) == str(meeting_id):
+                    failures = item.setdefault("CHUNKS_FALHOS", {})
+                    f_key = f"{session_id}:{speaker_id}:{sequence}" if speaker_id else f"{session_id}:{sequence}"
+                    if f_key not in failures:
+                        failures[f_key] = {
+                            "session_id": str(session_id),
+                            "sequence": int(sequence),
+                            "speaker_id": speaker_id,
+                            "error_code": error_code,
+                            "error_message": error_message,
+                            "failed_at": datetime.now().isoformat()
+                        }
+                        item["CHUNKS_FAILED_COUNT"] = len(failures)
+                        _atomic_write_json(self.dataset_path, data)
+                    break
 
     def reprocess_live_meeting(
         self,
@@ -1553,14 +1583,28 @@ class MeetingRepository:
             stt_srv = get_stt_service()
             stt_status = stt_srv.get_status()
 
+            confirmed_count = len(target.get("CHUNKS_PROCESSADOS", {}))
+            failed_count = target.get("CHUNKS_FAILED_COUNT", len(target.get("CHUNKS_FALHOS", {})))
+            pending_count = stt_srv.get_meeting_pending_count(str(meeting_id))
+            captured_count = confirmed_count + failed_count + pending_count
+
             return {
                 "meeting_id": str(meeting_id),
+                "chunks_captured": captured_count,
+                "chunks_confirmed": confirmed_count,
+                "chunks_failed": failed_count,
+                "chunks_pending": pending_count,
+                "reconciliation_ok": captured_count == (confirmed_count + failed_count + pending_count),
                 "audio": {
                     "fonte": target.get("FONTE_AUDIO", "Microfone Padrão"),
                     "status_meeting": target.get("STATUS_MEETING", "agendada"),
                     "last_signal_quality": last_chunk.get("signal_quality", "sem_fala" if total_chunks == 0 else "suficiente"),
                     "last_audio_level": last_chunk.get("audio_level", 0),
                     "total_chunks_received": total_chunks,
+                    "chunks_captured": captured_count,
+                    "chunks_confirmed": confirmed_count,
+                    "chunks_failed": failed_count,
+                    "chunks_pending": pending_count,
                 },
                 "stt": {
                     "provider": stt_status.get("provider", "faster_whisper"),

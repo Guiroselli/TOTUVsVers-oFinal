@@ -5444,3 +5444,260 @@ input[type="text"].command-search-input::placeholder,
   cursor: not-allowed;
 }
 
+/* =========================================================================
+   GRADE DE PARTICIPANTES ESTILO MICROSOFT TEAMS (WEBRTC MESH & ÁUDIO REAL)
+   ========================================================================= */
+
+.autoplay-unblock-banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(30, 41, 59, 0.96);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  border-radius: 12px;
+  padding: 8px 18px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  font-size: 13px;
+  color: #f8fafc;
+  max-width: 92vw;
+  animation: fadeInDown 0.25s ease-out;
+}
+
+.autoplay-unblock-banner .unblock-btn {
+  background: #f59e0b;
+  color: #0f172a;
+  border: none;
+  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.autoplay-unblock-banner .unblock-btn:hover {
+  background: #d97706;
+}
+
+.participants-grid-container {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  gap: 12px;
+  box-sizing: border-box;
+  flex: 1;
+}
+
+/* 1 Participante (Local): tela cheia */
+.participants-grid-container.count-1 {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
+}
+
+/* 2 Participantes: 50/50 lado a lado no desktop, empilhado no mobile */
+.participants-grid-container.count-2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr;
+}
+
+@media (max-width: 768px) {
+  .participants-grid-container.count-2 {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+
+/* 3 ou 4 Participantes: Grade 2x2 */
+.participants-grid-container.count-3,
+.participants-grid-container.count-4 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+}
+
+/* 5 ou 6 Participantes: Grade 3x2 */
+.participants-grid-container.count-5,
+.participants-grid-container.count-6 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr 1fr;
+}
+
+@media (max-width: 768px) {
+  .participants-grid-container.count-3,
+  .participants-grid-container.count-4,
+  .participants-grid-container.count-5,
+  .participants-grid-container.count-6 {
+    grid-template-columns: 1fr;
+    grid-auto-rows: minmax(180px, 1fr);
+  }
+}
+
+.participant-card {
+  position: relative;
+  background: var(--pf-surface-elevated, #1e293b);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Indicador de fala ativa (borda verde pulsante estilo Teams) */
+.participant-card.speaking-pulse {
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.4), 0 0 24px rgba(16, 185, 129, 0.45);
+}
+
+.participant-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.participant-avatar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.95) 100%);
+}
+
+.participant-avatar-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.participant-avatar-circle.avatar-speaking {
+  box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.3), 0 0 24px rgba(16, 185, 129, 0.6);
+  transform: scale(1.05);
+}
+
+.speaking-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981;
+  padding: 3px 8px;
+  border-radius: 14px;
+  font-size: 11px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+  z-index: 12;
+}
+
+.participant-card-bottom-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  z-index: 10;
+}
+
+.participant-name-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.participant-display-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.local-tag {
+  font-size: 11px;
+  color: #38bdf8;
+  font-weight: 500;
+}
+
+.edit-name-btn {
+  background: transparent;
+  border: none;
+  color: #38bdf8;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0 4px;
+}
+
+.participant-status-icons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.status-badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.status-badge-icon.muted {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+@media (max-width: 480px) {
+  .participants-grid-container {
+    padding: 6px;
+    gap: 8px;
+  }
+  .participant-avatar-circle {
+    width: 60px;
+    height: 60px;
+    font-size: 22px;
+  }
+  .participant-display-name {
+    font-size: 11px;
+  }
+}
+
+
+
