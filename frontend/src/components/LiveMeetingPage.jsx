@@ -52,6 +52,12 @@ export default function LiveMeetingPage({
   const [activeMeetingId, setActiveMeetingId] = useState(initialMeetingId);
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedAudioDeviceId, setSelectedAudioDeviceId] = useState('');
+  const [audioOutputDevices, setAudioOutputDevices] = useState([]);
+  const [selectedAudioOutputDeviceId, setSelectedAudioOutputDeviceId] = useState('default');
+  const [meetingOutputVolume, setMeetingOutputVolume] = useState(1);
+  const [isMeetingOutputMuted, setIsMeetingOutputMuted] = useState(false);
+  const [remoteAudioPlaybackStatus, setRemoteAudioPlaybackStatus] = useState('nenhum_audio'); // 'nenhum_audio' | 'faixa_recebida' | 'silenciado' | 'bloqueado_autoplay' | 'dispositivo_indisponivel' | 'reproduzindo'
+  const supportsSinkId = useMemo(() => typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype, []);
 
   // Filtros da central de reuniões
   const [searchQuery, setSearchQuery] = useState('');
@@ -117,14 +123,19 @@ export default function LiveMeetingPage({
   });
   const [participantId] = useState(() => {
     try {
-      let pid = sessionStorage.getItem('pf_participant_id');
+      if (typeof window === 'undefined') return 'usr_local';
+      if (!window.__PF_TAB_ID__) {
+        window.__PF_TAB_ID__ = 'tab_' + Math.random().toString(36).substring(2, 9);
+      }
+      const tabKey = `pf_participant_id_${window.__PF_TAB_ID__}`;
+      let pid = sessionStorage.getItem(tabKey);
       if (!pid) {
         pid = 'usr_' + Math.random().toString(36).substring(2, 9);
-        sessionStorage.setItem('pf_participant_id', pid);
+        sessionStorage.setItem(tabKey, pid);
       }
       return pid;
     } catch {
-      return 'usr_local';
+      return 'usr_' + Math.random().toString(36).substring(2, 9);
     }
   });
   const [isMixedAudio, setIsMixedAudio] = useState(() => {
@@ -253,6 +264,7 @@ export default function LiveMeetingPage({
   const remoteAudioContextRef = useRef(null);
   const wsRef = useRef(null);
   const iceServersRef = useRef([{ urls: 'stun:stun.l.google.com:19302' }]);
+  const iceCandidateQueuesRef = useRef({});
   const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
   const [isEditingInlineName, setIsEditingInlineName] = useState(false);
   const [inlineNameValue, setInlineNameValue] = useState('');
@@ -395,6 +407,38 @@ export default function LiveMeetingPage({
     }
   }, [isMuted, isCamOff]);
 
+  // Sincroniza dinamicamente trilhas de áudio e vídeo locais para todas as conexões WebRTC ativas
+  const syncLocalStreamToPeers = useCallback((stream) => {
+    if (!stream) return;
+    const audioTrack = stream.getAudioTracks()[0] || null;
+    const videoTrack = stream.getVideoTracks()[0] || null;
+
+    Object.entries(peerConnectionsRef.current).forEach(([targetId, pc]) => {
+      if (!pc || pc.signalingState === 'closed') return;
+      try {
+        const senders = pc.getSenders();
+        if (audioTrack) {
+          const aSender = senders.find((s) => s.track?.kind === 'audio' || s.kind === 'audio');
+          if (aSender) {
+            aSender.replaceTrack(audioTrack).catch(() => {});
+          } else {
+            try { pc.addTrack(audioTrack, stream); } catch {}
+          }
+        }
+        if (videoTrack) {
+          const vSender = senders.find((s) => s.track?.kind === 'video' || s.kind === 'video');
+          if (vSender) {
+            vSender.replaceTrack(videoTrack).catch(() => {});
+          } else {
+            try { pc.addTrack(videoTrack, stream); } catch {}
+          }
+        }
+      } catch (err) {
+        console.warn(`[WebRTC] Falha ao sincronizar trilhas com peer ${targetId}:`, err);
+      }
+    });
+  }, []);
+
   const latencyPercentiles = useMemo(() => {
     const history = backendChunkStats.latencyHistory || [];
     if (history.length === 0) return { p50: 0, p95: 0 };
@@ -411,8 +455,10 @@ export default function LiveMeetingPage({
       if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const audioInputs = devices.filter((d) => d.kind === 'audioinput');
+        const audioOutputs = devices.filter((d) => d.kind === 'audiooutput');
         const videoInputs = devices.filter((d) => d.kind === 'videoinput');
         setAudioDevices(audioInputs);
+        setAudioOutputDevices(audioOutputs);
         setVideoDevices(videoInputs);
         if (audioInputs.length > 0) {
           setSelectedAudioDeviceId((prev) => {
@@ -422,11 +468,106 @@ export default function LiveMeetingPage({
             return valid ? valid.deviceId : (audioInputs[0].deviceId || 'default');
           });
         }
+        if (audioOutputs.length > 0) {
+          setSelectedAudioOutputDeviceId((prev) => {
+            const exists = audioOutputs.some((d) => d.deviceId === prev);
+            if (exists && prev) return prev;
+            return audioOutputs[0].deviceId || 'default';
+          });
+        }
       }
     } catch (e) {
       console.warn('Erro ao listar dispositivos de áudio:', e);
     }
   }, []);
+
+  // Seleção dinâmica do dispositivo de saída de áudio com fallback gracioso
+  const handleSelectAudioOutputDevice = useCallback(async (deviceId) => {
+    setSelectedAudioOutputDeviceId(deviceId);
+    if (!deviceId) return;
+    try {
+      for (const el of Object.values(remoteAudioRefs.current)) {
+        if (el && typeof el.setSinkId === 'function') {
+          await el.setSinkId(deviceId);
+        }
+      }
+    } catch (err) {
+      console.warn('Erro ao alternar dispositivo de saída de áudio:', err);
+    }
+  }, []);
+
+  // Teste de saída de áudio isolado: tom curto sintético (não vaza para STT nem para outros participantes)
+  const handleTestAudioOutput = useCallback(async () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        alert('Web Audio API não suportada neste navegador.');
+        return;
+      }
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      if (selectedAudioOutputDeviceId && selectedAudioOutputDeviceId !== 'default' && typeof ctx.setSinkId === 'function') {
+        try { await ctx.setSinkId(selectedAudioOutputDeviceId); } catch {}
+      }
+      const now = ctx.currentTime;
+      // 1º Tom (440Hz - Lá suave)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(440, now);
+      gain1.gain.setValueAtTime(0.2, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.22);
+
+      // 2º Tom (880Hz - Lá agudo harmônico)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(880, now + 0.25);
+      gain2.gain.setValueAtTime(0.2, now + 0.25);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.25);
+      osc2.stop(now + 0.5);
+
+      setTimeout(() => {
+        try { ctx.close(); } catch {}
+      }, 700);
+    } catch (err) {
+      console.warn('Falha no teste local de áudio:', err);
+    }
+  }, [selectedAudioOutputDeviceId]);
+
+  // Controle de volume de saída da reunião (independente de microfone e STT)
+  const handleChangeOutputVolume = useCallback((val) => {
+    const vol = Math.max(0, Math.min(1, parseFloat(val) || 0));
+    setMeetingOutputVolume(vol);
+    Object.values(remoteAudioRefs.current).forEach((el) => {
+      if (el) {
+        el.volume = isMeetingOutputMuted ? 0 : vol;
+      }
+    });
+  }, [isMeetingOutputMuted]);
+
+  // Mudo da saída da reunião (não afeta captura nem transcrição)
+  const handleToggleMeetingOutputMute = useCallback(() => {
+    setIsMeetingOutputMuted((prev) => {
+      const next = !prev;
+      Object.values(remoteAudioRefs.current).forEach((el) => {
+        if (el) {
+          el.muted = next;
+          el.volume = next ? 0 : meetingOutputVolume;
+        }
+      });
+      return next;
+    });
+  }, [meetingOutputVolume]);
 
   useEffect(() => {
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -2038,6 +2179,7 @@ RTF: ${backendChunkStats.rtf || 0}
     }
 
     streamRef.current = stream;
+    syncLocalStreamToPeers(stream);
     isRecordingRef.current = true;
     setIsRecording(true);
 
@@ -2119,6 +2261,7 @@ RTF: ${backendChunkStats.rtf || 0}
       if (nextState && videoRef.current) {
         videoRef.current.play().catch(() => {});
       }
+      syncLocalStreamToPeers(streamRef.current);
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
           type: 'peer_state',
@@ -2148,20 +2291,7 @@ RTF: ${backendChunkStats.rtf || 0}
             setIsCamOff(true);
             setVideoStatus('ended');
           };
-          // Propaga track de vídeo para os peerConnections existentes
-          Object.values(peerConnectionsRef.current).forEach((pc) => {
-            try {
-              const senders = pc.getSenders();
-              const vSender = senders.find((s) => s.track && s.track.kind === 'video');
-              if (vSender) {
-                vSender.replaceTrack(newVideoTrack);
-              } else {
-                pc.addTrack(newVideoTrack, streamRef.current);
-              }
-            } catch (e) {
-              console.warn('[WebRTC] Erro ao sincronizar nova trilha de vídeo:', e);
-            }
-          });
+          syncLocalStreamToPeers(streamRef.current);
           if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
               type: 'peer_state',
@@ -2255,9 +2385,29 @@ RTF: ${backendChunkStats.rtf || 0}
         const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
         peerConnectionsRef.current[targetId] = pc;
 
+        // Garante transceivers bidirecionais desde a oferta inicial para áudio e vídeo
+        try {
+          if (!pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio')) {
+            pc.addTransceiver('audio', { direction: 'sendrecv' });
+          }
+        } catch {}
+        try {
+          if (!pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'video')) {
+            pc.addTransceiver('video', { direction: 'sendrecv' });
+          }
+        } catch {}
+
         if (streamRef.current) {
           streamRef.current.getTracks().forEach((track) => {
-            pc.addTrack(track, streamRef.current);
+            try {
+              const senders = pc.getSenders();
+              const s = senders.find((snd) => snd.track?.kind === track.kind || snd.kind === track.kind);
+              if (s) {
+                s.replaceTrack(track).catch(() => {});
+              } else {
+                pc.addTrack(track, streamRef.current);
+              }
+            } catch {}
           });
         }
 
@@ -2291,17 +2441,31 @@ RTF: ${backendChunkStats.rtf || 0}
 
           setPeers((prev) =>
             prev.map((p) =>
-              p.participant_id === targetId ? { ...p, stream: remoteStream } : p
+              p.participant_id === targetId ? {
+                ...p,
+                stream: remoteStream,
+                has_video: remoteStream.getVideoTracks().length > 0 && remoteStream.getVideoTracks().some((t) => t.enabled),
+                has_audio: remoteStream.getAudioTracks().length > 0
+              } : p
             )
           );
 
           if (event.track.kind === 'audio') {
+            setRemoteAudioPlaybackStatus('faixa_recebida');
             const audioEl = remoteAudioRefs.current[targetId];
             if (audioEl) {
               audioEl.srcObject = remoteStream;
-              audioEl.muted = false;
-              audioEl.play().catch((err) => {
+              if (selectedAudioOutputDeviceId && selectedAudioOutputDeviceId !== 'default' && supportsSinkId && typeof audioEl.setSinkId === 'function') {
+                audioEl.setSinkId(selectedAudioOutputDeviceId).catch(() => {});
+              }
+              audioEl.volume = isMeetingOutputMuted ? 0 : meetingOutputVolume;
+              audioEl.muted = isMeetingOutputMuted;
+              audioEl.play().then(() => {
+                setRemoteAudioPlaybackStatus('reproduzindo');
+                setAudioAutoplayBlocked(false);
+              }).catch((err) => {
                 console.warn('[WebRTC] Reprodução de áudio bloqueada pelo navegador:', err);
+                setRemoteAudioPlaybackStatus('bloqueado_autoplay');
                 setAudioAutoplayBlocked(true);
               });
             }
@@ -2370,6 +2534,12 @@ RTF: ${backendChunkStats.rtf || 0}
 
             if (signal.type === 'offer') {
               await pc.setRemoteDescription(new RTCSessionDescription(signal));
+              // Descarrega candidatos ICE acumulados antes de setRemoteDescription
+              const queued = iceCandidateQueuesRef.current[senderId] || [];
+              while (queued.length > 0) {
+                const c = queued.shift();
+                try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+              }
               const answer = await pc.createAnswer();
               await pc.setLocalDescription(answer);
               if (ws.readyState === WebSocket.OPEN) {
@@ -2382,11 +2552,23 @@ RTF: ${backendChunkStats.rtf || 0}
               }
             } else if (signal.type === 'answer') {
               await pc.setRemoteDescription(new RTCSessionDescription(signal));
+              const queued = iceCandidateQueuesRef.current[senderId] || [];
+              while (queued.length > 0) {
+                const c = queued.shift();
+                try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+              }
             } else if (signal.type === 'candidate' && signal.candidate) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-              } catch (e) {
-                console.warn('[WebRTC] Erro ao adicionar ICE candidate:', e);
+              if (pc.remoteDescription && pc.remoteDescription.type) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                } catch (e) {
+                  console.warn('[WebRTC] Erro ao adicionar ICE candidate:', e);
+                }
+              } else {
+                if (!iceCandidateQueuesRef.current[senderId]) {
+                  iceCandidateQueuesRef.current[senderId] = [];
+                }
+                iceCandidateQueuesRef.current[senderId].push(signal.candidate);
               }
             }
           } else if (msg.type === 'peer_state_updated') {
@@ -2412,10 +2594,21 @@ RTF: ${backendChunkStats.rtf || 0}
             if (remoteAudioRefs.current[participant_id]) {
               delete remoteAudioRefs.current[participant_id];
             }
+            delete iceCandidateQueuesRef.current[participant_id];
             setPeers((prev) => prev.filter((p) => p.participant_id !== participant_id));
           } else if (msg.type === 'transcript_update') {
             if (msg.text) {
               setTranscription(msg.text);
+              finalTranscriptRef.current = msg.text;
+            }
+            if (msg.normalized) {
+              setTranscriptNormalized(msg.normalized);
+            }
+            if (msg.raw) {
+              setTranscriptRaw(msg.raw);
+            }
+            if (Array.isArray(msg.turns)) {
+              setTranscriptTurns(msg.turns);
             }
           }
         } catch (e) {
@@ -3811,9 +4004,21 @@ RTF: ${backendChunkStats.rtf || 0}
                     if (el) {
                       remoteAudioRefs.current[peer.participant_id] = el;
                       if (peer.stream) {
-                        el.srcObject = peer.stream;
-                        el.muted = false;
-                        el.play().catch(() => setAudioAutoplayBlocked(true));
+                        if (el.srcObject !== peer.stream) {
+                          el.srcObject = peer.stream;
+                        }
+                        if (selectedAudioOutputDeviceId && selectedAudioOutputDeviceId !== 'default' && supportsSinkId && typeof el.setSinkId === 'function') {
+                          el.setSinkId(selectedAudioOutputDeviceId).catch(() => {});
+                        }
+                        el.volume = isMeetingOutputMuted ? 0 : meetingOutputVolume;
+                        el.muted = isMeetingOutputMuted;
+                        el.play().then(() => {
+                          setRemoteAudioPlaybackStatus('reproduzindo');
+                          setAudioAutoplayBlocked(false);
+                        }).catch(() => {
+                          setRemoteAudioPlaybackStatus('bloqueado_autoplay');
+                          setAudioAutoplayBlocked(true);
+                        });
                       }
                     }
                   }}
@@ -3894,10 +4099,13 @@ RTF: ${backendChunkStats.rtf || 0}
                         <video
                           autoPlay
                           playsInline
-                          muted={false}
+                          muted={true}
                           ref={(el) => {
                             if (el && peer.stream) {
-                              el.srcObject = peer.stream;
+                              if (el.srcObject !== peer.stream) {
+                                el.srcObject = peer.stream;
+                              }
+                              el.play().catch(() => {});
                             }
                           }}
                           className="participant-video"
@@ -3924,6 +4132,9 @@ RTF: ${backendChunkStats.rtf || 0}
                         <div className="participant-name-container">
                           <span className="participant-display-name">
                             {peer.name || 'Participante'}
+                          </span>
+                          <span className="participant-conn-status" style={{ fontSize: '10px', color: peer.stream ? '#10b981' : '#94a3b8', marginLeft: '6px' }}>
+                            {peer.stream ? '• Conectado' : '• Conectando...'}
                           </span>
                         </div>
                         <div className="participant-status-icons">
@@ -4721,6 +4932,86 @@ RTF: ${backendChunkStats.rtf || 0}
                     </select>
                   </div>
                 )}
+
+                {/* 3.1 Dispositivo de Saída de Áudio & Alto-falante */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <label style={{ fontWeight: 700, color: 'var(--text-main)', margin: 0 }}>
+                      Saída de Áudio (Alto-falante / Fone)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleTestAudioOutput}
+                      className="btn btn-secondary"
+                      style={{ fontSize: '11px', padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                      title="Reproduz um som curto de teste no dispositivo de saída selecionado sem enviar para a reunião"
+                    >
+                      <Volume2 size={12} color="var(--primary-color)" /> Testar áudio
+                    </button>
+                  </div>
+                  {supportsSinkId && audioOutputDevices.length > 0 ? (
+                    <select
+                      value={selectedAudioOutputDeviceId}
+                      onChange={(e) => handleSelectAudioOutputDevice(e.target.value)}
+                      className="form-select"
+                      style={{ width: '100%', fontSize: '12px', padding: '8px' }}
+                    >
+                      {audioOutputDevices.map((d, idx) => (
+                        <option key={d.deviceId || idx} value={d.deviceId}>
+                          {d.label || `Alto-falante / Saída ${idx + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.04)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                      A saída de áudio é gerenciada automaticamente pelo navegador ou sistema operacional (alto-falante, fone de ouvido ou AirPlay).
+                    </div>
+                  )}
+
+                  {/* Volume da Reunião e Status de Reprodução Remota */}
+                  <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '11.5px', color: 'var(--text-muted)' }}>Volume da Reunião:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button
+                          type="button"
+                          onClick={handleToggleMeetingOutputMute}
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px', color: isMeetingOutputMuted ? '#ef4444' : 'var(--text-main)' }}
+                          title={isMeetingOutputMuted ? 'Desmutar saída da reunião' : 'Silenciar áudio recebido'}
+                        >
+                          {isMeetingOutputMuted ? <MicOff size={14} color="#ef4444" /> : <Volume2 size={14} />}
+                        </button>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={isMeetingOutputMuted ? 0 : meetingOutputVolume}
+                          onChange={(e) => handleChangeOutputVolume(e.target.value)}
+                          style={{ width: '100px', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right' }}>
+                          {isMeetingOutputMuted ? 'Mudo' : `${Math.round(meetingOutputVolume * 100)}%`}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      <span>Status da reprodução remota:</span>
+                      <span style={{
+                        fontWeight: 600,
+                        color: remoteAudioPlaybackStatus === 'reproduzindo' ? '#10b981' :
+                               remoteAudioPlaybackStatus === 'bloqueado_autoplay' ? '#f59e0b' :
+                               remoteAudioPlaybackStatus === 'silenciado' ? '#ef4444' : '#94a3b8'
+                      }}>
+                        {remoteAudioPlaybackStatus === 'reproduzindo' ? '● Reproduzindo normalmente' :
+                         remoteAudioPlaybackStatus === 'faixa_recebida' ? '● Faixa recebida (conectando áudio)' :
+                         remoteAudioPlaybackStatus === 'bloqueado_autoplay' ? '▲ Bloqueado pelo navegador' :
+                         remoteAudioPlaybackStatus === 'silenciado' ? '■ Áudio silenciado' : '○ Nenhum áudio remoto ativo'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
                 {/* 4. Sensibilidade do VAD */}
                 <div>

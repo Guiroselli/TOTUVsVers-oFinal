@@ -216,4 +216,37 @@ describe('Live Meeting Room WebRTC Audio, Participant Grid, Diagnostics & Mobile
     assert.ok(css.includes('[data-theme="dark"] .meeting-controls-dock'), 'Must define dark theme dock styling');
     assert.ok(css.includes('[data-theme="light"] .meeting-controls-dock'), 'Must define light theme dock styling');
   });
+
+  // 19. Audio Output Controls, Volume and Local Audio Test Tone
+  test('19. LiveMeetingPage provides audio output device selection, volume/mute and isolated audio test tone', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+
+    assert.ok(code.includes('handleTestAudioOutput'), 'Must implement handleTestAudioOutput');
+    assert.ok(code.includes('handleSelectAudioOutputDevice'), 'Must implement handleSelectAudioOutputDevice');
+    assert.ok(code.includes('handleToggleMeetingOutputMute'), 'Must implement handleToggleMeetingOutputMute');
+    assert.ok(code.includes('remoteAudioPlaybackStatus'), 'Must track remoteAudioPlaybackStatus');
+    assert.ok(code.includes('supportsSinkId'), 'Must feature-detect setSinkId support');
+    assert.ok(code.includes('audioOutputDevices'), 'Must maintain list of audiooutput devices');
+  });
+
+  // 20. WebRTC Transceiver Negotiation & Dynamic Local Track Synchronization
+  test('20. LiveMeetingPage configures WebRTC transceivers and synchronizes tracks dynamically across peers', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+
+    assert.ok(code.includes('addTransceiver'), 'Must initialize transceivers for audio and video');
+    assert.ok(code.includes('syncLocalStreamToPeers'), 'Must provide syncLocalStreamToPeers function');
+    assert.ok(code.includes('iceCandidateQueuesRef'), 'Must queue ICE candidates before setRemoteDescription');
+  });
+
+  // 21. Tab-Isolated Stable Participant ID & Muted Remote Video for Autoplay Safety
+  test('21. LiveMeetingPage generates tab-isolated participantId and plays remote video with muted={true} for autoplay safety', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+
+    assert.ok(code.includes('__PF_TAB_ID__'), 'Must isolate participant ID per browser tab to avoid tab collisions');
+    assert.ok(code.includes('muted={true}'), 'Remote video must have muted={true} to avoid browser autoplay blocks');
+  });
 });
+

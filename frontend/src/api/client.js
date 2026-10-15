@@ -190,6 +190,7 @@ export const api = {
   },
 
   getWebRtcConfig: (meetingId) => request(`/api/live/meetings/${meetingId}/webrtc_config`),
+  getLiveMeetingParticipants: (meetingId) => request(`/api/live/meetings/${meetingId}/participants`),
 
   reportChunkFailure: async (meetingId, { sessionId, sequence, errorCode = 'client_failure', errorMessage = '', speakerId = null } = {}) => {
     const formData = new FormData();

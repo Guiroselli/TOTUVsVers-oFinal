@@ -241,11 +241,18 @@ class MeetingConnectionManager:
             meeting_id, participant_id = info
             name = ""
             if meeting_id in self._peers and participant_id in self._peers[meeting_id]:
-                pdata = self._peers[meeting_id].pop(participant_id)
-                name = pdata.get("name", "")
-                if not self._peers[meeting_id]:
-                    del self._peers[meeting_id]
-            return meeting_id, participant_id, name
+                current_entry = self._peers[meeting_id][participant_id]
+                # Só desregistra se o socket registrado for o mesmo que está fechando!
+                # Se for diferente, o usuário já se reconectou com um novo socket e não deve ser removido!
+                if current_entry.get("ws") == websocket:
+                    pdata = self._peers[meeting_id].pop(participant_id)
+                    name = pdata.get("name", "")
+                    if not self._peers[meeting_id]:
+                        del self._peers[meeting_id]
+                    return meeting_id, participant_id, name
+                else:
+                    return None
+            return None
 
     async def get_peers_in_room(self, meeting_id: str, exclude_participant_id: Optional[str] = None) -> List[Dict[str, Any]]:
         async with self._lock:
@@ -293,6 +300,17 @@ class MeetingConnectionManager:
                     del self._connections[meeting_id]
 
 ws_manager = MeetingConnectionManager()
+
+
+@app.get("/api/live/meetings/{meeting_id}/participants")
+async def get_live_meeting_participants(meeting_id: str):
+    """Retorna a lista em tempo real de participantes conectados à sala ao vivo."""
+    peers = await ws_manager.get_peers_in_room(meeting_id)
+    return {
+        "meeting_id": meeting_id,
+        "count": len(peers),
+        "participants": peers
+    }
 
 
 async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, session_id: Optional[str] = None):

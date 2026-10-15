@@ -323,3 +323,101 @@ def test_resilience_after_transient_chunk_failure_without_aborting_session(test_
     assert diag["chunks_pending"] == 0
     assert diag["reconciliation_ok"] is True
 
+
+@pytest.mark.anyio
+async def test_meeting_connection_manager_reconnect_resilience():
+    """
+    Valida que quando um participante se reconecta (ex: reload ou React StrictMode):
+    1. O novo WebSocket sobrescreve o peer registrado.
+    2. O fechamento do WebSocket antigo NÃO desregistra o participante nem emite peer_left.
+    3. O peer permanece ativo na sala.
+    """
+    from main import MeetingConnectionManager
+
+    manager = MeetingConnectionManager()
+    m_id = "meet_reconnect_test"
+    pid = "usr_reconnect_alice"
+
+    class FakeWebSocket:
+        def __init__(self, id_val):
+            self.id_val = id_val
+            self.sent = []
+        async def accept(self):
+            pass
+        async def send_json(self, data):
+            self.sent.append(data)
+
+    ws_old = FakeWebSocket("old")
+    ws_new = FakeWebSocket("new")
+
+    # 1. Conecta socket antigo
+    await manager.connect(m_id, ws_old)
+    await manager.register_peer(m_id, pid, "Alice", False, False, ws_old)
+
+    # Verifica presença
+    peers = await manager.get_peers_in_room(m_id)
+    assert len(peers) == 1
+    assert peers[0]["participant_id"] == pid
+
+    # 2. Conecta socket novo para o mesmo participante (reconexão)
+    await manager.connect(m_id, ws_new)
+    await manager.register_peer(m_id, pid, "Alice", False, False, ws_new)
+
+    # 3. Socket antigo desconecta
+    left_info = await manager.unregister_peer(ws_old)
+    # NÃO deve retornar left_info porque o socket ativo já é ws_new!
+    assert left_info is None, "Socket antigo não deve desregistrar novo socket ativo"
+
+    # Participante deve continuar presente na sala
+    peers_after = await manager.get_peers_in_room(m_id)
+    assert len(peers_after) == 1
+    assert peers_after[0]["participant_id"] == pid
+
+    # 4. Socket novo desconecta
+    final_left = await manager.unregister_peer(ws_new)
+    assert final_left is not None
+    assert final_left[1] == pid
+
+    peers_final = await manager.get_peers_in_room(m_id)
+    assert len(peers_final) == 0
+
+
+@pytest.mark.anyio
+async def test_get_live_meeting_participants_endpoint():
+    """
+    Valida que o endpoint GET /api/live/meetings/{meeting_id}/participants
+    retorna a lista de peers cadastrados no MeetingConnectionManager.
+    """
+    from main import app, ws_manager
+    from httpx import AsyncClient, ASGITransport
+
+    m_id = "meet_api_part_test"
+    pid = "usr_endpoint_bob"
+
+    class FakeWS:
+        async def accept(self):
+            pass
+        async def send_json(self, data):
+            pass
+
+    ws = FakeWS()
+    await ws_manager.connect(m_id, ws)
+    await ws_manager.register_peer(m_id, pid, "Bob TI", False, True, ws)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(f"/api/live/meetings/{m_id}/participants")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["meeting_id"] == m_id
+        assert data["count"] >= 1
+        found = [p for p in data["participants"] if p["participant_id"] == pid]
+        assert len(found) == 1
+        assert found[0]["name"] == "Bob TI"
+        assert found[0]["is_cam_off"] is True
+
+    # Limpeza
+    await ws_manager.unregister_peer(ws)
+    await ws_manager.disconnect(m_id, ws)
+
+

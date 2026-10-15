@@ -1,9 +1,13 @@
 import os
 import shutil
 import uuid
+import asyncio
+import logging
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form, Depends, Body
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 import recording_jobs
 from stt_service import get_stt_service
@@ -732,6 +736,22 @@ async def upload_live_meeting_audio_chunk(
     accumulated = record_result.get("transcript", "") if record_result else meeting.get("ANON_TRANSCRICAO", "")
     meeting_obj = record_result.get("meeting", {}) if record_result else meeting
     turns = record_result.get("turns", []) if record_result else meeting_obj.get("TRANSCRIPT_TURNS", [])
+
+    # Transmite atualização em tempo real para os demais participantes da sala ao vivo via WebSocket
+    try:
+        import sys
+        main_mod = sys.modules.get("main")
+        if main_mod and hasattr(main_mod, "ws_manager"):
+            asyncio.create_task(main_mod.ws_manager.broadcast_to_meeting(meeting_id, {
+                "type": "transcript_update",
+                "meeting_id": meeting_id,
+                "text": accumulated,
+                "raw": meeting_obj.get("TRANSCRIPT_RAW", ""),
+                "normalized": meeting_obj.get("TRANSCRIPT_NORMALIZED", ""),
+                "turns": meeting_obj.get("TRANSCRIPT_TURNS", turns)
+            }))
+    except Exception as ws_notify_err:
+        logger.debug(f"Falha ao notificar peers via WebSocket: {ws_notify_err}")
 
     if is_final:
         stt.clear_session(session_id, meeting_id=meeting_id)
