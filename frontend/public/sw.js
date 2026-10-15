@@ -1,5 +1,5 @@
 // Proton Flow Service Worker - Versioned Cache & Offline Resilience
-const CACHE_NAME = 'proton-flow-v2.0.2';
+const CACHE_NAME = 'proton-flow-v2.1.0';
 
 self.addEventListener('install', () => {
   self.skipWaiting();

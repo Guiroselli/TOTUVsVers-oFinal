@@ -23,6 +23,7 @@ import {
   Sparkles,
   Info,
   Volume2,
+  VolumeX,
   Activity,
   Check,
   Trash2,
@@ -98,6 +99,7 @@ export default function LiveMeetingPage({
   const [isMeetingOutputMuted, setIsMeetingOutputMuted] = useState(false);
   const [remoteAudioPlaybackStatus, setRemoteAudioPlaybackStatus] = useState('nenhum_audio'); // 'nenhum_audio' | 'faixa_recebida' | 'silenciado' | 'bloqueado_autoplay' | 'dispositivo_indisponivel' | 'reproduzindo'
   const supportsSinkId = useMemo(() => typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype, []);
+  const supportsSelectAudioOutput = useMemo(() => typeof navigator !== 'undefined' && !!navigator.mediaDevices && typeof navigator.mediaDevices.selectAudioOutput === 'function', []);
 
   // Filtros da central de reuniões
   const [searchQuery, setSearchQuery] = useState('');
@@ -309,6 +311,8 @@ export default function LiveMeetingPage({
   const [audioAutoplayBlocked, setAudioAutoplayBlocked] = useState(false);
   const [isEditingInlineName, setIsEditingInlineName] = useState(false);
   const [inlineNameValue, setInlineNameValue] = useState('');
+  const [webrtcTelemetry, setWebrtcTelemetry] = useState({});
+  const webrtcStatsIntervalRef = useRef(null);
 
   // Rastreamento estrito de finalização e rascunho de fala (impede loop 'que é')
   const finalizedIndexRef = useRef(0);
@@ -457,20 +461,37 @@ export default function LiveMeetingPage({
     Object.entries(peerConnectionsRef.current).forEach(([targetId, pc]) => {
       if (!pc || pc.signalingState === 'closed') return;
       try {
-        const senders = pc.getSenders();
-        if (audioTrack) {
-          const aSender = senders.find((s) => s.track?.kind === 'audio' || s.kind === 'audio');
+        const transceivers = typeof pc.getTransceivers === 'function' ? pc.getTransceivers() : [];
+        const senders = typeof pc.getSenders === 'function' ? pc.getSenders() : [];
+
+        // 1. Sincronização robusta de áudio via transceiver
+        const aTransceiver = transceivers.find((t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio');
+        if (aTransceiver && aTransceiver.sender) {
+          if (aTransceiver.direction !== 'sendrecv') aTransceiver.direction = 'sendrecv';
+          aTransceiver.sender.replaceTrack(audioTrack).catch((err) => {
+            console.warn(`[WebRTC] Erro replaceTrack áudio peer ${targetId}:`, err);
+          });
+        } else {
+          const aSender = senders.find((s) => s.track?.kind === 'audio');
           if (aSender) {
             aSender.replaceTrack(audioTrack).catch(() => {});
-          } else {
+          } else if (audioTrack) {
             try { pc.addTrack(audioTrack, stream); } catch {}
           }
         }
-        if (videoTrack) {
-          const vSender = senders.find((s) => s.track?.kind === 'video' || s.kind === 'video');
+
+        // 2. Sincronização robusta de vídeo via transceiver
+        const vTransceiver = transceivers.find((t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video');
+        if (vTransceiver && vTransceiver.sender) {
+          if (vTransceiver.direction !== 'sendrecv') vTransceiver.direction = 'sendrecv';
+          vTransceiver.sender.replaceTrack(videoTrack).catch((err) => {
+            console.warn(`[WebRTC] Erro replaceTrack vídeo peer ${targetId}:`, err);
+          });
+        } else {
+          const vSender = senders.find((s) => s.track?.kind === 'video');
           if (vSender) {
             vSender.replaceTrack(videoTrack).catch(() => {});
-          } else {
+          } else if (videoTrack) {
             try { pc.addTrack(videoTrack, stream); } catch {}
           }
         }
@@ -478,6 +499,56 @@ export default function LiveMeetingPage({
         console.warn(`[WebRTC] Falha ao sincronizar trilhas com peer ${targetId}:`, err);
       }
     });
+  }, []);
+
+  // Telemetria contínua WebRTC (outbound e inbound RTP bytes) para comprovação matemática de fluxo de mídia
+  useEffect(() => {
+    const pollStats = async () => {
+      const pcs = peerConnectionsRef.current;
+      if (!pcs || Object.keys(pcs).length === 0) return;
+      const metrics = {};
+      for (const [targetId, pc] of Object.entries(pcs)) {
+        if (!pc || pc.signalingState === 'closed') continue;
+        try {
+          const stats = await pc.getStats();
+          let outboundAudioBytes = 0;
+          let outboundVideoBytes = 0;
+          let inboundAudioBytes = 0;
+          let inboundVideoBytes = 0;
+          stats.forEach((report) => {
+            if (report.type === 'outbound-rtp') {
+              if (report.kind === 'audio') outboundAudioBytes += (report.bytesSent || 0);
+              if (report.kind === 'video') outboundVideoBytes += (report.bytesSent || 0);
+            } else if (report.type === 'inbound-rtp') {
+              if (report.kind === 'audio') inboundAudioBytes += (report.bytesReceived || 0);
+              if (report.kind === 'video') inboundVideoBytes += (report.bytesReceived || 0);
+            }
+          });
+          metrics[targetId] = {
+            connState: pc.connectionState || pc.iceConnectionState || 'connected',
+            outboundAudioBytes,
+            outboundVideoBytes,
+            inboundAudioBytes,
+            inboundVideoBytes,
+            updatedAt: Date.now()
+          };
+        } catch {}
+      }
+      if (Object.keys(metrics).length > 0) {
+        setWebrtcTelemetry(metrics);
+        if (typeof window !== 'undefined') {
+          window.__PF_WEBRTC_STATS__ = metrics;
+        }
+      }
+    };
+
+    webrtcStatsIntervalRef.current = setInterval(pollStats, 2000);
+    return () => {
+      if (webrtcStatsIntervalRef.current) {
+        clearInterval(webrtcStatsIntervalRef.current);
+        webrtcStatsIntervalRef.current = null;
+      }
+    };
   }, []);
 
   const latencyPercentiles = useMemo(() => {
@@ -525,7 +596,7 @@ export default function LiveMeetingPage({
   // Seleção dinâmica do dispositivo de saída de áudio com fallback gracioso
   const handleSelectAudioOutputDevice = useCallback(async (deviceId) => {
     setSelectedAudioOutputDeviceId(deviceId);
-    if (!deviceId) return;
+    if (!deviceId || !supportsSinkId) return;
     try {
       for (const el of Object.values(remoteAudioRefs.current)) {
         if (el && typeof el.setSinkId === 'function') {
@@ -535,7 +606,26 @@ export default function LiveMeetingPage({
     } catch (err) {
       console.warn('Erro ao alternar dispositivo de saída de áudio:', err);
     }
-  }, []);
+  }, [supportsSinkId]);
+
+  // Seletor nativo do navegador via navigator.mediaDevices.selectAudioOutput()
+  const handleNativeSelectAudioOutput = useCallback(async () => {
+    if (supportsSelectAudioOutput) {
+      try {
+        const device = await navigator.mediaDevices.selectAudioOutput();
+        if (device && device.deviceId) {
+          await handleSelectAudioOutputDevice(device.deviceId);
+          if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+            loadAudioDevices();
+          }
+        }
+      } catch (err) {
+        if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
+          console.warn('Erro ao selecionar saída de áudio nativa:', err);
+        }
+      }
+    }
+  }, [supportsSelectAudioOutput, handleSelectAudioOutputDevice, loadAudioDevices]);
 
   // Teste de saída de áudio isolado: tom curto sintético (não vaza para STT nem para outros participantes)
   const handleTestAudioOutput = useCallback(async () => {
@@ -2277,6 +2367,7 @@ RTF: ${backendChunkStats.rtf || 0}
         audioTrack.enabled = nextState;
         setIsMuted(!nextState);
         setAudioStatus(nextState ? 'active' : 'muted');
+        syncLocalStreamToPeers(streamRef.current);
 
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({
@@ -2290,6 +2381,43 @@ RTF: ${backendChunkStats.rtf || 0}
       }
     }
   };
+
+  // Alterna microfone sem derrubar a chamada WebRTC, sem duplicar trilhas e sem reiniciar a sala
+  const handleSwitchAudioInputDevice = useCallback(async (newDeviceId) => {
+    setSelectedAudioDeviceId(newDeviceId);
+    if (!isRecordingRef.current || !streamRef.current) return;
+    try {
+      const constraints = newDeviceId && newDeviceId !== 'default'
+        ? { deviceId: { exact: newDeviceId } }
+        : true;
+      let newStream;
+      try {
+        newStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+      } catch (err) {
+        newStream = await navigator.mediaDevices.getUserMedia({
+          audio: newDeviceId && newDeviceId !== 'default' ? { deviceId: { ideal: newDeviceId } } : true
+        });
+      }
+      const newAudioTrack = newStream.getAudioTracks()[0];
+      if (newAudioTrack && streamRef.current) {
+        const oldAudioTrack = streamRef.current.getAudioTracks()[0];
+        if (oldAudioTrack) {
+          try { oldAudioTrack.stop(); } catch {}
+          try { streamRef.current.removeTrack(oldAudioTrack); } catch {}
+        }
+        newAudioTrack.enabled = !isMutedRef.current;
+        newAudioTrack.onended = handleMicrophoneTrackEnded;
+        newAudioTrack.onmute = () => setAudioStatus('muted');
+        newAudioTrack.onunmute = () => setAudioStatus('active');
+        streamRef.current.addTrack(newAudioTrack);
+
+        setupAudioAnalyser(streamRef.current);
+        syncLocalStreamToPeers(streamRef.current);
+      }
+    } catch (err) {
+      console.warn('[Dispositivos] Falha ao alternar microfone dinamicamente:', err);
+    }
+  }, [handleMicrophoneTrackEnded, setupAudioAnalyser, syncLocalStreamToPeers]);
 
   const toggleCamera = async () => {
     if (!streamRef.current) return;
@@ -2426,31 +2554,35 @@ RTF: ${backendChunkStats.rtf || 0}
         const pc = new RTCPeerConnection({ iceServers: iceServersRef.current });
         peerConnectionsRef.current[targetId] = pc;
 
-        // Garante transceivers bidirecionais desde a oferta inicial para áudio e vídeo
-        try {
-          if (!pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio')) {
-            pc.addTransceiver('audio', { direction: 'sendrecv' });
-          }
-        } catch {}
-        try {
-          if (!pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'video')) {
-            pc.addTransceiver('video', { direction: 'sendrecv' });
-          }
-        } catch {}
+        // Se for iniciador da chamada, adiciona transceivers antes de criar a oferta
+        if (isInitiator) {
+          try {
+            if (!pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio')) {
+              pc.addTransceiver('audio', { direction: 'sendrecv' });
+            }
+          } catch {}
+          try {
+            if (!pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'video')) {
+              pc.addTransceiver('video', { direction: 'sendrecv' });
+            }
+          } catch {}
 
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => {
-            try {
-              const senders = pc.getSenders();
-              const s = senders.find((snd) => snd.track?.kind === track.kind || snd.kind === track.kind);
-              if (s) {
-                s.replaceTrack(track).catch(() => {});
-              } else {
-                pc.addTrack(track, streamRef.current);
-              }
-            } catch {}
-          });
+          if (streamRef.current) {
+            const audioTrack = streamRef.current.getAudioTracks()[0] || null;
+            const videoTrack = streamRef.current.getVideoTracks()[0] || null;
+            const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+            const aT = transceivers.find((t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio');
+            if (aT && aT.sender && audioTrack) {
+              aT.sender.replaceTrack(audioTrack).catch(() => {});
+            }
+            const vT = transceivers.find((t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video');
+            if (vT && vT.sender && videoTrack) {
+              vT.sender.replaceTrack(videoTrack).catch(() => {});
+            }
+          }
         }
+        // Se NÃO for iniciador (answerer), NÃO cria addTransceiver antes de setRemoteDescription(offer).
+        // Isso evita que as faixas locais fiquem presas em transceivers órfãos não reaproveitados pela oferta remota.
 
         pc.onicecandidate = (event) => {
           if (event.candidate && ws.readyState === WebSocket.OPEN) {
@@ -2480,19 +2612,39 @@ RTF: ${backendChunkStats.rtf || 0}
             }
           }
 
-          setPeers((prev) =>
-            prev.map((p) =>
-              p.participant_id === targetId ? {
-                ...p,
-                stream: remoteStream,
-                has_video: remoteStream.getVideoTracks().length > 0 && remoteStream.getVideoTracks().some((t) => t.enabled),
-                has_audio: remoteStream.getAudioTracks().length > 0
-              } : p
-            )
-          );
+          const syncPeerMediaState = () => {
+            const vTracks = remoteStream.getVideoTracks();
+            const aTracks = remoteStream.getAudioTracks();
+            const hasVideo = vTracks.length > 0 && vTracks.some((t) => t.readyState === 'live' && !t.muted);
+            const hasAudio = aTracks.length > 0 && aTracks.some((t) => t.readyState === 'live');
+            setPeers((prev) =>
+              prev.map((p) =>
+                p.participant_id === targetId ? {
+                  ...p,
+                  stream: remoteStream,
+                  has_video: hasVideo,
+                  has_audio: hasAudio
+                } : p
+              )
+            );
+          };
+
+          syncPeerMediaState();
+
+          if (event.track.kind === 'video') {
+            event.track.onmute = syncPeerMediaState;
+            event.track.onunmute = syncPeerMediaState;
+            event.track.onended = syncPeerMediaState;
+          }
 
           if (event.track.kind === 'audio') {
             setRemoteAudioPlaybackStatus('faixa_recebida');
+            event.track.onmute = () => {
+              setPeers((prev) => prev.map((p) => p.participant_id === targetId ? { ...p, is_muted: true, isSpeaking: false } : p));
+            };
+            event.track.onunmute = () => {
+              setPeers((prev) => prev.map((p) => p.participant_id === targetId ? { ...p, is_muted: false } : p));
+            };
             const audioEl = remoteAudioRefs.current[targetId];
             if (audioEl) {
               audioEl.srcObject = remoteStream;
@@ -2548,12 +2700,20 @@ RTF: ${backendChunkStats.rtf || 0}
           const msg = JSON.parse(event.data);
           if (msg.type === 'room_state') {
             const existingPeers = msg.peers || [];
-            setPeers(existingPeers.map((p) => ({
-              ...p,
-              stream: null,
-              audioLevel: 0,
-              isSpeaking: false
-            })));
+            setPeers((prev) => {
+              const prevMap = new Map(prev.map((p) => [p.participant_id, p]));
+              return existingPeers.map((p) => {
+                const existing = prevMap.get(p.participant_id);
+                return {
+                  ...p,
+                  stream: existing?.stream || null,
+                  has_video: existing?.has_video ?? false,
+                  has_audio: existing?.has_audio ?? false,
+                  audioLevel: existing?.audioLevel || 0,
+                  isSpeaking: existing?.isSpeaking || false
+                };
+              });
+            });
           } else if (msg.type === 'peer_joined') {
             const newPeer = msg.peer;
             if (!newPeer || newPeer.participant_id === participantIdRef.current) return;
@@ -2575,6 +2735,25 @@ RTF: ${backendChunkStats.rtf || 0}
 
             if (signal.type === 'offer') {
               await pc.setRemoteDescription(new RTCSessionDescription(signal));
+              
+              // A oferta remota definiu os m-lines e criou os transceivers no Answerer.
+              // Associamos nossas trilhas locais aos transceivers existentes da oferta:
+              if (streamRef.current) {
+                const audioTrack = streamRef.current.getAudioTracks()[0] || null;
+                const videoTrack = streamRef.current.getVideoTracks()[0] || null;
+                const transceivers = pc.getTransceivers ? pc.getTransceivers() : [];
+                const aT = transceivers.find((t) => t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio');
+                if (aT) {
+                  aT.direction = 'sendrecv';
+                  if (audioTrack && aT.sender) aT.sender.replaceTrack(audioTrack).catch(() => {});
+                }
+                const vT = transceivers.find((t) => t.receiver?.track?.kind === 'video' || t.sender?.track?.kind === 'video');
+                if (vT) {
+                  vT.direction = 'sendrecv';
+                  if (videoTrack && vT.sender) vT.sender.replaceTrack(videoTrack).catch(() => {});
+                }
+              }
+
               // Descarrega candidatos ICE acumulados antes de setRemoteDescription
               const queued = iceCandidateQueuesRef.current[senderId] || [];
               while (queued.length > 0) {
@@ -3009,6 +3188,7 @@ RTF: ${backendChunkStats.rtf || 0}
           setIsCamOff(true);
           setVideoStatus('ended');
         };
+        syncLocalStreamToPeers(streamRef.current);
       }
     } catch (err) {
       console.warn('Erro ao alternar câmera frontal/traseira:', err);
@@ -3550,6 +3730,326 @@ RTF: ${backendChunkStats.rtf || 0}
       </div>
     );
 
+    // Sub-render da Lista de Participantes Conectados (Presença em Tempo Real)
+    const renderParticipantsView = () => {
+      const totalParticipants = peers.length + 1;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: 'var(--pf-surface)' }}>
+          {/* Header do Painel de Participantes */}
+          <div style={{
+            padding: '12px 16px',
+            borderBottom: '1px solid var(--pf-border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--pf-surface-elevated)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Users size={16} color="var(--pf-accent)" />
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--pf-text-primary)' }}>
+                Participantes na Sala
+              </h3>
+              <span style={{
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                background: 'rgba(56, 189, 248, 0.15)',
+                color: '#38bdf8',
+                fontWeight: 700
+              }}>
+                {totalParticipants} {totalParticipants === 1 ? 'pessoa' : 'pessoas'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setInlineNameValue(participantName || '');
+                setIsEditingInlineName(true);
+              }}
+              className="btn btn-secondary"
+              style={{ fontSize: '11px', padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              title="Alterar seu nome de exibição na chamada"
+            >
+              Alterar meu nome
+            </button>
+          </div>
+
+          {/* Lista de Participantes com Rolagem */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Card do Participante Local (Você) */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 12px',
+              borderRadius: '8px',
+              background: 'var(--pf-surface-elevated, rgba(255, 255, 255, 0.05))',
+              border: '1px solid var(--pf-accent, #38bdf8)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '50%',
+                    background: getAvatarGradient(participantName || 'Você'),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    color: '#ffffff',
+                    flexShrink: 0
+                  }}
+                >
+                  {getInitials(participantName || 'Você')}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--pf-text-primary)' }}>
+                      {participantName || 'Você'}
+                    </span>
+                    <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '4px', background: 'var(--pf-accent)', color: '#ffffff', fontWeight: 600 }}>
+                      Você
+                    </span>
+                  </div>
+                  <span style={{ fontSize: '10.5px', color: 'var(--pf-text-secondary)' }}>
+                    ID: {participantIdRef.current || 'usr_local'} • Conectado
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={handleToggleMute}
+                  style={{
+                    background: isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title={isMuted ? 'Seu microfone está desligado. Clique para ativar.' : 'Seu microfone está ativo. Clique para mutar.'}
+                >
+                  {isMuted ? <MicOff size={15} color="#ef4444" /> : <Mic size={15} color="#10b981" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleCam}
+                  style={{
+                    background: isCamOff ? 'rgba(239, 68, 68, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                  title={isCamOff ? 'Sua câmera está desligada. Clique para ligar.' : 'Sua câmera está ligada. Clique para desligar.'}
+                >
+                  {isCamOff ? <VideoOff size={15} color="#ef4444" /> : <Video size={15} color="#38bdf8" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Divisor / Label Outros Participantes */}
+            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--pf-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '6px' }}>
+              Outros Conectados ({peers.length})
+            </div>
+
+            {/* Lista dos Pares Remotos */}
+            {peers.length === 0 ? (
+              <div style={{
+                padding: '24px 16px',
+                textAlign: 'center',
+                color: 'var(--pf-text-secondary)',
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: '8px',
+                border: '1px dashed var(--pf-border)'
+              }}>
+                <Users size={24} style={{ opacity: 0.5, marginBottom: '6px' }} />
+                <div style={{ fontSize: '12px', fontWeight: 600 }}>Nenhum outro participante conectado ainda</div>
+                <div style={{ fontSize: '11px', marginTop: '4px' }}>
+                  Compartilhe o link da reunião para que outros membros entrem na chamada.
+                </div>
+              </div>
+            ) : (
+              peers.map((peer) => {
+                const stat = webrtcTelemetry[peer.participant_id];
+                const connState = stat?.connState || 'conectado';
+                return (
+                  <div
+                    key={peer.participant_id}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      background: 'var(--pf-surface-elevated, rgba(255, 255, 255, 0.03))',
+                      border: '1px solid var(--pf-border)',
+                      gap: '8px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '50%',
+                            background: getAvatarGradient(peer.name || 'Participante'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 700,
+                            fontSize: '12px',
+                            color: '#ffffff',
+                            flexShrink: 0
+                          }}
+                        >
+                          {getInitials(peer.name || 'Participante')}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--pf-text-primary)' }}>
+                            {peer.name || 'Participante'}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--pf-text-secondary)' }}>
+                            ID: {peer.participant_id ? peer.participant_id.slice(0, 12) : ''} • Estado: {connState}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div
+                          style={{
+                            padding: '4px 6px',
+                            borderRadius: '4px',
+                            background: peer.is_muted ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title={peer.is_muted ? 'Microfone silenciado' : 'Microfone aberto'}
+                        >
+                          {peer.is_muted ? <MicOff size={13} color="#ef4444" /> : <Mic size={13} color="#10b981" />}
+                          <span style={{ fontSize: '10px', color: peer.is_muted ? '#ef4444' : '#10b981', fontWeight: 600 }}>
+                            {peer.is_muted ? 'Mudo' : 'Ativo'}
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            padding: '4px 6px',
+                            borderRadius: '4px',
+                            background: peer.is_cam_off ? 'rgba(239, 68, 68, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          title={peer.is_cam_off ? 'Câmera desligada' : 'Câmera ligada'}
+                        >
+                          {peer.is_cam_off ? <VideoOff size={13} color="#ef4444" /> : <Video size={13} color="#38bdf8" />}
+                          <span style={{ fontSize: '10px', color: peer.is_cam_off ? '#ef4444' : '#38bdf8', fontWeight: 600 }}>
+                            {peer.is_cam_off ? 'Sem vídeo' : 'Vídeo'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {stat && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '9.5px',
+                        color: 'var(--pf-text-secondary)',
+                        background: 'rgba(0,0,0,0.15)',
+                        padding: '4px 8px',
+                        borderRadius: '4px'
+                      }}>
+                        <span>Inbound: {(stat.inboundAudioBytes / 1024).toFixed(1)} KB áudio</span>
+                        <span>Outbound: {(stat.outboundAudioBytes / 1024).toFixed(1)} KB áudio</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Footer do Painel com Controles de Saída de Som da Sala */}
+          <div style={{
+            padding: '12px 16px',
+            borderTop: '1px solid var(--pf-border)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            background: 'var(--pf-surface-elevated)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--pf-text-primary)' }}>
+                Som da Reunião (Saída)
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={handleToggleMeetingOutputMute}
+                  style={{
+                    background: isMeetingOutputMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid ' + (isMeetingOutputMuted ? '#ef4444' : 'var(--pf-border)'),
+                    borderRadius: '6px',
+                    padding: '4px 8px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    color: isMeetingOutputMuted ? '#ef4444' : 'var(--pf-text-primary)',
+                    fontSize: '11px'
+                  }}
+                  title={isMeetingOutputMuted ? 'Reativar som dos outros participantes' : 'Silenciar som dos outros participantes'}
+                >
+                  {isMeetingOutputMuted ? <VolumeX size={13} color="#ef4444" /> : <Volume2 size={13} />}
+                  <span>{isMeetingOutputMuted ? 'Sala Muda' : 'Ouvindo'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTestAudioOutput}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '11px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Tocar som de teste local no seu fone/alto-falante (não vaza para outros)"
+                >
+                  Testar Som
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isMeetingOutputMuted ? 0 : meetingOutputVolume}
+                onChange={(e) => handleChangeOutputVolume(e.target.value)}
+                style={{ flex: 1, cursor: 'pointer' }}
+                title="Ajustar volume de saída dos participantes"
+              />
+              <span style={{ fontSize: '11px', minWidth: '32px', textAlign: 'right', color: 'var(--pf-text-secondary)' }}>
+                {isMeetingOutputMuted ? '0%' : `${Math.round(meetingOutputVolume * 100)}%`}
+              </span>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div className="live-room-wrapper live-room-active" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'var(--bg-main)' }}>
         {/* Barra superior de alternância entre múltiplas reuniões ao vivo simultâneas */}
@@ -3770,13 +4270,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     <Volume2 size={14} color="var(--text-muted)" />
                     <select
                       value={selectedAudioDeviceId}
-                      onChange={(e) => {
-                        setSelectedAudioDeviceId(e.target.value);
-                        if (isRecording) {
-                          stopMediaAndRecognition();
-                          setTimeout(() => startMediaAndRecognition(), 300);
-                        }
-                      }}
+                      onChange={(e) => handleSwitchAudioInputDevice(e.target.value)}
                       className="form-select"
                       style={{ fontSize: '11px', padding: '4px 8px', maxWidth: '170px' }}
                       title="Selecionar dispositivo de entrada de áudio desta reunião"
@@ -3952,6 +4446,15 @@ RTF: ${backendChunkStats.rtf || 0}
             </button>
             <button
               type="button"
+              className={`mobile-segment-btn ${mobileRoomTab === 'participants' ? 'active' : ''}`}
+              onClick={() => setMobileRoomTab('participants')}
+              title="Participantes conectados na chamada"
+            >
+              <Users size={15} />
+              <span>Pessoas ({peers.length + 1})</span>
+            </button>
+            <button
+              type="button"
               className={`mobile-segment-btn ${mobileRoomTab === 'transcript' ? 'active' : ''}`}
               onClick={() => setMobileRoomTab('transcript')}
               title="Transcrição automática da reunião"
@@ -3977,7 +4480,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     className="unblock-btn"
                     onClick={handleUnblockAudio}
                   >
-                    Ativar Áudio
+                    Ativar áudio da reunião
                   </button>
                 </div>
               )}
@@ -4135,7 +4638,9 @@ RTF: ${backendChunkStats.rtf || 0}
                 {/* CARDS DOS PARTICIPANTES REMOTOS */}
                 {peers.map((peer) => {
                   const peerSpeaking = Boolean(peer.isSpeaking && !peer.is_muted);
-                  const hasVideo = !peer.is_cam_off && peer.stream && peer.stream.getVideoTracks().length > 0;
+                  const vTracks = peer.stream ? peer.stream.getVideoTracks() : [];
+                  const hasLiveTrack = vTracks.length > 0 && vTracks.some((t) => t.readyState === 'live' && !t.muted);
+                  const hasVideo = !peer.is_cam_off && (peer.has_video !== false) && hasLiveTrack;
                   return (
                     <div
                       key={peer.participant_id}
@@ -4345,6 +4850,59 @@ RTF: ${backendChunkStats.rtf || 0}
                   </span>
                 </button>
 
+                {/* Botão Participantes */}
+                <button
+                  type="button"
+                  className={`control-btn ${(isMobileScreen ? mobileRoomTab === 'participants' : showCollabPanel && collabTab === 'participants') ? 'active' : ''}`}
+                  onClick={() => {
+                    if (isMobileScreen) {
+                      setMobileRoomTab('participants');
+                    } else {
+                      setShowCollabPanel(true);
+                      setCollabTab('participants');
+                    }
+                  }}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title="Ver participantes conectados na reunião"
+                >
+                  <div className="icon-circle" style={{
+                    width: isMobileScreen ? 36 : 40,
+                    height: isMobileScreen ? 36 : 40,
+                    background: (isMobileScreen ? mobileRoomTab === 'participants' : showCollabPanel && collabTab === 'participants') ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: (isMobileScreen ? mobileRoomTab === 'participants' : showCollabPanel && collabTab === 'participants') ? '#38bdf8' : 'rgba(255, 255, 255, 0.15)'
+                  }}>
+                    <Users size={isMobileScreen ? 16 : 18} color={(isMobileScreen ? mobileRoomTab === 'participants' : showCollabPanel && collabTab === 'participants') ? '#38bdf8' : 'var(--pf-text-primary)'} />
+                  </div>
+                  <span style={{ fontSize: '10px', color: (isMobileScreen ? mobileRoomTab === 'participants' : showCollabPanel && collabTab === 'participants') ? '#38bdf8' : 'var(--pf-text-primary)' }}>
+                    Pessoas ({peers.length + 1})
+                  </span>
+                </button>
+
+                {/* Botão Mudo da Sala (Ouvir / Silenciar som remoto) */}
+                <button
+                  type="button"
+                  className={`control-btn ${isMeetingOutputMuted ? 'danger' : ''}`}
+                  onClick={handleToggleMeetingOutputMute}
+                  style={{ padding: isMobileScreen ? '4px 6px' : '6px 12px', gap: '2px', minWidth: '44px', minHeight: '44px' }}
+                  title={isMeetingOutputMuted ? 'Áudio da sala silenciado. Clique para ouvir os participantes.' : 'Silenciar áudio recebido dos outros participantes (não afeta seu microfone)'}
+                >
+                  <div className="icon-circle" style={{
+                    width: isMobileScreen ? 36 : 40,
+                    height: isMobileScreen ? 36 : 40,
+                    background: isMeetingOutputMuted ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.08)',
+                    borderColor: isMeetingOutputMuted ? '#ef4444' : 'rgba(255, 255, 255, 0.15)'
+                  }}>
+                    {isMeetingOutputMuted ? (
+                      <VolumeX size={isMobileScreen ? 16 : 18} color="#ef4444" />
+                    ) : (
+                      <Volume2 size={isMobileScreen ? 16 : 18} color="var(--pf-text-primary)" />
+                    )}
+                  </div>
+                  <span style={{ fontSize: '10px', color: isMeetingOutputMuted ? '#ef4444' : 'var(--pf-text-primary)' }}>
+                    {isMeetingOutputMuted ? 'Som Mudo' : 'Som Sala'}
+                  </span>
+                </button>
+
                 {/* No celular: Botão Mais. No Desktop: Ajustes + Diagnóstico */}
                 {isMobileScreen ? (
                   <button
@@ -4420,7 +4978,14 @@ RTF: ${backendChunkStats.rtf || 0}
             </div>
           )}
 
-          {/* NO DESKTOP: PAINEL LATERAL DE COLABORAÇÃO COM ABAS 'Chat' E 'Transcrição' */}
+          {/* NO CELULAR: SE mobileRoomTab === 'participants', EXIBE OS PARTICIPANTES NA TELA */}
+          {isMobileScreen && mobileRoomTab === 'participants' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
+              {renderParticipantsView()}
+            </div>
+          )}
+
+          {/* NO DESKTOP: PAINEL LATERAL DE COLABORAÇÃO COM ABAS 'Chat', 'Pessoas' E 'Transcrição' */}
           {!isMobileScreen && showCollabPanel && (
             <aside className="meeting-collab-panel">
               {/* Abas Superiores do Painel de Colaboração */}
@@ -4444,6 +5009,24 @@ RTF: ${backendChunkStats.rtf || 0}
                       {chatMessages.length}
                     </span>
                   )}
+                </button>
+                <button
+                  type="button"
+                  className={`collab-tab-btn ${collabTab === 'participants' ? 'active' : ''}`}
+                  onClick={() => setCollabTab('participants')}
+                >
+                  <Users size={15} />
+                  <span>Pessoas</span>
+                  <span style={{
+                    fontSize: '10.5px',
+                    padding: '1px 6px',
+                    borderRadius: '10px',
+                    background: collabTab === 'participants' ? 'var(--pf-accent)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    fontWeight: 700
+                  }}>
+                    {peers.length + 1}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -4472,7 +5055,7 @@ RTF: ${backendChunkStats.rtf || 0}
 
               {/* Conteúdo da Aba Selecionada */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {collabTab === 'chat' ? renderChatView() : renderTranscriptView()}
+                {collabTab === 'chat' ? renderChatView() : collabTab === 'participants' ? renderParticipantsView() : renderTranscriptView()}
               </div>
             </aside>
           )}
@@ -4960,13 +5543,7 @@ RTF: ${backendChunkStats.rtf || 0}
                     </label>
                     <select
                       value={selectedAudioDeviceId}
-                      onChange={(e) => {
-                        setSelectedAudioDeviceId(e.target.value);
-                        if (isRecording) {
-                          stopMediaAndRecognition();
-                          setTimeout(() => startMediaAndRecognition(), 300);
-                        }
-                      }}
+                      onChange={(e) => handleSwitchAudioInputDevice(e.target.value)}
                       className="form-select"
                       style={{ width: '100%', fontSize: '12px', padding: '8px' }}
                     >
@@ -4996,21 +5573,34 @@ RTF: ${backendChunkStats.rtf || 0}
                     </button>
                   </div>
                   {supportsSinkId && audioOutputDevices.length > 0 ? (
-                    <select
-                      value={selectedAudioOutputDeviceId}
-                      onChange={(e) => handleSelectAudioOutputDevice(e.target.value)}
-                      className="form-select"
-                      style={{ width: '100%', fontSize: '12px', padding: '8px' }}
-                    >
-                      {audioOutputDevices.map((d, idx) => (
-                        <option key={d.deviceId || idx} value={d.deviceId}>
-                          {d.label || `Alto-falante / Saída ${idx + 1}`}
-                        </option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <select
+                        value={selectedAudioOutputDeviceId}
+                        onChange={(e) => handleSelectAudioOutputDevice(e.target.value)}
+                        className="form-select"
+                        style={{ width: '100%', fontSize: '12px', padding: '8px' }}
+                      >
+                        {audioOutputDevices.map((d, idx) => (
+                          <option key={d.deviceId || idx} value={d.deviceId}>
+                            {d.label || `Alto-falante / Saída ${idx + 1}`}
+                          </option>
+                        ))}
+                      </select>
+                      {supportsSelectAudioOutput && (
+                        <button
+                          type="button"
+                          onClick={handleNativeSelectAudioOutput}
+                          className="btn btn-secondary"
+                          style={{ fontSize: '11px', padding: '4px 8px', alignSelf: 'flex-start', marginTop: '2px' }}
+                          title="Abre o seletor nativo de dispositivos de som do navegador"
+                        >
+                          Selecionar pelo sistema (Nativo)
+                        </button>
+                      )}
+                    </div>
                   ) : (
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.04)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-                      A saída de áudio é gerenciada automaticamente pelo navegador ou sistema operacional (alto-falante, fone de ouvido ou AirPlay).
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.04)', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border-color)', lineHeight: 1.4 }}>
+                      <strong style={{ color: 'var(--text-main)' }}>Saída controlada pelo sistema operacional.</strong> Neste navegador ou dispositivo móvel (ex: iOS/Safari/Firefox), a saída de som segue automaticamente o dispositivo padrão do sistema (alto-falantes, fone de ouvido ou Bluetooth).
                     </div>
                   )}
 
@@ -5025,7 +5615,7 @@ RTF: ${backendChunkStats.rtf || 0}
                           style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px', color: isMeetingOutputMuted ? '#ef4444' : 'var(--text-main)' }}
                           title={isMeetingOutputMuted ? 'Desmutar saída da reunião' : 'Silenciar áudio recebido'}
                         >
-                          {isMeetingOutputMuted ? <MicOff size={14} color="#ef4444" /> : <Volume2 size={14} />}
+                          {isMeetingOutputMuted ? <VolumeX size={14} color="#ef4444" /> : <Volume2 size={14} />}
                         </button>
                         <input
                           type="range"
@@ -5046,16 +5636,33 @@ RTF: ${backendChunkStats.rtf || 0}
                       <span>Status da reprodução remota:</span>
                       <span style={{
                         fontWeight: 600,
-                        color: remoteAudioPlaybackStatus === 'reproduzindo' ? '#10b981' :
+                        color: (remoteAudioPlaybackStatus === 'reproduzindo' || remoteAudioPlaybackStatus === 'ativo') ? '#10b981' :
                                remoteAudioPlaybackStatus === 'bloqueado_autoplay' ? '#f59e0b' :
                                remoteAudioPlaybackStatus === 'silenciado' ? '#ef4444' : '#94a3b8'
                       }}>
-                        {remoteAudioPlaybackStatus === 'reproduzindo' ? '● Reproduzindo normalmente' :
-                         remoteAudioPlaybackStatus === 'faixa_recebida' ? '● Faixa recebida (conectando áudio)' :
-                         remoteAudioPlaybackStatus === 'bloqueado_autoplay' ? '▲ Bloqueado pelo navegador' :
-                         remoteAudioPlaybackStatus === 'silenciado' ? '■ Áudio silenciado' : '○ Nenhum áudio remoto ativo'}
+                        {(remoteAudioPlaybackStatus === 'reproduzindo' || remoteAudioPlaybackStatus === 'ativo') ? '● Ativo (áudio reproduzindo)' :
+                         remoteAudioPlaybackStatus === 'recebido_nao_reproduzido' ? '▲ Recebido e não reproduzido' :
+                         remoteAudioPlaybackStatus === 'faixa_recebida' ? '▲ Faixa recebida (conectando áudio)' :
+                         remoteAudioPlaybackStatus === 'bloqueado_autoplay' ? '✖ Reprodução bloqueada (requer interação)' :
+                         remoteAudioPlaybackStatus === 'silenciado' ? '■ Silenciado pelo participante' : '○ Nenhum áudio recebido'}
                       </span>
                     </div>
+
+                    {Object.keys(webrtcTelemetry).length > 0 && (
+                      <div style={{ marginTop: '8px', padding: '8px 10px', background: 'var(--pf-surface-2, rgba(0,0,0,0.2))', borderRadius: '6px', fontSize: '11px' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '4px' }}>Telemetria WebRTC (RTP Stats ao vivo):</div>
+                        {Object.entries(webrtcTelemetry).map(([targetId, stat]) => {
+                          const pName = peers.find((p) => p.participant_id === targetId)?.name || targetId.slice(0, 8);
+                          return (
+                            <div key={targetId} style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '4px', borderBottom: '1px dashed var(--border-color, #334155)', paddingBottom: '4px' }}>
+                              <span style={{ color: '#38bdf8' }}><strong>{pName}</strong> ({stat.connState})</span>
+                              <span style={{ color: 'var(--text-muted)' }}>▲ Outbound: {(stat.outboundAudioBytes / 1024).toFixed(1)} KB áudio | {(stat.outboundVideoBytes / 1024).toFixed(1)} KB vídeo</span>
+                              <span style={{ color: 'var(--text-muted)' }}>▼ Inbound: {(stat.inboundAudioBytes / 1024).toFixed(1)} KB áudio | {(stat.inboundVideoBytes / 1024).toFixed(1)} KB vídeo</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -5487,6 +6094,33 @@ RTF: ${backendChunkStats.rtf || 0}
                   <X size={20} />
                 </button>
               </div>
+
+              {/* Botão Silenciar Áudio Recebido da Sala */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  handleToggleMeetingOutputMute();
+                }}
+                style={{ minHeight: '48px', justifyContent: 'flex-start', padding: '0 16px', gap: '12px', fontSize: '14px', color: isMeetingOutputMuted ? '#ef4444' : 'var(--text-main)' }}
+              >
+                {isMeetingOutputMuted ? <VolumeX size={18} color="#ef4444" /> : <Volume2 size={18} color="#10b981" />}
+                <span>{isMeetingOutputMuted ? 'Reativar Áudio da Sala (Desmutar alto-falante)' : 'Silenciar Áudio da Sala (Manter microfone)'}</span>
+              </button>
+
+              {/* Botão Ver Participantes */}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowMobileActionSheet(false);
+                  setMobileRoomTab('participants');
+                }}
+                style={{ minHeight: '48px', justifyContent: 'flex-start', padding: '0 16px', gap: '12px', fontSize: '14px' }}
+              >
+                <Users size={18} color="#38bdf8" />
+                <span>Ver Participantes ({peers.length + 1})</span>
+              </button>
 
               {/* Botão Alternar Câmera Frontal / Traseira */}
               <button

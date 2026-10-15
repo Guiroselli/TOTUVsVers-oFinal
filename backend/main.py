@@ -195,17 +195,20 @@ class MeetingConnectionManager:
         is_muted: bool,
         is_cam_off: bool,
         websocket: WebSocket
-    ):
+    ) -> bool:
         async with self._lock:
+            existing = self._peers.get(meeting_id, {}).get(participant_id)
+            is_new = existing is None
             self._peers[meeting_id][participant_id] = {
                 "ws": websocket,
                 "participant_id": participant_id,
                 "name": name,
                 "is_muted": is_muted,
                 "is_cam_off": is_cam_off,
-                "joined_at": datetime.now().isoformat()
+                "joined_at": existing.get("joined_at") if existing else datetime.now().isoformat()
             }
             self._ws_to_peer[websocket] = (meeting_id, participant_id)
+            return is_new
 
     async def update_peer_state(
         self,
@@ -365,7 +368,7 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
                         is_muted = bool(payload.get("is_muted", False))
                         is_cam_off = bool(payload.get("is_cam_off", False))
 
-                        await ws_manager.register_peer(meeting_id, pid, pname, is_muted, is_cam_off, websocket)
+                        is_new = await ws_manager.register_peer(meeting_id, pid, pname, is_muted, is_cam_off, websocket)
                         other_peers = await ws_manager.get_peers_in_room(meeting_id, exclude_participant_id=pid)
 
                         # Envia estado da sala para o participante recém-conectado
@@ -376,17 +379,28 @@ async def _handle_meeting_websocket(websocket: WebSocket, meeting_id: str, sessi
                             "peers": other_peers
                         })
 
-                        # Notifica os demais participantes sobre a entrada deste peer
-                        await ws_manager.broadcast_to_meeting(meeting_id, {
-                            "type": "peer_joined",
-                            "meeting_id": meeting_id,
-                            "peer": {
+                        if is_new:
+                            # Notifica os demais participantes sobre a entrada deste novo peer
+                            await ws_manager.broadcast_to_meeting(meeting_id, {
+                                "type": "peer_joined",
+                                "meeting_id": meeting_id,
+                                "peer": {
+                                    "participant_id": pid,
+                                    "name": pname,
+                                    "is_muted": is_muted,
+                                    "is_cam_off": is_cam_off
+                                }
+                            }, exclude_socket=websocket)
+                        else:
+                            # Reconexão de peer já registrado: sincroniza o estado atualizado sem duplicar conexões
+                            await ws_manager.broadcast_to_meeting(meeting_id, {
+                                "type": "peer_state_updated",
+                                "meeting_id": meeting_id,
                                 "participant_id": pid,
                                 "name": pname,
                                 "is_muted": is_muted,
                                 "is_cam_off": is_cam_off
-                            }
-                        }, exclude_socket=websocket)
+                            }, exclude_socket=websocket)
 
                     elif p_type == "webrtc_signal":
                         # Roteamento seguro de oferta, resposta SDP ou candidato ICE entre peers
