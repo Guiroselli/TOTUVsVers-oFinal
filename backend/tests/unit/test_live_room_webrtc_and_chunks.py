@@ -421,3 +421,73 @@ async def test_get_live_meeting_participants_endpoint():
     await ws_manager.disconnect(m_id, ws)
 
 
+def test_transcript_continuation_beyond_6000_10000_and_20000_chars(test_repo):
+    """
+    Valida a continuidade da transcrição sem perda, truncamento ou interrupção
+    mesmo além de 6.000, 10.000 e 20.000 caracteres e muitos chunks consecutivos.
+    Confirma também que colchetes no áudio como [ruído], [inaudível] e [anexo 1]
+    não causam truncamento do texto subsequente.
+    """
+    meeting_id = "meet_long_scale_test"
+    test_repo.create_live_meeting({
+        "ID_MEETING": meeting_id,
+        "TITULO_REUNIAO": "Reunião de Teste de Longa Escala",
+        "NOME_SEGMENTO": "TI",
+        "DEPARTAMENTO": "TI",
+        "HORARIO_AGENDADO": "14:00",
+        "DT_MEETING": "2026-10-14",
+        "STATUS_MEETING": "ao_vivo"
+    })
+    sess_id = "sess_long_scale"
+    total_raw_chars = 0
+
+    for i in range(1, 101):
+        spk = "Carlos RH" if i % 2 == 1 else "Mariana TI"
+        spk_id = "usr_carlos" if i % 2 == 1 else "usr_mariana"
+
+        # Inclui texto técnico longo com colchetes conversacionais reais
+        chunk_text = (
+            f"Segmento de discussão técnica {i}: Alinhamento operacional sobre o módulo "
+            f"de benefícios Protheus TOTVS e parametrização [anexo {i}] com integração contábil. "
+            f"Validação de fluxo de homologação concluída sem impedimentos. "
+        )
+        if i % 10 == 0:
+            chunk_text += "[ruído de fundo] Continuação imediata da fala após ruído. "
+
+        res = test_repo.record_live_audio_chunk(
+            meeting_id=meeting_id,
+            session_id=sess_id,
+            sequence=i,
+            text=chunk_text,
+            duration=3.5,
+            audio_level=30,
+            speaker_name=spk,
+            speaker_id=spk_id
+        )
+        assert res is not None
+        total_raw_chars += len(chunk_text.strip())
+
+    meeting = test_repo.get_by_id(meeting_id)
+    raw = meeting.get("TRANSCRIPT_RAW", "")
+    norm = meeting.get("TRANSCRIPT_NORMALIZED", "")
+    final_text = meeting.get("ANON_TRANSCRICAO", "")
+    turns = meeting.get("TRANSCRIPT_TURNS", [])
+
+    # Validações de escala de caracteres (excede 6.000, 10.000 e 20.000 caracteres)
+    assert len(raw) > 20000, f"TRANSCRIPT_RAW deve superar 20.000 caracteres, obteve {len(raw)}"
+    assert len(norm) > 20000, f"TRANSCRIPT_NORMALIZED deve superar 20.000 caracteres, obteve {len(norm)}"
+    assert len(final_text) > 20000, f"ANON_TRANSCRICAO deve superar 20.000 caracteres, obteve {len(final_text)}"
+
+    # Validação de turnos e ausência de truncamento
+    assert len(turns) == 100, f"Deve conter exatamente 100 turnos, obteve {len(turns)}"
+    assert "Continuação imediata da fala após ruído" in final_text, "Texto após [ruído de fundo] não pode ser truncado"
+    assert "anexo 100" in final_text, "Último chunk deve estar presente na íntegra"
+
+    # Diagnóstico reconciliado
+    diag = test_repo.get_pipeline_diagnostics(meeting_id)
+    assert diag["chunks_captured"] >= 100
+    assert diag["chunks_confirmed"] >= 100
+    assert diag["reconciliation_ok"] is True
+
+
+

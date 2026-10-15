@@ -39,6 +39,46 @@ import {
 import { api } from '../api/client';
 import CallRecorderModal, { JOB_STATUS_LABEL } from './CallRecorderModal';
 
+/**
+ * Parser estruturado e resiliente de turnos de fala cronológicos.
+ * Extrai delimitadores no formato ^[Nome]: ou \n\n[Nome]: sem truncar colchetes
+ * legítimos como [ruído], [inaudível], [anexo] ou notas dentro do texto,
+ * suportando blocos contínuos de 6.000, 10.000 e 20.000+ caracteres sem perda.
+ */
+export function parseSpeakerTurns(text) {
+  if (!text || typeof text !== 'string' || !text.trim()) return [];
+  const delimiterRegex = /(?:^|\n\n)\[([^\]]+)\]:\s*/g;
+  const blocks = [];
+  let lastIndex = 0;
+  let currentSpeaker = null;
+  let match;
+
+  while ((match = delimiterRegex.exec(text)) !== null) {
+    if (currentSpeaker === null && match.index > 0) {
+      const preamble = text.slice(0, match.index).trim();
+      if (preamble) {
+        blocks.push({ speaker: 'Participante', content: preamble });
+      }
+    } else if (currentSpeaker !== null) {
+      const content = text.slice(lastIndex, match.index).trim();
+      if (content) {
+        blocks.push({ speaker: currentSpeaker, content });
+      }
+    }
+    currentSpeaker = match[1].trim();
+    lastIndex = delimiterRegex.lastIndex;
+  }
+
+  if (currentSpeaker !== null) {
+    const content = text.slice(lastIndex).trim();
+    if (content) {
+      blocks.push({ speaker: currentSpeaker, content });
+    }
+  }
+
+  return blocks;
+}
+
 export default function LiveMeetingPage({
   onLeaveMeeting,
   onOpenDocumentViewer,
@@ -116,6 +156,7 @@ export default function LiveMeetingPage({
   const [showMobileActionSheet, setShowMobileActionSheet] = useState(false);
   const [showPermissionHelpModal, setShowPermissionHelpModal] = useState(false);
   const [isMobileScreen, setIsMobileScreen] = useState(() => typeof window !== 'undefined' && window.innerWidth <= 767);
+  const [prePermissionDismissed, setPrePermissionDismissed] = useState(false);
 
   // Identificação do participante na reunião (obrigatório antes de entrar)
   const [participantName, setParticipantName] = useState(() => {
@@ -768,12 +809,12 @@ export default function LiveMeetingPage({
     }
   }, [activeMeetingId, currentMeeting]);
 
-  // Auto-scroll da transcrição
+  // Auto-scroll da transcrição contínua e dos cartões de turno
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcription]);
+  }, [transcription, transcriptNormalized, transcriptRaw, transcriptTurns]);
 
   // Busca mensagens do Chat Ao Vivo
   const fetchChatMessages = useCallback(async (meetingId) => {
@@ -3392,16 +3433,8 @@ RTF: ${backendChunkStats.rtf || 0}
                   );
                 }
 
-                // 2. Parser por Regex de Blocos de Turno "[Nome]: ..." caso venha como texto único
-                const turnBlockRegex = /\[([^\]]+)\]:\s*([^[]+)/g;
-                const parsedBlocks = [];
-                let match;
-                while ((match = turnBlockRegex.exec(text)) !== null) {
-                  parsedBlocks.push({
-                    speaker: match[1].trim(),
-                    content: match[2].trim()
-                  });
-                }
+                // 2. Parser Estruturado e Resiliente de Blocos de Turno "[Nome]: ..."
+                const parsedBlocks = parseSpeakerTurns(text);
 
                 if (parsedBlocks.length > 0) {
                   return (
@@ -3518,7 +3551,7 @@ RTF: ${backendChunkStats.rtf || 0}
     );
 
     return (
-      <div className="live-room-wrapper live-room-active" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100vh', background: 'var(--bg-main)' }}>
+      <div className="live-room-wrapper live-room-active" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100dvh', maxHeight: '100dvh', overflow: 'hidden', background: 'var(--bg-main)' }}>
         {/* Barra superior de alternância entre múltiplas reuniões ao vivo simultâneas */}
         {otherLiveMeetings.length > 0 && (
           <div style={{
@@ -3572,7 +3605,7 @@ RTF: ${backendChunkStats.rtf || 0}
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: isMobileScreen ? '8px 12px' : '10px 20px',
-          background: 'rgba(15, 23, 42, 0.95)',
+          background: 'var(--pf-surface-elevated, rgba(15, 23, 42, 0.95))',
           borderBottom: '1px solid var(--border-color)',
           flexWrap: 'nowrap',
           gap: '8px',
@@ -3949,37 +3982,50 @@ RTF: ${backendChunkStats.rtf || 0}
                 </div>
               )}
 
-              {/* Card de autorização prévia de microfone no celular */}
-              {audioStatus !== 'active' && (
+              {/* Card de autorização prévia de microfone no celular (dispensável, não-bloqueante) */}
+              {audioStatus === 'uninitialized' && !prePermissionDismissed && (
                 <div className="mobile-pre-permission-card" style={{
                   position: 'absolute',
                   top: '50%',
                   left: '50%',
                   transform: 'translate(-50%, -50%)',
                   zIndex: 35,
-                  padding: '14px 18px',
-                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  borderRadius: '14px',
                   background: 'var(--pf-surface, #1e293b)',
-                  border: '1px solid rgba(56, 189, 248, 0.35)',
-                  boxShadow: '0 8px 30px rgba(0, 0, 0, 0.5)',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.6)',
                   maxWidth: '360px',
                   width: '92%',
                   textAlign: 'center'
                 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
-                    <Mic size={20} color="#38bdf8" />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-8px -10px 4px 0' }}>
+                    <button
+                      type="button"
+                      onClick={() => setPrePermissionDismissed(true)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--pf-text-secondary, #94a3b8)', cursor: 'pointer', padding: '6px' }}
+                      title="Dispensar aviso"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(56, 189, 248, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px' }}>
+                    <Mic size={22} color="#38bdf8" />
                   </div>
                   <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--pf-text-primary, #ffffff)', marginBottom: '4px' }}>
-                    Ative o microfone para participar da reunião
+                    Ative o microfone para falar na reunião
                   </div>
                   <div style={{ fontSize: '11px', color: 'var(--pf-text-secondary, #94a3b8)', marginBottom: '12px', lineHeight: 1.4 }}>
-                    Navegadores em celulares exigem um toque direto para autorizar a gravação e conversa por voz.
+                    Navegadores em celulares exigem um toque direto para autorizar a gravação e conversa por voz. Você também pode participar apenas como ouvinte.
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <button
                       type="button"
                       className="btn btn-primary"
-                      onClick={() => startMediaAndRecognition()}
+                      onClick={() => {
+                        setPrePermissionDismissed(true);
+                        startMediaAndRecognition();
+                      }}
                       style={{ minHeight: '44px', width: '100%', justifyContent: 'center', fontWeight: 600, fontSize: '12.5px' }}
                     >
                       <Mic size={15} /> Ativar microfone agora
@@ -3987,10 +4033,10 @@ RTF: ${backendChunkStats.rtf || 0}
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => setShowPermissionHelpModal(true)}
-                      style={{ minHeight: '40px', width: '100%', justifyContent: 'center', fontSize: '11px', color: 'var(--pf-text-secondary, #94a3b8)' }}
+                      onClick={() => setPrePermissionDismissed(true)}
+                      style={{ minHeight: '38px', width: '100%', justifyContent: 'center', fontSize: '11.5px', color: 'var(--pf-text-secondary, #94a3b8)' }}
                     >
-                      <HelpCircle size={13} /> Como liberar no Safari / Chrome
+                      Entrar apenas como ouvinte
                     </button>
                   </div>
                 </div>
@@ -4448,8 +4494,8 @@ RTF: ${backendChunkStats.rtf || 0}
             padding: '20px'
           }}>
             <div style={{
-              background: '#0f172a',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'var(--pf-surface, #1e293b)',
+              border: '1px solid var(--pf-border, rgba(255, 255, 255, 0.15))',
               borderRadius: '14px',
               width: '100%',
               maxWidth: '720px',
@@ -4736,8 +4782,8 @@ RTF: ${backendChunkStats.rtf || 0}
             padding: '20px'
           }}>
             <div style={{
-              background: '#0f172a',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'var(--pf-surface, #1e293b)',
+              border: '1px solid var(--pf-border, rgba(255, 255, 255, 0.15))',
               borderRadius: '14px',
               width: '100%',
               maxWidth: '640px',
@@ -5095,8 +5141,8 @@ RTF: ${backendChunkStats.rtf || 0}
             padding: '20px'
           }}>
             <div style={{
-              background: '#0f172a',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'var(--pf-surface, #1e293b)',
+              border: '1px solid var(--pf-border, rgba(255, 255, 255, 0.15))',
               borderRadius: '14px',
               width: '100%',
               maxWidth: '620px',
@@ -5415,10 +5461,10 @@ RTF: ${backendChunkStats.rtf || 0}
               style={{
                 width: '100%',
                 maxWidth: '600px',
-                background: '#0f172a',
+                background: 'var(--pf-surface, #1e293b)',
                 borderTopLeftRadius: '20px',
                 borderTopRightRadius: '20px',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
+                border: '1px solid var(--pf-border, rgba(255, 255, 255, 0.15))',
                 padding: '20px 20px calc(20px + var(--sab, 0px))',
                 display: 'flex',
                 flexDirection: 'column',

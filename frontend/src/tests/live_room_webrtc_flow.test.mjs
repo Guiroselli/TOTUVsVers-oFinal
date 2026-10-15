@@ -248,5 +248,64 @@ describe('Live Meeting Room WebRTC Audio, Participant Grid, Diagnostics & Mobile
     assert.ok(code.includes('__PF_TAB_ID__'), 'Must isolate participant ID per browser tab to avoid tab collisions');
     assert.ok(code.includes('muted={true}'), 'Remote video must have muted={true} to avoid browser autoplay blocks');
   });
+
+  // 22. Resilient parseSpeakerTurns across 6.000, 10.000 and 20.000+ characters with brackets
+  test('22. parseSpeakerTurns scales beyond 6k, 10k and 20k chars and preserves internal brackets without truncation', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+    assert.ok(code.includes('export function parseSpeakerTurns(text)'), 'parseSpeakerTurns must be declared');
+
+    // Extrai e avalia a implementação real da função contida no arquivo
+    const funcMatch = code.match(/export function parseSpeakerTurns\(text\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(funcMatch, 'Deve encontrar a definição da função parseSpeakerTurns');
+    const parseSpeakerTurns = new Function('text', funcMatch[1]);
+
+    // Monta texto longo com mais de 20.000 caracteres alternando falas e contendo colchetes [ruído], [anexo], etc.
+    let fullText = '[Carlos RH]: Início da reunião com alinhamento sobre o sistema TOTVS.\n\n';
+    for (let i = 1; i <= 150; i++) {
+      const spk = i % 2 === 1 ? 'Carlos RH' : 'Mariana TI';
+      fullText += `[${spk}]: Turno ${i}: Discutindo parametrizações fiscais e módulos contábeis [anexo ${i}] com detalhes minuciosos e sem perda de contexto corporativo. `;
+      if (i % 5 === 0) fullText += '[ruído] Continuação da fala após ruído sem corte algum. ';
+      fullText += '\n\n';
+    }
+
+    assert.ok(fullText.length > 20000, `Texto deve ter mais de 20.000 caracteres, tem ${fullText.length}`);
+
+    const turns = parseSpeakerTurns(fullText);
+    assert.strictEqual(turns.length, 151, 'Deve extrair todos os 151 turnos sem perda');
+    assert.ok(turns[0].content.includes('alinhamento sobre o sistema TOTVS'));
+    assert.ok(turns[5].content.includes('[ruído] Continuação da fala'));
+    assert.ok(turns[150].content.includes('[anexo 150]'));
+
+    // Teste com preâmbulo sem tag inicial
+    const withPreamble = 'Aviso prévio sem tag de falante.\n\n[João]: Primeira fala identificada.';
+    const turnsWithPreamble = parseSpeakerTurns(withPreamble);
+    assert.strictEqual(turnsWithPreamble.length, 2);
+    assert.strictEqual(turnsWithPreamble[0].speaker, 'Participante');
+    assert.strictEqual(turnsWithPreamble[0].content, 'Aviso prévio sem tag de falante.');
+  });
+
+  // 23. Dismissible Pre-Permission Card Allowing Listener Participation
+  test('23. LiveMeetingPage defines dismissible pre-permission state without blocking stage', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+
+    assert.ok(code.includes('prePermissionDismissed'), 'Must track prePermissionDismissed');
+    assert.ok(code.includes('Entrar apenas como ouvinte'), 'Must provide listener entrance button');
+    assert.ok(code.includes('setPrePermissionDismissed(true)'), 'Must allow user to dismiss pre-permission card');
+  });
+
+  // 24. Mobile 100dvh sizing, safe area padding and dark/light theme tokens
+  test('24. LiveMeetingPage and index.css implement 100dvh sizing, safe area dock spacing and theme tokens', () => {
+    const pagePath = path.join(projectRoot, 'frontend/src/components/LiveMeetingPage.jsx');
+    const code = fs.readFileSync(pagePath, 'utf-8');
+    const cssPath = path.join(projectRoot, 'frontend/src/index.css');
+    const css = fs.readFileSync(cssPath, 'utf-8');
+
+    assert.ok(code.includes('100dvh'), 'Must use 100dvh for mobile dynamic viewport sizing');
+    assert.ok(code.includes('var(--pf-surface'), 'Modals must use theme tokens instead of hardcoded slate');
+    assert.ok(css.includes('padding-bottom: calc('), 'participants-grid-container must have dock safety padding');
+  });
 });
+
 

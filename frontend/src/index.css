@@ -5505,6 +5505,7 @@ input[type="text"].command-search-input::placeholder,
   width: 100%;
   height: 100%;
   padding: 12px;
+  padding-bottom: calc(80px + var(--sab, env(safe-area-inset-bottom, 0px)));
   gap: 12px;
   box-sizing: border-box;
   flex: 1;
@@ -5702,6 +5703,7 @@ input[type="text"].command-search-input::placeholder,
 @media (max-width: 480px) {
   .participants-grid-container {
     padding: 6px;
+    padding-bottom: calc(76px + var(--sab, env(safe-area-inset-bottom, 0px)));
     gap: 8px;
   }
   .participant-avatar-circle {
