@@ -2435,11 +2435,12 @@ input[type="text"].command-search-input::placeholder,
    ======================================================== */
 .meeting-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 370px), 1fr));
   gap: 1.35rem;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  justify-content: center;
 }
 
 .meeting-card {
@@ -2695,15 +2696,6 @@ input[type="text"].command-search-input::placeholder,
   position: relative;
 }
 
-.dashboard-header {
-  padding: 2rem 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border-color);
-  background: rgba(15, 23, 42, 0.65);
-  flex-shrink: 0;
-}
 
 .table-container {
   overflow-x: auto;
@@ -3017,14 +3009,25 @@ input[type="text"].command-search-input::placeholder,
 
 /* Header & Áreas Globais do Dashboard */
 .dashboard-header {
+  width: 100%;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--panel-bg);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.dashboard-header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 1rem;
   padding: 1.25rem 2.5rem;
-  border-bottom: 1px solid var(--border-color);
-  background: var(--panel-bg);
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  transition: max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s ease;
 }
 
 .dashboard-header-title {
@@ -3055,8 +3058,20 @@ input[type="text"].command-search-input::placeholder,
   gap: 1.35rem;
   width: 100%;
   max-width: 1600px;
+  margin: 0 auto; /* Centralização harmônica absoluta */
   min-width: 0;
   box-sizing: border-box;
+  transition: max-width 0.25s cubic-bezier(0.16, 1, 0.3, 1), padding 0.25s ease;
+}
+
+/* Quando a barra lateral recua (sidebar collapsed), centraliza e expande suavemente */
+.sidebar-collapsed .dashboard-header-inner,
+.sidebar-collapsed .dashboard-content-area,
+.dashboard-main.sidebar-collapsed .dashboard-header-inner,
+.dashboard-main.sidebar-collapsed .dashboard-content-area {
+  max-width: 1760px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 /* ========================================================

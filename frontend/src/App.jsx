@@ -2005,7 +2005,7 @@ export default function MeetingApp() {
   const totalMeetingsCount = pagination.total || meetings.length;
 
   return (
-    <div className="dashboard-layout">
+    <div className={`dashboard-layout ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       {/* Barra Superior Mobile (Visível apenas em telas <= 900px) */}
       <div className="mobile-top-bar">
         <button
@@ -2096,68 +2096,70 @@ export default function MeetingApp() {
 
       {/* Main View Area */}
       {currentView === 'dashboard' && (
-        <main className="dashboard-main">
+        <main className={`dashboard-main ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
           {/* Header Executivo Superior */}
           <header className="dashboard-header">
-            <div>
-              <h2 className="dashboard-header-title">
-                Histórico de Reuniões
-              </h2>
-              <p className="dashboard-header-desc">
-                Consulte, filtre e gerencie as atas das reuniões corporativas da TOTVS com inteligência artificial.
-              </p>
-            </div>
-            <div className="dashboard-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={() => loadMeetings(pagination.page, pagination.page_size)}
-                className="btn-pf btn-pf-secondary"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', fontSize: '12.5px', padding: '0 12px' }}
-                title="Recarregar lista de reuniões do banco de dados"
-                disabled={loadingMeetings}
-              >
-                <RefreshCw size={14} className={loadingMeetings ? 'spin' : ''} />
-                <span>Atualizar</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('meeting')}
-                className="btn-pf btn-pf-primary"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '7px',
-                  height: '36px',
-                  fontSize: '12.5px',
-                  padding: '0 14px',
-                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-                  boxShadow: '0 3px 10px rgba(2, 132, 199, 0.25)'
-                }}
-                title="Iniciar gravação ou registro de reunião ao vivo"
-              >
-                <Radio size={14} />
-                <span>Reunião Ao Vivo</span>
-              </button>
+            <div className="dashboard-header-inner">
+              <div>
+                <h2 className="dashboard-header-title">
+                  Histórico de Reuniões
+                </h2>
+                <p className="dashboard-header-desc">
+                  Consulte, filtre e gerencie as atas das reuniões corporativas da TOTVS com inteligência artificial.
+                </p>
+              </div>
+              <div className="dashboard-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <button
+                  onClick={() => loadMeetings(pagination.page, pagination.page_size)}
+                  className="btn-pf btn-pf-secondary"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '36px', fontSize: '12.5px', padding: '0 12px' }}
+                  title="Recarregar lista de reuniões do banco de dados"
+                  disabled={loadingMeetings}
+                >
+                  <RefreshCw size={14} className={loadingMeetings ? 'spin' : ''} />
+                  <span>Atualizar</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('meeting')}
+                  className="btn-pf btn-pf-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '7px',
+                    height: '36px',
+                    fontSize: '12.5px',
+                    padding: '0 14px',
+                    background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                    boxShadow: '0 3px 10px rgba(2, 132, 199, 0.25)'
+                  }}
+                  title="Iniciar gravação ou registro de reunião ao vivo"
+                >
+                  <Radio size={14} />
+                  <span>Reunião Ao Vivo</span>
+                </button>
 
-              {/* Alternador de Tema Rápido no Header */}
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="header-action-icon-btn"
-                title={theme === 'dark' ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '8px',
-                  border: '1px solid var(--border-color)',
-                  background: 'var(--panel-bg)',
-                  color: 'var(--text-secondary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer'
-                }}
-              >
-                {theme === 'dark' ? <Sun size={16} color="#f59e0b" /> : <Moon size={16} color="#0284c7" />}
-              </button>
+                {/* Alternador de Tema Rápido no Header */}
+                <button
+                  type="button"
+                  onClick={toggleTheme}
+                  className="header-action-icon-btn"
+                  title={theme === 'dark' ? "Mudar para Modo Claro" : "Mudar para Modo Escuro"}
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: 'var(--panel-bg)',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {theme === 'dark' ? <Sun size={16} color="#f59e0b" /> : <Moon size={16} color="#0284c7" />}
+                </button>
+              </div>
             </div>
           </header>
 
@@ -2342,7 +2344,7 @@ export default function MeetingApp() {
       )}
 
       {currentView === 'analytics' && (
-        <main className="dashboard-main">
+        <main className={`dashboard-main ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
           <Suspense fallback={
             <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
               Carregando Visão Executiva & Analytics...
